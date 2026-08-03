@@ -27,24 +27,26 @@ Home, Tienda, Carrito, Mi cuenta y ficha de producto: **200, sin errores PHP**.
 ## ⚠️ Requisitos previos innegociables
 
 1. **Backup completo de producción** (archivos + base), verificado y restaurable.
-2. **El tema propio tiene que estar terminado y activo.** ⚠️ **Esto es mucho más grave de lo estimado inicialmente.**
+2. **El tema propio tiene que estar terminado y activo.** Al purgar Elementor, la Home queda con contenido de longitud 0 — su diseño vivía dentro de `_elementor_data`.
 
-   Verificado en staging tras la purga: **no se rompe solo la Home — se rompe toda la tienda.**
+   > ### ⚠️ Corrección de un diagnóstico previo
+   >
+   > Tras la purga se observó que la Tienda mostraba 0 productos y las fichas no tenían precio ni botón de compra. **Se atribuyó a que `Hello Elementor` no tiene plantillas de WooCommerce.** Ese diagnóstico era incorrecto.
+   >
+   > La causa real, descubierta al activar el tema propio, es que **WooCommerce tiene activado el modo "Próximamente"**:
+   >
+   > ```
+   > woocommerce_coming_soon    = yes
+   > woocommerce_store_pages_only = yes
+   > ```
+   >
+   > **Está así en staging y también en producción.** La tienda nunca se renderizó públicamente — no por falta de plantillas, sino porque WooCommerce la reemplaza por una pantalla de "próximamente" desde antes de tocar nada.
+   >
+   > Lo que sí es cierto y está verificado: `Hello Elementor` no tiene `woocommerce.php`, ni `single-product.php`, ni carpeta `/woocommerce/`. Pero **no se llegó a demostrar** que eso rompiera el renderizado, porque el modo "Próximamente" enmascaraba cualquier resultado.
+   >
+   > Con el tema propio activo y `woocommerce_coming_soon = no`, la tienda renderiza correctamente: 24 tarjetas por página sobre 797 productos, fichas con precio, y el selector de variaciones funcionando.
 
-   | Página | Estado tras quitar Elementor |
-   |---|---|
-   | Home | Contenido de longitud 0 (su diseño vivía en `_elementor_data`) |
-   | **Tienda** | **Responde 200 pero muestra 0 productos** |
-   | **Ficha de producto** | **Sin precio, sin botón de compra, sin resumen** |
-   | Carrito / Mi cuenta | Responden, sin contenido de WooCommerce |
-
-   **Causa raíz:** `Hello Elementor` declara `add_theme_support('woocommerce')` pero **no tiene ninguna plantilla de WooCommerce** — ni `woocommerce.php`, ni `single-product.php`, ni carpeta `/woocommerce/`. Delegaba el 100% del renderizado de la tienda al Theme Builder de Elementor Pro. Sin Elementor no queda nada que dibuje la tienda.
-
-   Los hooks de WooCommerce están correctamente enganchados (`woocommerce_single_product_summary` tiene título, precio y añadir-al-carrito); lo que falta es la plantilla que los ejecute.
-
-   > Esto **confirma la decisión D9**: el tema actual nunca renderizó la tienda por sí mismo. No es una regresión, es la ausencia que ya existía.
-
-   **El POS no se ve afectado**: es una SPA independiente que consume la REST API, no las plantillas del tema. Verificado en staging tras la purga.
+   **El POS no se ve afectado** por nada de esto: es una SPA independiente que consume la REST API, no las plantillas del tema. Verificado en staging tras la purga.
 3. **Fuera de horario comercial.** El POS de YITH no se toca en ningún paso, pero cualquier operación sobre la base merece ventana tranquila.
 4. **Rescatar antes de borrar** — ver [RESCATE-PRE-LIMPIEZA.md](RESCATE-PRE-LIMPIEZA.md) y [DESIGN-TOKENS.md](DESIGN-TOKENS.md).
 

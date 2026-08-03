@@ -524,6 +524,9 @@ wp_novamira_oauth_refresh_tokens
 | P23 | Asignar la marca Apple a los 8 iPhones genuinos que no la tienen | 1 |
 | P18 | Reescribir `robots.txt` para ecommerce y proteger el staging con contraseña de directorio | 0 |
 | P19 | **Poner `blog_public = 1` en producción el día del lanzamiento** — hoy está en 0 y el sitio es invisible para Google | 3 |
+| **P26** | **Desactivar el modo "Próximamente" de WooCommerce en producción el día del lanzamiento.** `woocommerce_coming_soon = yes` y `woocommerce_store_pages_only = yes`: la tienda está detrás de una pantalla de "próximamente" desde siempre | 3 |
+| P27 | Faltaban las traducciones de WooCommerce (`wp-content/languages/plugins/`): la tienda salía en inglés. Instaladas en staging, **falta hacerlo en producción** | 3 |
+| P28 | Evaluar cambiar el locale de `es_ES` a `es_AR` — el castellano de España usa "vosotros" y términos distintos a los del Río de la Plata | 2 |
 | P20 | Cerrar la sesión de caja huérfana `id 1`, abierta desde el 2025-04-18 | 1 |
 | P7 | Confirmar con YITH el comportamiento del plugin tras el vencimiento de licencia | 5 |
 | P8 | Política antisobreventa: reserva y/o buffer de stock | 3 |
