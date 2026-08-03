@@ -1,0 +1,16 @@
+# Artefactos de despliegue
+*.zip
+dist/
+
+# Datos de trabajo generados desde el servidor
+atributos-payload.json
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+*.swp

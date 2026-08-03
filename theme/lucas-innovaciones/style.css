@@ -1,0 +1,18 @@
+/*
+Theme Name: Lucas Innovaciones
+Theme URI: https://lucasinnovaciones.com.ar
+Author: Lucas Innovaciones
+Description: Tema a medida para la tienda online de Lucas Innovaciones. Sin dependencias de maquetadores visuales. Construido sobre el sistema de tokens LI.
+Version: 0.1.0
+Requires at least: 6.5
+Requires PHP: 8.1
+License: GPL-2.0-or-later
+Text Domain: lucasinnovaciones
+Tags: e-commerce, custom-theme
+*/
+
+/*
+  Las hojas de estilo reales se cargan desde assets/css/.
+  Este archivo existe porque WordPress lo exige como cabecera del tema.
+  No agregar CSS acá: se pierde el orden de carga y la cacheabilidad.
+*/
