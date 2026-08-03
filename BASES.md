@@ -140,6 +140,7 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | D16 | **Imágenes: vía B para productos, vía C para banners** | Fotografía propia en el local para las 143 fichas + IA para banners e ilustraciones. Se descarta la vía A (assets de distribuidores) — queda disponible como atajo si algún distribuidor los ofrece. |
 | D17 | **Base de diseño: template "SWOO — Tech Mart"** (Figma Community, `jqYBUcohlipdHwwSoXPBrt`) | Se implementa como tema propio, no se importa. Buen encaje de rubro y de filtros de catálogo. Requiere trabajo adicional significativo: diseño mobile completo, recorte de secciones, y creación de la taxonomía de atributos. Ver sección 8.4. |
 | D18 | **El servicio técnico no se incluye en la web** | Decisión del cliente. La web vende productos únicamente. El servicio técnico sigue siendo un canal de mostrador y se registra en el POS como venta libre (D12). |
+| D21 | **Carrito y finalizar compra se quedan con los bloques de WooCommerce**, no se convierten a shortcodes clásicos | Ambas páginas ya estaban construidas con bloques. Se evaluó pasarlas al checkout clásico para tener control total por plantillas, y **se descartó**: el plugin de Mercado Pago declara compatibilidad `cart_checkout_blocks` y registra sus métodos vía `woocommerce_blocks_payment_method_type_registration`, y sobre todo **los bloques traen retiro en el local de forma nativa**, que para este negocio es el canal principal. El tema aporta el envoltorio y una hoja (`blocks.css`) que traduce los bloques al sistema visual. |
 | D20 | **Vidrios, hidrogeles y fundas pasan a productos variables por modelo** | Atributo `pa_modelo` con 40 modelos, derivados de los teléfonos con venta real. Piloto ejecutado sobre el producto #1 en rotación. Suma un toque al flujo del cajero en búsqueda por texto; con lector de código de barras va directo a la variación. Ver sección 4.1 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
 | D19 | **Las réplicas salen del catálogo online, quedan solo para mostrador** | Se creó la categoría **`Solo mostrador`** + visibilidad oculta. 6 productos procesados, marcas genuinas removidas. Siguen vendibles en el POS. Es la regla reutilizable para cualquier producto que no deba estar online. Ver sección 4.2 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
 
@@ -510,7 +511,8 @@ wp_novamira_oauth_refresh_tokens
 | ~~P2~~ | ~~Elementor vs. tema propio~~ — **resuelto por D9: tema propio** | — |
 | ~~P3~~ | ~~Licenciar o eliminar PRO Elements~~ — **resuelto por D9: se elimina junto con Elementor** | — |
 | P4 | Tratamiento de IVA y precio final al público | 1 |
-| P5 | Política de envíos y costos | 3 |
+| P5 | **Política de envíos y costos.** Hoy la única zona es "Todo el país" con **Envío gratuito** como único método: es irreal y significa regalar el flete a toda Argentina | 3 |
+| P29 | **Habilitar el retiro en el local en producción.** La ubicación ya está cargada con datos reales — "Local comercial", Caseros 924, Villa Santa Rosa (5133), horario *"De 9 a 12:30 y de 17 a 21"*— pero el método estaba deshabilitado. Activado en staging | 3 |
 | P6 | **Producción de imágenes: 143 fotos faltantes del top 150. Responsable y ritmo** — camino crítico, arranca ya. Vías A/B/C en 8.3 | 3 |
 | P13 | Sacar las notas internas de los títulos de producto (precios de compra, nombres de clientes) | 1 |
 | P14 | Recategorizar: hay iPhones usados con IMEI dentro de "Smartphones nuevos" | 1 |

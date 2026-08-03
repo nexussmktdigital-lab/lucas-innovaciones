@@ -1488,7 +1488,37 @@ input[type="submit"]:hover {
 }
 
 /* --------------------------------------------------------------------------
-   14. Estado vacío
+   14. Páginas
+   -------------------------------------------------------------------------- */
+
+.pagina__cabecera {
+  margin-bottom: var(--e-5);
+  padding-bottom: var(--e-3);
+  border-bottom: 1px solid var(--li-border);
+}
+
+.pagina__cuerpo > * + * {
+  margin-top: var(--e-4);
+}
+
+.pagina__cuerpo h2 {
+  font-size: var(--t-lg);
+  margin-top: var(--e-6);
+}
+
+.pagina__cuerpo h3 {
+  font-size: var(--t-md);
+  margin-top: var(--e-5);
+}
+
+.pagina__cuerpo a:not(.boton):not(.wc-block-components-button) {
+  color: var(--li-primary-oscuro);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* --------------------------------------------------------------------------
+   15. Estado vacío
    -------------------------------------------------------------------------- */
 
 .vacio {

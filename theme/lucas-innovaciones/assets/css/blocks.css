@@ -1,0 +1,585 @@
+@charset "UTF-8";
+
+/* ==========================================================================
+   Carrito y finalizar compra — bloques de WooCommerce
+   Se carga después de wc-blocks-style y traduce esas pantallas al sistema
+   visual del tema. No se reemplaza el marcado: los bloques traen retiro en
+   el local, actualización en vivo y la integración de Mercado Pago.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Envoltorio y layout
+   -------------------------------------------------------------------------- */
+
+.li--tienda .wp-block-woocommerce-cart,
+.li--tienda .wp-block-woocommerce-checkout {
+  max-width: var(--li-contenedor);
+  margin-inline: auto;
+}
+
+.wc-block-cart,
+.wc-block-checkout {
+  font-family: var(--f-sans);
+  color: var(--li-text);
+}
+
+.wc-block-components-main {
+  padding-right: 0;
+}
+
+@media (min-width: 1000px) {
+  .wc-block-cart__sidebar,
+  .wc-block-checkout__sidebar {
+    padding-left: var(--e-6);
+  }
+}
+
+/* Tarjeta del resumen: misma pieza visual que el resto del sitio */
+.wc-block-components-sidebar .wc-block-components-panel,
+.wc-block-cart__sidebar .wc-block-components-totals-wrapper,
+.wc-block-checkout__sidebar .wc-block-components-totals-wrapper {
+  background: var(--li-card);
+}
+
+.wc-block-cart__sidebar > .wc-block-components-sidebar,
+.wc-block-checkout__sidebar > .wc-block-components-sidebar {
+  padding: var(--e-4);
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+}
+
+@media (min-width: 1000px) {
+  .wc-block-cart__sidebar > .wc-block-components-sidebar,
+  .wc-block-checkout__sidebar > .wc-block-components-sidebar {
+    position: sticky;
+    top: calc(var(--li-header-h) + var(--e-4));
+  }
+}
+
+/* --------------------------------------------------------------------------
+   2. Tipografía
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-title,
+.wc-block-cart__empty-cart__title,
+.wc-block-checkout__form .wc-block-components-checkout-step__title {
+  font-family: var(--f-sans);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--li-text);
+}
+
+.wc-block-components-checkout-step__title {
+  font-size: var(--t-md);
+}
+
+.wc-block-components-checkout-step__description,
+.wc-block-components-checkout-step__heading-content {
+  font-size: var(--t-sm);
+  color: var(--li-text-mudo);
+}
+
+/* Todo importe en monoespaciada: coherente con el catálogo y la ficha. */
+.wc-block-components-formatted-money-amount,
+.wc-block-components-totals-item__value,
+.wc-block-components-product-price,
+.wc-block-components-order-summary-item__total-price,
+.wc-block-components-totals-footer-item .wc-block-components-totals-item__value {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.wc-block-components-product-metadata,
+.wc-block-components-product-name {
+  font-size: var(--t-sm);
+}
+
+.wc-block-components-product-name {
+  font-weight: 500;
+  color: var(--li-text);
+}
+
+/* Etiquetas de sección con el mismo tratamiento que los filtros */
+.wc-block-components-checkout-step__title,
+.wc-block-cart__totals-title,
+.wc-block-components-order-summary .wc-block-components-panel__button {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--li-text-mudo);
+}
+
+.wc-block-components-checkout-step__title {
+  font-size: var(--t-md);
+  text-transform: none;
+  letter-spacing: -0.015em;
+  font-family: var(--f-sans);
+  color: var(--li-text);
+}
+
+/* --------------------------------------------------------------------------
+   3. Ítems del carrito
+   -------------------------------------------------------------------------- */
+
+.wc-block-cart-items {
+  border-collapse: collapse;
+}
+
+.wc-block-cart-items__header {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--li-text-mudo);
+  border-bottom: 1px solid var(--li-border);
+}
+
+.wc-block-cart-items__row {
+  border-bottom: 1px solid var(--li-border);
+}
+
+.wc-block-cart-item__image img,
+.wc-block-components-order-summary-item__image img {
+  border-radius: var(--li-radio-sm);
+  background: var(--li-bg);
+  mix-blend-mode: multiply;
+}
+
+.wc-block-cart-item__remove-link {
+  font-family: var(--f-sans);
+  font-size: var(--t-xs);
+  color: var(--li-text-mudo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wc-block-cart-item__remove-link:hover {
+  color: var(--li-peligro);
+}
+
+/* --------------------------------------------------------------------------
+   4. Controles de formulario
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-text-input input[type="text"],
+.wc-block-components-text-input input[type="email"],
+.wc-block-components-text-input input[type="tel"],
+.wc-block-components-text-input input[type="number"],
+.wc-block-components-textarea,
+.wc-block-components-combobox-control input.components-combobox-control__input,
+.wc-block-components-select .wc-block-components-select__select {
+  min-height: 46px;
+  padding: 0 var(--e-3);
+  background: var(--li-card);
+  border: 1px solid var(--li-border-fuerte);
+  border-radius: var(--li-radio);
+  font-family: var(--f-sans);
+  font-size: var(--t-base);
+  color: var(--li-text);
+  box-shadow: none;
+  transition: border-color var(--li-transicion);
+}
+
+.wc-block-components-text-input input:focus,
+.wc-block-components-textarea:focus,
+.wc-block-components-select .wc-block-components-select__select:focus {
+  outline: none;
+  border-color: var(--li-secondary);
+  box-shadow: none;
+}
+
+.wc-block-components-text-input label,
+.wc-block-components-select label {
+  font-size: var(--t-sm);
+  color: var(--li-text-mudo);
+}
+
+.wc-block-components-text-input.is-active label {
+  font-size: var(--t-xs);
+}
+
+/* Cantidad: mismo control que en la ficha de producto */
+.wc-block-components-quantity-selector {
+  border: 1px solid var(--li-border-fuerte);
+  border-radius: var(--li-radio);
+  background: var(--li-card);
+  overflow: hidden;
+}
+
+.wc-block-components-quantity-selector input.wc-block-components-quantity-selector__input {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--li-text);
+}
+
+.wc-block-components-quantity-selector__button {
+  color: var(--li-text-2);
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.wc-block-components-quantity-selector__button:hover {
+  background: var(--li-secondary);
+  color: var(--li-primary);
+}
+
+/* --------------------------------------------------------------------------
+   5. Botones
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-button:not(.is-link) {
+  min-height: 46px;
+  padding: 12px 22px;
+  border: 1px solid transparent;
+  border-radius: var(--li-radio);
+  background: var(--li-secondary);
+  color: #fff;
+  font-family: var(--f-sans);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.wc-block-components-button:not(.is-link):hover {
+  background: var(--li-primary);
+  color: var(--li-secondary);
+}
+
+.wc-block-components-button:not(.is-link):disabled {
+  background: var(--li-bg-alt);
+  color: var(--li-text-off);
+}
+
+.wc-block-cart__submit-button,
+.wc-block-components-checkout-place-order-button {
+  width: 100%;
+  min-height: 52px;
+  font-size: var(--t-base);
+}
+
+.wc-block-components-button.is-link {
+  color: var(--li-text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wc-block-components-button.is-link:hover {
+  color: var(--li-text);
+}
+
+/* --------------------------------------------------------------------------
+   6. Totales
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-totals-item {
+  padding: var(--e-2) 0;
+  font-size: var(--t-sm);
+}
+
+.wc-block-components-totals-item__label {
+  color: var(--li-text-2);
+}
+
+.wc-block-components-totals-wrapper {
+  border-top: 1px solid var(--li-border);
+  padding-block: var(--e-2);
+}
+
+.wc-block-components-totals-wrapper:first-child {
+  border-top: 0;
+}
+
+.wc-block-components-totals-footer-item {
+  border-top: 2px solid var(--li-secondary);
+  padding-top: var(--e-3);
+  margin-top: var(--e-2);
+}
+
+.wc-block-components-totals-footer-item .wc-block-components-totals-item__label {
+  font-weight: 600;
+  color: var(--li-text);
+}
+
+.wc-block-components-totals-footer-item .wc-block-components-totals-item__value {
+  font-size: var(--t-lg);
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+   7. Envío y retiro en el local
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-radio-control__option,
+.wc-block-components-shipping-rates-control__package {
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  padding: var(--e-3);
+  margin-bottom: var(--e-2);
+  background: var(--li-card);
+  transition: border-color var(--li-transicion), background var(--li-transicion);
+}
+
+.wc-block-components-radio-control__option:hover {
+  border-color: var(--li-border-fuerte);
+}
+
+.wc-block-components-radio-control__option--checked-option-highlighted,
+.wc-block-components-radio-control__option:has(input:checked) {
+  border-color: var(--li-primary-oscuro);
+  background: var(--li-verde-suave);
+}
+
+.wc-block-components-radio-control__option-layout {
+  gap: var(--e-2);
+}
+
+.wc-block-components-radio-control__label {
+  font-weight: 500;
+  font-size: var(--t-sm);
+}
+
+.wc-block-components-radio-control__secondary-label,
+.wc-block-components-radio-control__description {
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  color: var(--li-text-mudo);
+}
+
+/* Pestañas de envío vs retiro */
+.wc-block-checkout__shipping-method-container {
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  background: var(--li-card);
+}
+
+.wc-block-checkout__shipping-method-option {
+  border-radius: var(--li-radio);
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.wc-block-checkout__shipping-method-option--selected {
+  background: var(--li-secondary);
+  color: #fff;
+  border-color: var(--li-secondary);
+}
+
+.wc-block-checkout__shipping-method-option--selected .wc-block-checkout__shipping-method-option-title,
+.wc-block-checkout__shipping-method-option--selected .wc-block-checkout__shipping-method-option-rate {
+  color: #fff;
+}
+
+/* --------------------------------------------------------------------------
+   8. Pagos
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-payment-method-icons {
+  margin-left: auto;
+}
+
+.wc-block-components-payment-method-label {
+  font-weight: 500;
+  font-size: var(--t-sm);
+}
+
+.wc-block-checkout__payment-method .wc-block-components-radio-control__option {
+  padding: var(--e-3);
+}
+
+/* --------------------------------------------------------------------------
+   9. Avisos
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-notice-banner {
+  border-radius: var(--li-radio-sm);
+  border-width: 1px;
+  border-left-width: 3px;
+  font-size: var(--t-sm);
+  font-family: var(--f-sans);
+}
+
+.wc-block-components-notice-banner.is-error {
+  border-left-color: var(--li-peligro);
+}
+
+.wc-block-components-notice-banner.is-success {
+  border-left-color: var(--li-exito);
+}
+
+.wc-block-components-notice-banner.is-info {
+  border-left-color: var(--li-info);
+}
+
+.wc-block-components-validation-error {
+  font-size: var(--t-xs);
+  color: var(--li-peligro);
+}
+
+/* --------------------------------------------------------------------------
+   10. Carrito vacío
+   -------------------------------------------------------------------------- */
+
+.wc-block-cart__empty-cart__title {
+  font-family: var(--f-pixel);
+  font-size: 2.25rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.wp-block-woocommerce-empty-cart-block {
+  padding: var(--e-7) var(--e-4);
+  text-align: center;
+  background: var(--li-card);
+  border: 1px dashed var(--li-border-fuerte);
+  border-radius: var(--li-radio);
+}
+
+.wp-block-woocommerce-empty-cart-block .wp-block-separator,
+.wp-block-woocommerce-empty-cart-block .wc-block-grid__products {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   11. Cupones
+   -------------------------------------------------------------------------- */
+
+.wc-block-components-totals-coupon__form .wc-block-components-text-input input {
+  min-height: 42px;
+}
+
+.wc-block-components-totals-coupon-link {
+  font-size: var(--t-sm);
+  color: var(--li-text-2);
+}
+
+/* --------------------------------------------------------------------------
+   12. Mi cuenta — esta pantalla sí es clásica (shortcode)
+   -------------------------------------------------------------------------- */
+
+.woocommerce-account .woocommerce {
+  display: grid;
+  gap: var(--e-5);
+}
+
+@media (min-width: 900px) {
+  .woocommerce-account .woocommerce {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: var(--e-6);
+    align-items: start;
+  }
+}
+
+.woocommerce-MyAccount-navigation ul {
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  overflow: hidden;
+  background: var(--li-card);
+}
+
+.woocommerce-MyAccount-navigation li + li {
+  border-top: 1px solid var(--li-border);
+}
+
+.woocommerce-MyAccount-navigation a {
+  display: block;
+  padding: var(--e-3) var(--e-4);
+  font-size: var(--t-sm);
+  color: var(--li-text-2);
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.woocommerce-MyAccount-navigation a:hover {
+  background: var(--li-bg-alt);
+  color: var(--li-text);
+}
+
+.woocommerce-MyAccount-navigation .is-active a {
+  background: var(--li-secondary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.woocommerce-MyAccount-content {
+  min-width: 0;
+}
+
+.woocommerce-orders-table,
+.woocommerce-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  overflow: hidden;
+  font-size: var(--t-sm);
+}
+
+.woocommerce-orders-table th,
+.woocommerce-table th {
+  padding: var(--e-3) var(--e-4);
+  text-align: left;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--li-text-mudo);
+  border-bottom: 1px solid var(--li-border);
+}
+
+.woocommerce-orders-table td,
+.woocommerce-table td {
+  padding: var(--e-3) var(--e-4);
+  border-bottom: 1px solid var(--li-border);
+}
+
+.woocommerce-orders-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.woocommerce-orders-table__cell-order-number,
+.woocommerce-orders-table__cell-order-total {
+  font-family: var(--f-mono);
+}
+
+.woocommerce-form {
+  max-width: 480px;
+  padding: var(--e-5);
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+}
+
+.woocommerce-form-row {
+  margin-bottom: var(--e-3);
+}
+
+.woocommerce-form-row label {
+  display: block;
+  margin-bottom: var(--e-1);
+  font-size: var(--t-sm);
+  color: var(--li-text-2);
+}
+
+.woocommerce-Input,
+.woocommerce-form input[type="text"],
+.woocommerce-form input[type="email"],
+.woocommerce-form input[type="password"],
+.woocommerce-form input[type="tel"] {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 var(--e-3);
+  background: var(--li-card);
+  border: 1px solid var(--li-border-fuerte);
+  border-radius: var(--li-radio);
+  font-size: var(--t-base);
+}
+
+.woocommerce-Input:focus {
+  outline: none;
+  border-color: var(--li-secondary);
+}

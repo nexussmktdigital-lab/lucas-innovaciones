@@ -17,12 +17,22 @@ function li_assets(): void {
 
 	wp_enqueue_style( 'li-theme', LI_URI . '/assets/css/theme.css', array(), $ver );
 
-	// Las hojas de WooCommerce se reemplazan por completo. Se conserva
-	// únicamente la del selector de variaciones, que acompaña a su JS.
+	// Catálogo y ficha se dibujan enteros desde el tema: sus hojas sobran.
 	wp_dequeue_style( 'woocommerce-general' );
 	wp_dequeue_style( 'woocommerce-layout' );
 	wp_dequeue_style( 'woocommerce-smallscreen' );
-	wp_dequeue_style( 'wc-blocks-style' );
+
+	/*
+	 * Carrito y finalizar compra usan los bloques de WooCommerce, no los
+	 * shortcodes clásicos. Su hoja de estilos SÍ hace falta: sin ella el
+	 * carrito queda sin maquetar. Encima se carga blocks.css, que traduce
+	 * el sistema visual del tema a las clases de los bloques.
+	 */
+	if ( li_usa_bloques_wc() ) {
+		$b   = LI_DIR . '/assets/css/blocks.css';
+		$bver = file_exists( $b ) ? (string) filemtime( $b ) : LI_VERSION;
+		wp_enqueue_style( 'li-blocks', LI_URI . '/assets/css/blocks.css', array( 'li-theme', 'wc-blocks-style' ), $bver );
+	}
 
 	$js  = LI_DIR . '/assets/js/theme.js';
 	$jsv = file_exists( $js ) ? (string) filemtime( $js ) : LI_VERSION;
@@ -31,6 +41,19 @@ function li_assets(): void {
 	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
 		wp_enqueue_script( 'comment-reply' );
 	}
+}
+
+/**
+ * ¿Estamos en una pantalla de compra?
+ *
+ * Carrito y finalizar compra usan bloques; Mi cuenta usa el shortcode
+ * clásico. Las tres se estilan desde blocks.css, así que comparten condición.
+ */
+function li_usa_bloques_wc(): bool {
+	if ( ! function_exists( 'is_cart' ) ) {
+		return false;
+	}
+	return is_cart() || is_checkout() || is_account_page();
 }
 
 add_action( 'wp_head', 'li_precarga_fuentes', 2 );
