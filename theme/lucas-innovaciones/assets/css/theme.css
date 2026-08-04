@@ -1518,7 +1518,387 @@ input[type="submit"]:hover {
 }
 
 /* --------------------------------------------------------------------------
-   15. Estado vacío
+   15. Portada
+   -------------------------------------------------------------------------- */
+
+.contenido--portada {
+  padding-block: 0 var(--e-8);
+}
+
+/* Encabezado -------------------------------------------------------------
+   En oscuro a propósito: el resto del sitio es claro, así el encabezado
+   corta y el verde funciona como señal en vez de decoración. */
+
+.hero {
+  background: var(--li-secondary);
+  color: #fff;
+  padding-block: var(--e-7) var(--e-8);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Retícula tenue de fondo: la textura de una hoja técnica. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none;
+}
+
+.hero__grilla {
+  position: relative;
+  display: grid;
+  gap: var(--e-6);
+}
+
+@media (min-width: 900px) {
+  .hero__grilla {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+    gap: var(--e-8);
+    align-items: center;
+  }
+}
+
+.hero__ubicacion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--e-4);
+  padding: 4px 12px 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--li-primary);
+}
+
+.hero__ubicacion .icono {
+  width: 15px;
+  height: 15px;
+}
+
+.hero__titulo {
+  font-size: clamp(2.75rem, 9vw, 5.25rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  font-weight: 700;
+  margin-bottom: var(--e-4);
+}
+
+.hero__titulo-acento {
+  color: var(--li-primary);
+}
+
+.hero__bajada {
+  max-width: 46ch;
+  margin-bottom: var(--e-5);
+  font-size: var(--t-md);
+  line-height: 1.5;
+  color: var(--li-invert-mudo);
+}
+
+.hero__bajada strong {
+  color: #fff;
+  font-weight: 500;
+}
+
+.hero__buscador {
+  display: flex;
+  gap: var(--e-2);
+  max-width: 560px;
+}
+
+.hero__campo {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 52px;
+  padding: 0 var(--e-4);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--li-radio);
+  color: #fff;
+  font-size: var(--t-base);
+  transition: border-color var(--li-transicion), background var(--li-transicion);
+}
+
+.hero__campo::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.hero__campo:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--li-primary);
+}
+
+.hero__enviar {
+  flex: 0 0 auto;
+  min-height: 52px;
+  background: var(--li-primary);
+  color: var(--li-secondary);
+}
+
+.hero__enviar:hover {
+  background: #fff;
+}
+
+.hero__atajos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2);
+  margin-top: var(--e-4);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.hero__atajos a {
+  color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  transition: color var(--li-transicion), border-color var(--li-transicion);
+}
+
+.hero__atajos a:hover {
+  color: var(--li-primary);
+  border-color: var(--li-primary);
+}
+
+/* Las cifras del catálogo como pieza gráfica: es lo que distingue al
+   negocio y no depende de tener fotos. */
+
+.hero__cifras {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--li-radio);
+  overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .hero__cifras {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cifra {
+  padding: var(--e-4) var(--e-3);
+  background: var(--li-secondary);
+  text-align: center;
+}
+
+@media (min-width: 900px) {
+  .cifra {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--e-3);
+    padding: var(--e-4) var(--e-5);
+    text-align: left;
+  }
+}
+
+.cifra__num {
+  display: block;
+  font-family: var(--f-pixel);
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--li-primary);
+}
+
+.cifra__etq {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+@media (min-width: 900px) {
+  .cifra__etq {
+    margin-top: 0;
+  }
+}
+
+/* El local ---------------------------------------------------------------- */
+
+.local {
+  margin-top: calc(var(--e-6) * -1);
+  position: relative;
+  z-index: 2;
+}
+
+.local__caja {
+  display: grid;
+  gap: 1px;
+  background: var(--li-border);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  overflow: hidden;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.4);
+}
+
+@media (min-width: 700px) {
+  .local__caja {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.local__bloque {
+  padding: var(--e-4) var(--e-5);
+  background: var(--li-card);
+}
+
+.local__etq {
+  margin-bottom: 6px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--li-primary-oscuro);
+}
+
+.local__dato {
+  font-size: var(--t-md);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.local__dato--mono {
+  font-family: var(--f-mono);
+  font-size: var(--t-base);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.local__sub {
+  margin-top: 2px;
+  font-size: var(--t-sm);
+  color: var(--li-text-mudo);
+}
+
+/* Secciones --------------------------------------------------------------- */
+
+.seccion-portada {
+  padding-block: var(--e-7);
+}
+
+.seccion-portada--alt {
+  background: var(--li-bg-alt);
+}
+
+/* Categorías -------------------------------------------------------------- */
+
+.categorias {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--li-border);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio);
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .categorias {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1000px) {
+  .categorias {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.categoria__enlace {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2);
+  min-height: 76px;
+  padding: var(--e-3) var(--e-4);
+  background: var(--li-card);
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.categoria__enlace:hover {
+  background: var(--li-secondary);
+  color: #fff;
+}
+
+.categoria__nombre {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.categoria__cuenta {
+  flex: 0 0 auto;
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  color: var(--li-text-off);
+  transition: color var(--li-transicion);
+}
+
+.categoria__enlace:hover .categoria__cuenta {
+  color: var(--li-primary);
+}
+
+/* Marcas ------------------------------------------------------------------ */
+
+.marcas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+}
+
+.marca-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  padding: 8px 14px;
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: 999px;
+  transition: border-color var(--li-transicion), background var(--li-transicion), color var(--li-transicion);
+}
+
+.marca-chip:hover {
+  background: var(--li-secondary);
+  border-color: var(--li-secondary);
+  color: #fff;
+}
+
+.marca-chip__nombre {
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+.marca-chip__cuenta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--li-text-off);
+}
+
+.marca-chip:hover .marca-chip__cuenta {
+  color: var(--li-primary);
+}
+
+/* --------------------------------------------------------------------------
+   16. Estado vacío
    -------------------------------------------------------------------------- */
 
 .vacio {

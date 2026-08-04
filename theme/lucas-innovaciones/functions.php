@@ -17,4 +17,5 @@ require_once LI_DIR . '/inc/template-tags.php';
 
 if ( class_exists( 'WooCommerce' ) ) {
 	require_once LI_DIR . '/inc/woocommerce.php';
+	require_once LI_DIR . '/inc/portada.php';
 }
