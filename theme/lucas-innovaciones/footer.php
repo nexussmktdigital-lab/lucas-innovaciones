@@ -17,8 +17,8 @@ $li_cp   = get_option( 'woocommerce_store_postcode', '' );
 		<div class="pie__grilla">
 
 			<div>
-				<p class="pie__marca"><?php bloginfo( 'name' ); ?></p>
-				<p><?php bloginfo( 'description' ); ?></p>
+				<?php li_logo( 'claro', 'pie__marca' ); ?>
+				<p class="pie__descripcion"><?php bloginfo( 'description' ); ?></p>
 
 				<?php if ( $li_dir ) : ?>
 					<p class="pie__titulo" style="margin-top:1.5rem"><?php esc_html_e( 'El local', 'lucasinnovaciones' ); ?></p>

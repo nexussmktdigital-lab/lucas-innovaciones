@@ -65,8 +65,8 @@ add_action( 'wp_head', 'li_precarga_fuentes', 2 );
  */
 function li_precarga_fuentes(): void {
 	$fuentes = array(
-		'/assets/fonts/IBMPlexSans-Regular.woff2',
-		'/assets/fonts/IBMPlexSans-SemiBold.woff2',
+		'/assets/fonts/Montserrat-SemiBold.woff2',
+		'/assets/fonts/Lora-Regular.woff2',
 		'/assets/fonts/IBMPlexMono-Medium.woff2',
 	);
 

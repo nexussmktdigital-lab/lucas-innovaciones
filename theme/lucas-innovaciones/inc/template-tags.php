@@ -8,20 +8,45 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Logo del sitio, con reserva al nombre en texto.
+ * Logo del sitio.
+ *
+ * El tema trae el wordmark en PNG con fondo transparente, generado a partir
+ * del JPG original: en negro para fondos claros y en blanco para el pie.
+ * Si el cliente carga un logo desde el personalizador, ese tiene prioridad.
+ *
+ * @param string $variante 'oscuro' para fondos claros, 'claro' para el pie.
+ * @param string $clase    Clase del enlace.
  */
-function li_logo(): void {
+function li_logo( string $variante = 'oscuro', string $clase = 'marca' ): void {
 	$inicio = esc_url( home_url( '/' ) );
+	$nombre = get_bloginfo( 'name' );
 
-	if ( has_custom_logo() ) {
+	if ( 'oscuro' === $variante && has_custom_logo() ) {
 		$id  = (int) get_theme_mod( 'custom_logo' );
-		$img = wp_get_attachment_image( $id, 'full', false, array( 'class' => 'marca__img', 'alt' => get_bloginfo( 'name' ) ) );
-		printf( '<a class="marca" href="%s" rel="home">%s</a>', $inicio, $img ); // phpcs:ignore WordPress.Security.EscapeOutput
+		$img = wp_get_attachment_image( $id, 'full', false, array( 'class' => 'marca__img', 'alt' => $nombre ) );
+		printf( '<a class="%s" href="%s" rel="home">%s</a>', esc_attr( $clase ), $inicio, $img ); // phpcs:ignore WordPress.Security.EscapeOutput
 		return;
 	}
 
+	$archivo = 'claro' === $variante ? 'logo-blanco.png' : 'logo.png';
+	$ruta    = LI_DIR . '/assets/img/' . $archivo;
+
+	if ( file_exists( $ruta ) ) {
+		printf(
+			'<a class="%s" href="%s" rel="home"><img class="marca__img" src="%s" alt="%s" width="786" height="159" %s></a>',
+			esc_attr( $clase ),
+			$inicio,
+			esc_url( LI_URI . '/assets/img/' . $archivo ),
+			esc_attr( $nombre ),
+			'oscuro' === $variante ? 'fetchpriority="high"' : 'loading="lazy"'
+		);
+		return;
+	}
+
+	// Reserva en texto si el archivo no está.
 	printf(
-		'<a class="marca marca--texto" href="%s" rel="home"><span class="marca__lucas">Lucas</span><span class="marca__innovaciones">Innovaciones</span></a>',
+		'<a class="%s marca--texto" href="%s" rel="home"><span class="marca__lucas">Lucas</span><span class="marca__innovaciones">Innovaciones</span></a>',
+		esc_attr( $clase ),
 		$inicio
 	);
 }

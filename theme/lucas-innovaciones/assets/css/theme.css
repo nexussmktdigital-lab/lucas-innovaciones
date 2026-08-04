@@ -10,34 +10,45 @@
    1. Tipografías
    -------------------------------------------------------------------------- */
 
+/* Títulos e interfaz */
 @font-face {
-  font-family: "Plex Sans";
-  src: url("../fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-family: "Montserrat";
+  src: url("../fonts/Montserrat-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Plex Sans";
-  src: url("../fonts/IBMPlexSans-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Plex Sans";
-  src: url("../fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-family: "Montserrat";
+  src: url("../fonts/Montserrat-SemiBold.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Plex Sans";
-  src: url("../fonts/IBMPlexSans-Bold.woff2") format("woff2");
+  font-family: "Montserrat";
+  src: url("../fonts/Montserrat-Bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
+
+/* Cuerpo de texto */
+@font-face {
+  font-family: "Lora";
+  src: url("../fonts/Lora-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("../fonts/Lora-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Plex Mono";
   src: url("../fonts/IBMPlexMono-Regular.woff2") format("woff2");
@@ -96,10 +107,18 @@
   --li-info: #2b6ef2;
   --li-whatsapp: #25d366;
 
-  /* Tipografía */
-  --f-sans: "Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Tipografía
+     Montserrat en títulos e interfaz, Lora en el cuerpo de texto.
+     La monoespaciada no es decorativa: precios, códigos y especificaciones
+     necesitan cifras tabulares para alinearse en columna.
+     La de píxeles retoma el cursor del isotipo. */
+  --f-titulo: "Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-cuerpo: "Lora", Georgia, "Times New Roman", serif;
   --f-mono: "Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
   --f-pixel: "Pixel LI", var(--f-mono);
+
+  /* Alias: la interfaz —botones, etiquetas, navegación— usa la de títulos. */
+  --f-sans: var(--f-titulo);
 
   /* Escala tipográfica — proporción 1.2, base 16 */
   --t-xs: 0.75rem;
@@ -179,7 +198,7 @@ html {
 }
 
 body {
-  font-family: var(--f-sans);
+  font-family: var(--f-cuerpo);
   font-size: var(--t-base);
   line-height: var(--lh-normal);
   color: var(--li-text);
@@ -228,10 +247,21 @@ h1,
 h2,
 h3,
 h4 {
+  font-family: var(--f-titulo);
   font-weight: 600;
   line-height: var(--lh-apretado);
   letter-spacing: -0.015em;
   text-wrap: balance;
+}
+
+/* Lora tiene una altura de x menor que la sans: el cuerpo necesita
+   un punto más para leerse igual de cómodo. */
+.pagina__cuerpo,
+.producto__resumen-texto,
+.woocommerce-Tabs-panel,
+.catalogo__bajada {
+  font-size: calc(var(--t-base) + 1px);
+  line-height: 1.7;
 }
 
 p {
@@ -332,9 +362,24 @@ p {
 }
 
 .marca__img {
-  height: 34px;
+  height: 26px;
   width: auto;
+  max-width: 190px;
   object-fit: contain;
+}
+
+@media (min-width: 480px) {
+  .marca__img {
+    height: 30px;
+    max-width: 240px;
+  }
+}
+
+@media (min-width: 900px) {
+  .marca__img {
+    height: 34px;
+    max-width: none;
+  }
 }
 
 .marca--texto {
@@ -1448,11 +1493,25 @@ input[type="submit"]:hover {
 }
 
 .pie__marca {
+  display: inline-block;
+  margin-bottom: var(--e-3);
+}
+
+.pie__marca .marca__img {
+  height: 32px;
+  max-width: 260px;
+}
+
+.pie__marca.marca--texto {
+  font-family: var(--f-titulo);
   font-size: var(--t-lg);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #fff;
-  margin-bottom: var(--e-2);
+}
+
+.pie__descripcion {
+  max-width: 42ch;
 }
 
 .pie p,

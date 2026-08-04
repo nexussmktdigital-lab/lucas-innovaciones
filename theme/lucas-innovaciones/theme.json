@@ -37,8 +37,13 @@
 			"fontFamilies": [
 				{
 					"slug": "sans",
-					"name": "Plex Sans",
-					"fontFamily": "\"Plex Sans\", ui-sans-serif, system-ui, sans-serif"
+					"name": "Montserrat",
+					"fontFamily": "\"Montserrat\", ui-sans-serif, system-ui, sans-serif"
+				},
+				{
+					"slug": "cuerpo",
+					"name": "Lora",
+					"fontFamily": "\"Lora\", Georgia, serif"
 				},
 				{
 					"slug": "mono",
@@ -76,9 +81,9 @@
 			"text": "var(--wp--preset--color--text)"
 		},
 		"typography": {
-			"fontFamily": "var(--wp--preset--font-family--sans)",
+			"fontFamily": "var(--wp--preset--font-family--cuerpo)",
 			"fontSize": "1rem",
-			"lineHeight": "1.55"
+			"lineHeight": "1.6"
 		},
 		"elements": {
 			"link": {
