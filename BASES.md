@@ -140,9 +140,55 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | D16 | **Imágenes: vía B para productos, vía C para banners** | Fotografía propia en el local para las 143 fichas + IA para banners e ilustraciones. Se descarta la vía A (assets de distribuidores) — queda disponible como atajo si algún distribuidor los ofrece. |
 | D17 | **Base de diseño: template "SWOO — Tech Mart"** (Figma Community, `jqYBUcohlipdHwwSoXPBrt`) | Se implementa como tema propio, no se importa. Buen encaje de rubro y de filtros de catálogo. Requiere trabajo adicional significativo: diseño mobile completo, recorte de secciones, y creación de la taxonomía de atributos. Ver sección 8.4. |
 | D18 | **El servicio técnico no se incluye en la web** | Decisión del cliente. La web vende productos únicamente. El servicio técnico sigue siendo un canal de mostrador y se registra en el POS como venta libre (D12). |
+| D22 | **Los precios en dólares se convierten a pesos automáticamente** con el blue de Córdoba | Plugin propio `lucas-cotizacion`. El precio en USD es la fuente de verdad (`_li_precio_usd`) y el precio en pesos se **reescribe** dos veces por día, sin margen y redondeando al millar. Se reescribe en lugar de convertir al mostrar porque **el POS lee el mismo `_price` que la web**, igual que el orden por precio, los filtros por rango, el carrito, Mercado Pago y los reportes. Ver sección 12. |
 | D21 | **Carrito y finalizar compra se quedan con los bloques de WooCommerce**, no se convierten a shortcodes clásicos | Ambas páginas ya estaban construidas con bloques. Se evaluó pasarlas al checkout clásico para tener control total por plantillas, y **se descartó**: el plugin de Mercado Pago declara compatibilidad `cart_checkout_blocks` y registra sus métodos vía `woocommerce_blocks_payment_method_type_registration`, y sobre todo **los bloques traen retiro en el local de forma nativa**, que para este negocio es el canal principal. El tema aporta el envoltorio y una hoja (`blocks.css`) que traduce los bloques al sistema visual. |
 | D20 | **Vidrios, hidrogeles y fundas pasan a productos variables por modelo** | Atributo `pa_modelo` con 40 modelos, derivados de los teléfonos con venta real. Piloto ejecutado sobre el producto #1 en rotación. Suma un toque al flujo del cajero en búsqueda por texto; con lector de código de barras va directo a la variación. Ver sección 4.1 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
 | D19 | **Las réplicas salen del catálogo online, quedan solo para mostrador** | Se creó la categoría **`Solo mostrador`** + visibilidad oculta. 6 productos procesados, marcas genuinas removidas. Siguen vendibles en el POS. Es la regla reutilizable para cualquier producto que no deba estar online. Ver sección 4.2 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
+
+---
+
+## 12. Precios en dólares (D22)
+
+**Diagnóstico.** 85 productos tenían precio menor a $3.000, y se partían en dos problemas distintos:
+
+| Grupo | Cantidad | Qué era |
+|---|---|---|
+| **iPhones** | **53 — todos, sin excepción** | Precios en USD (195 a 1.370) mezclados con el resto del catálogo en pesos, sin ninguna marca que los distinguiera |
+| **Productos a $1** | 32 | No es moneda: es **precio sin cargar**. Microondas, freidoras, un Moto G54 |
+
+El resto de los celulares sí estaba en pesos (Samsung A17 ~$410.000, Motorola G86 ~$382.000). La regla resultó limpia: **iPhone = dólares, todo lo demás = pesos**.
+
+### Fuente
+
+**InfoDolar, dólar blue de Córdoba, precio de venta.** La página tiene dos tablas y solo una sirve:
+
+| Tabla | Qué es | Valor al 03/08 |
+|---|---|---|
+| `id="Promedio"` | Promedio de casas de cambio — **NO es el blue** | 1.520,58 |
+| `id="BluePromedio"` | **Dólar Blue en Córdoba** | **1.571,00** |
+
+Apuntar a la primera daba precios ~3% más bajos. El blue de Córdoba está ~1% por encima del nacional, lo que justifica usar la fuente regional: en un iPhone de USD 1.370 son unos $22.000 de diferencia.
+
+**Respaldo automático:** si InfoDolar falla o cambia su HTML, se usa `dolarapi.com` (blue nacional) y se avisa en el escritorio tras 3 fallos seguidos.
+
+### Arquitectura
+
+- **Nunca se consulta la cotización al cargar una página.** Tarea programada dos veces por día (9:00 y 17:00, alineado con el horario del local), valor guardado en una opción.
+- **El USD es la fuente de verdad**; el precio en pesos se reescribe con la CRUD de WooCommerce.
+- **Sin margen**, redondeo **al millar**: USD 1.370 × 1.571 = 2.152.270 → **$2.152.000**.
+- La ficha muestra `USD 1.370,00 · cotización $1.571,00 del 03/08 20:35`. En el catálogo no aparece, para no ensuciar las tarjetas.
+
+### Guardas
+
+Ante cualquier duda **no se toca ningún precio**:
+
+- Fallo de ambas fuentes → se conserva la cotización anterior
+- Valor fuera de la banda 100–500.000 → se descarta
+- Salto mayor al 15% respecto de la anterior → se descarta y se avisa (salvo actualización manual)
+
+### Estado
+
+Aplicado en staging: **53 productos migrados y convertidos**. Se guardó `_li_precio_original_backup` en cada uno por si hay que revertir.
 
 ---
 
@@ -529,6 +575,8 @@ wp_novamira_oauth_refresh_tokens
 | **P26** | **Desactivar el modo "Próximamente" de WooCommerce en producción el día del lanzamiento.** `woocommerce_coming_soon = yes` y `woocommerce_store_pages_only = yes`: la tienda está detrás de una pantalla de "próximamente" desde siempre | 3 |
 | P27 | Faltaban las traducciones de WooCommerce (`wp-content/languages/plugins/`): la tienda salía en inglés. Instaladas en staging, **falta hacerlo en producción** | 3 |
 | P28 | Evaluar cambiar el locale de `es_ES` a `es_AR` — el castellano de España usa "vosotros" y términos distintos a los del Río de la Plata | 2 |
+| **P30** | **Verificar que el cron real del hosting alcance la tarea de cotización.** `DISABLE_WP_CRON = true` en producción **y** en staging: WordPress no dispara nada por sí solo. En producción hay evidencia de un cron de Ferozo funcionando (1.702 tareas completadas), pero hay que confirmar que corra al menos a las 9 y a las 17 | 3 |
+| **P31** | **32 productos con precio $1** — no es un problema de moneda: es precio sin cargar. No se pueden publicar así. Microondas Westinghouse, freidora Morley, Moto G54, entre otros | 1 |
 | P20 | Cerrar la sesión de caja huérfana `id 1`, abierta desde el 2025-04-18 | 1 |
 | P7 | Confirmar con YITH el comportamiento del plugin tras el vencimiento de licencia | 5 |
 | P8 | Política antisobreventa: reserva y/o buffer de stock | 3 |
