@@ -35,16 +35,16 @@
 
 /* Cuerpo de texto */
 @font-face {
-  font-family: "Lora";
-  src: url("../fonts/Lora-Regular.woff2") format("woff2");
+  font-family: "Lato";
+  src: url("../fonts/Lato-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Lora";
-  src: url("../fonts/Lora-SemiBold.woff2") format("woff2");
-  font-weight: 600;
+  font-family: "Lato";
+  src: url("../fonts/Lato-Bold.woff2") format("woff2");
+  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
@@ -108,12 +108,12 @@
   --li-whatsapp: #25d366;
 
   /* Tipografía
-     Montserrat en títulos e interfaz, Lora en el cuerpo de texto.
+     Montserrat en títulos e interfaz, Lato en el cuerpo de texto.
      La monoespaciada no es decorativa: precios, códigos y especificaciones
      necesitan cifras tabulares para alinearse en columna.
      La de píxeles retoma el cursor del isotipo. */
   --f-titulo: "Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --f-cuerpo: "Lora", Georgia, "Times New Roman", serif;
+  --f-cuerpo: "Lato", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono: "Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", monospace;
   --f-pixel: "Pixel LI", var(--f-mono);
 
@@ -254,14 +254,13 @@ h4 {
   text-wrap: balance;
 }
 
-/* Lora tiene una altura de x menor que la sans: el cuerpo necesita
-   un punto más para leerse igual de cómodo. */
+/* Bloques de lectura larga: descripciones y contenido de página.
+   Un interlineado algo mayor que el resto de la interfaz. */
 .pagina__cuerpo,
 .producto__resumen-texto,
 .woocommerce-Tabs-panel,
 .catalogo__bajada {
-  font-size: calc(var(--t-base) + 1px);
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
 p {

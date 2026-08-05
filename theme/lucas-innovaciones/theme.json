@@ -42,8 +42,8 @@
 				},
 				{
 					"slug": "cuerpo",
-					"name": "Lora",
-					"fontFamily": "\"Lora\", Georgia, serif"
+					"name": "Lato",
+					"fontFamily": "\"Lato\", ui-sans-serif, system-ui, sans-serif"
 				},
 				{
 					"slug": "mono",
