@@ -534,6 +534,15 @@ p {
   }
 }
 
+/* El contenedor es el marco del mega menú: así el panel queda alineado
+   con el resto de la página y no pegado al borde de la pantalla. */
+.nav__caja {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--e-5);
+}
+
 .nav__lista {
   display: flex;
   align-items: center;
@@ -578,6 +587,220 @@ p {
 .nav__lista a:hover::after,
 .nav__lista .current-menu-item > a::after {
   transform: scaleX(1);
+}
+
+/* Mega menú ------------------------------------------------------------
+   Se abre con :hover y :focus-within. El JavaScript sólo agrega el clic
+   para pantallas táctiles: si no carga, el menú funciona igual con mouse
+   y con teclado.
+   ---------------------------------------------------------------------- */
+
+.mega {
+  position: static;
+}
+
+.mega__disparador {
+  display: none;
+  align-items: center;
+  gap: var(--e-2);
+  height: 44px;
+  font-family: var(--f-sans);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--li-text);
+  cursor: pointer;
+}
+
+.mega__disparador .icono {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.mega__disparador .icono--chevron {
+  transition: transform var(--li-transicion);
+}
+
+.mega.esta-abierto .mega__disparador .icono--chevron {
+  transform: rotate(180deg);
+}
+
+.mega__cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-3);
+  padding: 10px var(--e-1);
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+/* En móvil se ve la lista de categorías madre y se entra a cada una: las
+   hijas quedan a un toque, en la propia página de la categoría. */
+.mega__panel {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .mega__disparador {
+    display: inline-flex;
+  }
+
+  .mega__caja {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    z-index: 60;
+    display: none;
+    min-block-size: min(760px, 82vh);
+    background: var(--li-card);
+    border: 1px solid var(--li-border);
+    border-block-start: 0;
+    border-end-start-radius: var(--li-radio);
+    border-end-end-radius: var(--li-radio);
+    box-shadow: 0 20px 44px rgba(10, 10, 10, 0.16);
+    overflow: hidden;
+  }
+
+  .mega:hover .mega__caja,
+  .mega:focus-within .mega__caja,
+  .mega.esta-abierto .mega__caja {
+    display: block;
+  }
+
+  .mega__riel {
+    inline-size: 268px;
+    max-block-size: min(760px, 82vh);
+    padding-block: var(--e-2);
+    background: var(--li-secondary);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Estático a propósito: el panel se posiciona contra la caja, no contra
+     el ítem, para ocupar todo el alto aunque la lista sea corta. */
+  .mega__item {
+    position: static;
+  }
+
+  .mega__cat {
+    padding: 9px var(--e-5);
+    color: var(--li-invert-mudo);
+    border-inline-start: 3px solid transparent;
+    transition: background var(--li-transicion), color var(--li-transicion), border-color var(--li-transicion);
+  }
+
+  .mega__cat .icono {
+    inline-size: 15px;
+    block-size: 15px;
+    opacity: 0.45;
+  }
+
+  .mega__item:hover .mega__cat,
+  .mega__item:focus-within .mega__cat {
+    background: var(--li-card);
+    border-inline-start-color: var(--li-primary);
+    color: var(--li-secondary);
+  }
+
+  .mega__panel {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 268px;
+    inset-inline-end: 0;
+    padding: var(--e-6) var(--e-7);
+    overflow-y: auto;
+  }
+
+  /* La primera queda abierta al entrar, como referencia. En cuanto el
+     puntero o el foco tocan el riel, manda la que se está señalando. */
+  .mega__item:first-child .mega__panel {
+    display: block;
+  }
+
+  .mega__riel:hover .mega__item:first-child .mega__panel,
+  .mega__riel:focus-within .mega__item:first-child .mega__panel {
+    display: none;
+  }
+
+  .mega__riel:hover .mega__item:hover .mega__panel,
+  .mega__riel:focus-within .mega__item:focus-within .mega__panel {
+    display: block;
+  }
+}
+
+.mega__panel-titulo {
+  font-family: var(--f-titulo);
+  font-size: var(--t-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.mega__panel-titulo:hover {
+  color: var(--li-primary-oscuro);
+}
+
+.mega__cols {
+  columns: 3;
+  column-gap: var(--e-7);
+  margin-block: var(--e-5);
+}
+
+.mega__grupo {
+  break-inside: avoid;
+  margin-block-end: var(--e-5);
+}
+
+.mega__grupo-titulo {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  padding-block: 3px;
+  font-family: var(--f-sans);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.mega__grupo ul {
+  margin-block-start: var(--e-1);
+}
+
+.mega__enlace {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  padding-block: 4px;
+  font-size: var(--t-sm);
+  color: var(--li-text-mudo);
+}
+
+.mega__grupo-titulo:hover,
+.mega__enlace:hover {
+  color: var(--li-primary-oscuro);
+}
+
+.mega__cuenta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--li-text-off);
+}
+
+.mega__todo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  font-family: var(--f-sans);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--li-primary-oscuro);
+}
+
+.mega__todo .icono {
+  inline-size: 15px;
+  block-size: 15px;
+}
+
+.mega__todo:hover {
+  color: var(--li-secondary);
 }
 
 /* Cinta de servicio ---------------------------------------------------- */
@@ -992,6 +1215,275 @@ input[type="submit"]:hover {
 .catalogo__conteo strong {
   color: var(--li-text);
   font-weight: 500;
+}
+
+/* Mientras se piden resultados nuevos, los viejos se apagan pero siguen
+   ocupando su lugar: nada salta y no aparece ningún cartel de espera. */
+.catalogo__cuerpo {
+  transition: opacity var(--li-transicion);
+}
+
+.catalogo__cuerpo.esta-cargando {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Subcategorías --------------------------------------------------------- */
+
+.subcats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+  margin-block-start: var(--e-4);
+}
+
+.subcat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  padding: 7px 14px;
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: 999px;
+  font-size: var(--t-sm);
+  font-weight: 500;
+  transition: border-color var(--li-transicion), background var(--li-transicion), color var(--li-transicion);
+}
+
+.subcat:hover {
+  background: var(--li-secondary);
+  border-color: var(--li-secondary);
+  color: #fff;
+}
+
+.subcat__cuenta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--li-text-off);
+}
+
+.subcat:hover .subcat__cuenta {
+  color: var(--li-primary);
+}
+
+/* Carrusel de marcas ----------------------------------------------------
+   Cada marca es un enlace de verdad: sin JavaScript filtra igual,
+   recargando la página.
+   ----------------------------------------------------------------------- */
+
+.marcas-carrusel {
+  margin-block: var(--e-5);
+  padding-block: var(--e-4);
+  border-block: 1px solid var(--li-border);
+}
+
+.marcas-carrusel__pista {
+  display: flex;
+  gap: var(--e-4);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+  padding-block-end: var(--e-2);
+}
+
+.marca-filtro {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--e-2);
+  inline-size: 96px;
+  scroll-snap-align: start;
+  text-align: center;
+}
+
+.marca-filtro__nombre {
+  font-family: var(--f-sans);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.marca-filtro__cuenta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--li-text-off);
+  margin-block-start: -4px;
+}
+
+.medallon--todas {
+  color: var(--li-text-2);
+}
+
+.medallon--todas .icono {
+  inline-size: 38%;
+  block-size: 38%;
+}
+
+.marca-filtro:hover .medallon {
+  border-color: var(--li-border-fuerte);
+}
+
+/* La seleccionada lleva anillo verde: se distingue del hover sin depender
+   del color del logo, que cada marca trae el suyo. */
+.marca-filtro.es-activa .medallon {
+  border-color: var(--li-primary);
+  box-shadow: 0 0 0 3px var(--li-verde-suave);
+}
+
+.marca-filtro.es-activa .marca-filtro__nombre {
+  color: var(--li-primary-oscuro);
+}
+
+/* Filtros puestos -------------------------------------------------------- */
+
+.activos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2);
+  margin-block-end: var(--e-4);
+}
+
+.activos__etq {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--li-text-mudo);
+}
+
+.activo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 12px;
+  background: var(--li-secondary);
+  border-radius: 999px;
+  color: #fff;
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+
+.activo .icono {
+  inline-size: 13px;
+  block-size: 13px;
+  opacity: 0.7;
+}
+
+.activo:hover {
+  background: var(--li-peligro);
+  color: #fff;
+}
+
+.activo:hover .icono {
+  opacity: 1;
+}
+
+.activos__limpiar {
+  font-size: var(--t-xs);
+  color: var(--li-text-mudo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.activos__limpiar:hover {
+  color: var(--li-peligro);
+}
+
+/* Facetas ---------------------------------------------------------------
+   Son enlaces con aspecto de casilla: sin JavaScript filtran igual.
+   ----------------------------------------------------------------------- */
+
+.faceta {
+  max-block-size: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.faceta li {
+  margin-block-end: 2px;
+}
+
+.faceta__op {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  padding: 5px 6px;
+  border-radius: var(--li-radio-sm);
+  font-size: var(--t-sm);
+  color: var(--li-text-2);
+  transition: background var(--li-transicion), color var(--li-transicion);
+}
+
+.faceta__op:hover {
+  background: var(--li-bg-alt);
+  color: var(--li-text);
+}
+
+.faceta__caja {
+  flex: 0 0 auto;
+  inline-size: 15px;
+  block-size: 15px;
+  border: 1px solid var(--li-border-fuerte);
+  border-radius: 4px;
+  background: var(--li-card);
+  transition: background var(--li-transicion), border-color var(--li-transicion);
+}
+
+.faceta__nombre {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.faceta__op.es-activa {
+  color: var(--li-text);
+  font-weight: 600;
+}
+
+.faceta__op.es-activa .faceta__caja {
+  background: var(--li-primary);
+  border-color: var(--li-primary-oscuro);
+  /* El tilde va acá y no en un SVG aparte: es un adorno, no contenido. */
+  background-image: linear-gradient(45deg, transparent 42%, var(--li-secondary) 42%, var(--li-secondary) 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 56%, var(--li-secondary) 56%, var(--li-secondary) 70%, transparent 70%);
+  background-size: 60% 60%, 60% 60%;
+  background-position: 22% 62%, 34% 44%;
+  background-repeat: no-repeat;
+}
+
+/* Orden ------------------------------------------------------------------ */
+
+.orden {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.orden__campo {
+  height: 38px;
+  padding: 0 32px 0 var(--e-3);
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio-sm);
+  font-size: var(--t-sm);
+  appearance: none;
+  cursor: pointer;
+}
+
+.orden .icono {
+  position: absolute;
+  inset-inline-end: 10px;
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--li-text-mudo);
+  pointer-events: none;
+}
+
+.lateral li.es-actual > a {
+  color: var(--li-primary-oscuro);
+  font-weight: 600;
 }
 
 .lateral {
@@ -1545,6 +2037,17 @@ input[type="submit"]:hover {
   justify-content: space-between;
 }
 
+.pie__credito a {
+  color: var(--li-invert-mudo);
+  border-block-end: 1px solid rgba(255, 255, 255, 0.28);
+  transition: color var(--li-transicion), border-color var(--li-transicion);
+}
+
+.pie__credito a:hover {
+  color: var(--li-primary);
+  border-block-end-color: var(--li-primary);
+}
+
 /* --------------------------------------------------------------------------
    14. Páginas
    -------------------------------------------------------------------------- */
@@ -1857,102 +2360,375 @@ input[type="submit"]:hover {
   background: var(--li-bg-alt);
 }
 
-/* Categorías -------------------------------------------------------------- */
+/* Banners ------------------------------------------------------------------
+   Se dibujan con texto real, no con un JPG: nítidos en cualquier pantalla,
+   legibles por el buscador y editables sin volver a exportar nada.
+   -------------------------------------------------------------------------- */
 
-.categorias {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--li-border);
-  border: 1px solid var(--li-border);
+.banners {
+  padding-block-start: var(--e-6);
+}
+
+.banners__pista {
   border-radius: var(--li-radio);
   overflow: hidden;
 }
 
+.banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: var(--e-4);
+  min-block-size: 240px;
+  padding: var(--e-6) var(--e-5);
+  background-size: cover;
+  background-position: center;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+@media (min-width: 800px) {
+  .banner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--e-6);
+    min-block-size: 320px;
+    padding: var(--e-7) var(--e-8);
+  }
+}
+
+.banner--negro {
+  background-color: var(--li-secondary);
+  color: #fff;
+}
+
+.banner--verde {
+  background-color: var(--li-primary);
+  color: var(--li-secondary);
+}
+
+.banner--claro {
+  background-color: var(--li-card);
+  color: var(--li-text);
+}
+
+/* Trama de píxeles: el gesto del isotipo, no un adorno de relleno. */
+.banner::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: 45%;
+  background-image: radial-gradient(currentColor 1.5px, transparent 1.5px);
+  background-size: 14px 14px;
+  opacity: 0.12;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to left, #000, transparent);
+  mask-image: linear-gradient(to left, #000, transparent);
+}
+
+/* Con arte de fondo la trama sobra y el texto necesita respaldo. */
+.banner--con-arte {
+  color: #fff;
+}
+
+.banner--con-arte::after {
+  display: none;
+}
+
+.banner--con-arte::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(10, 10, 10, 0.85), rgba(10, 10, 10, 0.2));
+}
+
+.banner__texto,
+.banner__sello {
+  position: relative;
+  z-index: 1;
+}
+
+.banner__kicker {
+  font-family: var(--f-pixel);
+  font-size: var(--t-lg);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.9;
+  margin-block-end: var(--e-3);
+}
+
+.banner__titulo {
+  font-family: var(--f-titulo);
+  font-weight: 700;
+  font-size: var(--t-2xl);
+  line-height: var(--lh-apretado);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.banner__bajada {
+  margin-block: var(--e-3) var(--e-5);
+  max-inline-size: 46ch;
+  font-size: var(--t-base);
+  opacity: 0.85;
+}
+
+.banner__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+}
+
+.banner__cta .icono {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.banner--negro .banner__cta,
+.banner--con-arte .banner__cta {
+  background: var(--li-primary);
+  color: var(--li-secondary);
+}
+
+.banner--verde .banner__cta,
+.banner--claro .banner__cta {
+  background: var(--li-secondary);
+  color: #fff;
+}
+
+.banner--negro .banner__cta:hover,
+.banner--con-arte .banner__cta:hover {
+  background: #fff;
+  color: var(--li-secondary);
+}
+
+.banner--verde .banner__cta:hover,
+.banner--claro .banner__cta:hover {
+  background: var(--li-primary);
+  color: var(--li-secondary);
+}
+
+.banner__sello {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+}
+
+@media (min-width: 800px) {
+  .banner__sello {
+    align-items: flex-end;
+    text-align: end;
+  }
+}
+
+.banner__sello-num {
+  font-family: var(--f-titulo);
+  font-weight: 700;
+  font-size: clamp(2.5rem, 7vw, 4.25rem);
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.banner--negro .banner__sello-num,
+.banner--con-arte .banner__sello-num {
+  color: var(--li-primary);
+}
+
+.banner--claro .banner__sello-num {
+  color: var(--li-primary-oscuro);
+}
+
+.banner__sello-etq {
+  margin-block-start: var(--e-2);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  opacity: 0.7;
+}
+
+/* Controles ---------------------------------------------------------------- */
+
+.banners__control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--e-3);
+  margin-block-start: var(--e-3);
+}
+
+.banners__flecha {
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  padding: 0;
+  border: 1px solid var(--li-border-fuerte);
+  border-radius: 50%;
+  background: var(--li-card);
+  color: var(--li-text-2);
+  cursor: pointer;
+  transition: background var(--li-transicion), border-color var(--li-transicion), color var(--li-transicion);
+}
+
+.banners__flecha svg {
+  inline-size: 17px;
+  block-size: 17px;
+}
+
+.banners__flecha:hover {
+  background: var(--li-secondary);
+  border-color: var(--li-secondary);
+  color: var(--li-primary);
+}
+
+.banners__puntos {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+}
+
+.banners__punto {
+  inline-size: 8px;
+  block-size: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--li-border-fuerte);
+  cursor: pointer;
+  transition: inline-size var(--li-transicion), background var(--li-transicion);
+}
+
+.banners__punto.es-activo {
+  inline-size: 26px;
+  background: var(--li-secondary);
+}
+
+/* Medallón — el círculo de categorías y marcas ---------------------------- */
+
+.medallon {
+  display: grid;
+  place-items: center;
+  inline-size: clamp(64px, 18vw, 88px);
+  block-size: clamp(64px, 18vw, 88px);
+  border-radius: 50%;
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  overflow: hidden;
+  transition: background var(--li-transicion), border-color var(--li-transicion), color var(--li-transicion);
+}
+
+.medallon__img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* Un logo no se recorta: se apoya sobre blanco con aire alrededor. */
+.medallon--logo {
+  background: #fff;
+}
+
+/* Casi todos los logos son logotipos apaisados, no isotipos cuadrados: una
+   franja horizontal aprovecha el círculo mucho mejor que un cuadrado, y el
+   tope de alto evita que uno cuadrado toque los bordes. */
+.medallon--logo .medallon__img {
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 80%;
+  max-block-size: 58%;
+  object-fit: contain;
+}
+
+.medallon__svg {
+  inline-size: 40%;
+  block-size: 40%;
+  color: var(--li-secondary);
+  transition: color var(--li-transicion);
+}
+
+.medallon--inicial {
+  font-family: var(--f-titulo);
+  font-weight: 700;
+  font-size: var(--t-xl);
+  color: var(--li-text-2);
+}
+
+/* Categorías -------------------------------------------------------------- */
+
+.categorias,
+.marcas {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--e-5) var(--e-2);
+}
+
 @media (min-width: 640px) {
   .categorias {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .marcas {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1000px) {
-  .categorias {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+  .marcas {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 }
 
-.categoria__enlace {
+.categoria__enlace,
+.marca-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
   gap: var(--e-2);
-  min-height: 76px;
-  padding: var(--e-3) var(--e-4);
-  background: var(--li-card);
-  transition: background var(--li-transicion), color var(--li-transicion);
+  text-align: center;
 }
 
-.categoria__enlace:hover {
-  background: var(--li-secondary);
-  color: #fff;
-}
-
-.categoria__nombre {
-  font-size: var(--t-sm);
-  font-weight: 500;
-  line-height: 1.3;
-}
-
-.categoria__cuenta {
-  flex: 0 0 auto;
-  font-family: var(--f-mono);
+.categoria__nombre,
+.marca-item__nombre {
+  font-family: var(--f-sans);
   font-size: var(--t-xs);
-  color: var(--li-text-off);
-  transition: color var(--li-transicion);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
 }
 
-.categoria__enlace:hover .categoria__cuenta {
-  color: var(--li-primary);
-}
-
-/* Marcas ------------------------------------------------------------------ */
-
-.marcas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--e-2);
-}
-
-.marca-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--e-2);
-  padding: 8px 14px;
-  background: var(--li-card);
-  border: 1px solid var(--li-border);
-  border-radius: 999px;
-  transition: border-color var(--li-transicion), background var(--li-transicion), color var(--li-transicion);
-}
-
-.marca-chip:hover {
-  background: var(--li-secondary);
-  border-color: var(--li-secondary);
-  color: #fff;
-}
-
-.marca-chip__nombre {
-  font-size: var(--t-sm);
-  font-weight: 500;
-}
-
-.marca-chip__cuenta {
+.categoria__cuenta,
+.marca-item__cuenta {
   font-family: var(--f-mono);
   font-size: 11px;
   color: var(--li-text-off);
+  margin-block-start: -2px;
 }
 
-.marca-chip:hover .marca-chip__cuenta {
+.categoria__enlace:hover .medallon,
+.marca-item:hover .medallon {
+  background: var(--li-secondary);
+  border-color: var(--li-secondary);
+}
+
+.categoria__enlace:hover .medallon__svg,
+.marca-item:hover .medallon--inicial {
   color: var(--li-primary);
+}
+
+/* Un logo sobre fondo negro se pierde: ese círculo se queda en blanco. */
+.marca-item:hover .medallon--logo {
+  background: #fff;
+  border-color: var(--li-secondary);
+}
+
+.categoria__enlace:hover .categoria__cuenta,
+.marca-item:hover .marca-item__cuenta {
+  color: var(--li-text-2);
 }
 
 /* --------------------------------------------------------------------------

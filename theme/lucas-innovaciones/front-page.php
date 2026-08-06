@@ -85,6 +85,11 @@ $li_local  = li_local();
 	</section>
 
 	<!-- ---------------------------------------------------------------
+		 Destacados
+		 --------------------------------------------------------------- -->
+	<?php li_banners_render(); ?>
+
+	<!-- ---------------------------------------------------------------
 		 Retiro en el local — la propuesta más fuerte del negocio
 		 --------------------------------------------------------------- -->
 	<?php if ( $li_local['direccion'] ) : ?>
@@ -130,6 +135,7 @@ $li_local  = li_local();
 				<?php foreach ( $li_datos['categorias_top'] as $c ) : ?>
 					<li class="categoria">
 						<a class="categoria__enlace" href="<?php echo esc_url( $c['url'] ); ?>">
+							<?php li_medallon_categoria( $c ); ?>
 							<span class="categoria__nombre"><?php echo esc_html( $c['nombre'] ); ?></span>
 							<span class="categoria__cuenta"><?php echo esc_html( (string) $c['cuenta'] ); ?></span>
 						</a>
@@ -170,9 +176,10 @@ $li_local  = li_local();
 			<ul class="marcas">
 				<?php foreach ( $li_datos['marcas_top'] as $m ) : ?>
 					<li>
-						<a class="marca-chip" href="<?php echo esc_url( $m['url'] ); ?>">
-							<span class="marca-chip__nombre"><?php echo esc_html( $m['nombre'] ); ?></span>
-							<span class="marca-chip__cuenta"><?php echo esc_html( (string) $m['cuenta'] ); ?></span>
+						<a class="marca-item" href="<?php echo esc_url( $m['url'] ); ?>">
+							<?php li_medallon_marca( $m ); ?>
+							<span class="marca-item__nombre"><?php echo esc_html( $m['nombre'] ); ?></span>
+							<span class="marca-item__cuenta"><?php echo esc_html( (string) $m['cuenta'] ); ?></span>
 						</a>
 					</li>
 				<?php endforeach; ?>

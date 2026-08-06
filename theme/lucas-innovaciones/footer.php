@@ -80,7 +80,13 @@ $li_cp   = get_option( 'woocommerce_store_postcode', '' );
 		</div>
 
 		<div class="pie__base">
-			<span>&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> <?php bloginfo( 'name' ); ?></span>
+			<span>
+				&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> <?php bloginfo( 'name' ); ?>
+				<span class="pie__credito">
+					<?php esc_html_e( '· Sitio web realizado por', 'lucasinnovaciones' ); ?>
+					<a href="https://nexuss.com.ar/" target="_blank" rel="noopener">Nexuss Digital Agency</a>
+				</span>
+			</span>
 			<span><?php esc_html_e( 'Todos los derechos reservados', 'lucasinnovaciones' ); ?></span>
 		</div>
 	</div>

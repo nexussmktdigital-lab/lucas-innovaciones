@@ -88,6 +88,8 @@ function li_icono( string $nombre ): void {
 		'menu'     => '<path d="M4 7h16M4 12h16M4 17h16"/>',
 		'cerrar'   => '<path d="m6 6 12 12M18 6 6 18"/>',
 		'flecha'   => '<path d="M5 12h14M13 6l6 6-6 6"/>',
+		'chevron'  => '<path d="m6 9 6 6 6-6"/>',
+		'chevron-der' => '<path d="m9 6 6 6-6 6"/>',
 		'filtro'   => '<path d="M4 6h16M7 12h10M10 18h4"/>',
 		'whatsapp' => '<path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.3A10 10 0 1 0 12 2Z"/><path d="M8.5 9.5c0 4 3 6.5 6.2 6.8l1-1.6-2.1-1-1 1a5 5 0 0 1-2.2-2.3l1-1-1-2-1.6 1a2 2 0 0 0-.3 1.1Z"/>',
 	);

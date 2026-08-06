@@ -49,46 +49,6 @@ defined( 'ABSPATH' ) || exit;
 	</div>
 
 	<nav class="nav" id="li-nav" aria-label="<?php esc_attr_e( 'Menú principal', 'lucasinnovaciones' ); ?>">
-		<div class="contenedor">
-			<?php
-			if ( has_nav_menu( 'principal' ) ) {
-				wp_nav_menu(
-					array(
-						'theme_location' => 'principal',
-						'container'      => false,
-						'menu_class'     => 'nav__lista',
-						'depth'          => 1,
-					)
-				);
-			} else {
-				// Sin menú asignado se muestran las categorías con más productos,
-				// para que la navegación nunca quede vacía.
-				$cats = get_terms(
-					array(
-						'taxonomy'   => 'product_cat',
-						'hide_empty' => true,
-						'orderby'    => 'count',
-						'order'      => 'DESC',
-						'number'     => 8,
-						'exclude'    => array( get_option( 'default_product_cat' ) ),
-					)
-				);
-				if ( $cats && ! is_wp_error( $cats ) ) {
-					echo '<ul class="nav__lista">';
-					foreach ( $cats as $c ) {
-						if ( 'solo-mostrador' === $c->slug ) {
-							continue;
-						}
-						printf(
-							'<li><a href="%s">%s</a></li>',
-							esc_url( (string) get_term_link( $c ) ),
-							esc_html( $c->name )
-						);
-					}
-					echo '</ul>';
-				}
-			}
-			?>
-		</div>
+		<?php li_nav_render(); ?>
 	</nav>
 </header>

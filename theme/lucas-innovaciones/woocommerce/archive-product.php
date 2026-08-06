@@ -2,6 +2,10 @@
 /**
  * Catálogo: tienda, categorías, marcas y atributos.
  *
+ * Una categoría suma banners, subcategorías y el carrusel de marcas. La
+ * tienda entera y los archivos de marca o atributo usan la misma grilla,
+ * sin esos agregados.
+ *
  * @package LucasInnovaciones
  */
 
@@ -10,7 +14,14 @@ defined( 'ABSPATH' ) || exit;
 get_header( 'shop' );
 
 do_action( 'woocommerce_before_main_content' );
+
+$li_obj = is_product_taxonomy() ? get_queried_object() : null;
+$li_cat = ( $li_obj instanceof WP_Term && 'product_cat' === $li_obj->taxonomy ) ? $li_obj : null;
 ?>
+
+<?php if ( $li_cat ) : ?>
+	<?php li_banners_render( li_banners_categoria( $li_cat ) ); ?>
+<?php endif; ?>
 
 <div class="catalogo__cabecera">
 	<h1 class="catalogo__titulo">
@@ -18,18 +29,24 @@ do_action( 'woocommerce_before_main_content' );
 	</h1>
 
 	<?php
-	$li_desc = '';
-	if ( is_product_taxonomy() ) {
-		$li_term = get_queried_object();
-		if ( $li_term && ! empty( $li_term->description ) ) {
-			$li_desc = $li_term->description;
-		}
-	}
+	$li_desc = $li_obj && ! empty( $li_obj->description ) ? $li_obj->description : '';
 	if ( $li_desc ) :
 		?>
 		<div class="catalogo__bajada"><?php echo wp_kses_post( wpautop( $li_desc ) ); ?></div>
 	<?php endif; ?>
+
+	<?php
+	if ( $li_cat ) {
+		li_subcategorias( $li_cat );
+	}
+	?>
 </div>
+
+<?php
+if ( $li_cat ) {
+	li_carrusel_marcas( $li_cat );
+}
+?>
 
 <div class="catalogo">
 
@@ -41,67 +58,33 @@ do_action( 'woocommerce_before_main_content' );
 				<h2 class="filtro__titulo"><?php esc_html_e( 'Categorías', 'lucasinnovaciones' ); ?></h2>
 				<ul>
 					<?php
-					$li_cats = get_terms(
-						array(
-							'taxonomy'   => 'product_cat',
-							'hide_empty' => true,
-							'orderby'    => 'count',
-							'order'      => 'DESC',
-							'number'     => 18,
-						)
-					);
-					if ( $li_cats && ! is_wp_error( $li_cats ) ) {
-						foreach ( $li_cats as $li_c ) {
-							if ( 'solo-mostrador' === $li_c->slug ) {
-								continue;
-							}
-							printf(
-								'<li><a href="%s">%s <span class="count">%d</span></a></li>',
-								esc_url( (string) get_term_link( $li_c ) ),
-								esc_html( $li_c->name ),
-								(int) $li_c->count
-							);
-						}
+					foreach ( array_slice( li_lista_lateral( $li_cat ), 0, 20 ) as $li_c ) {
+						printf(
+							'<li%s><a href="%s">%s <span class="count">%d</span></a></li>',
+							$li_cat && $li_c['slug'] === $li_cat->slug ? ' class="es-actual"' : '',
+							esc_url( $li_c['url'] ),
+							esc_html( $li_c['nombre'] ),
+							(int) $li_c['cuenta']
+						);
 					}
 					?>
 				</ul>
 			</section>
+
+			<div data-li-facetas>
+				<?php li_panel_filtros(); ?>
+			</div>
 		<?php endif; ?>
 	</aside>
 
-	<div class="catalogo__cuerpo">
-		<?php if ( woocommerce_product_loop() ) : ?>
+	<div class="catalogo__cuerpo" data-li-resultados>
+		<?php
+		if ( $li_cat ) {
+			li_filtros_activos( $li_cat );
+		}
 
-			<div class="catalogo__barra">
-				<?php woocommerce_result_count(); ?>
-				<?php woocommerce_catalog_ordering(); ?>
-			</div>
-
-			<?php
-			woocommerce_product_loop_start();
-
-			if ( wc_get_loop_prop( 'total' ) ) {
-				while ( have_posts() ) {
-					the_post();
-					do_action( 'woocommerce_shop_loop' );
-					wc_get_template_part( 'content', 'product' );
-				}
-			}
-
-			woocommerce_product_loop_end();
-
-			do_action( 'woocommerce_after_shop_loop' );
-			?>
-
-		<?php else : ?>
-
-			<div class="vacio">
-				<p class="vacio__titulo"><?php esc_html_e( 'Nada por acá', 'lucasinnovaciones' ); ?></p>
-				<p><?php esc_html_e( 'No hay productos que coincidan con esta búsqueda. Probá quitando algún filtro.', 'lucasinnovaciones' ); ?></p>
-				<a class="boton" href="<?php echo esc_url( wc_get_page_permalink( 'shop' ) ); ?>"><?php esc_html_e( 'Ver todo el catálogo', 'lucasinnovaciones' ); ?></a>
-			</div>
-
-		<?php endif; ?>
+		li_render_resultados( $GLOBALS['wp_query'] );
+		?>
 	</div>
 
 </div>

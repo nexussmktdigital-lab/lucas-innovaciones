@@ -59,8 +59,10 @@ function li_datos_portada(): array {
 			}
 			$categorias_top[] = array(
 				'nombre' => $c->name,
+				'slug'   => $c->slug,
 				'cuenta' => (int) $c->count,
 				'url'    => (string) get_term_link( $c ),
+				'img'    => li_termino_imagen( $c->term_id ) ?: li_categoria_imagen( $c->slug ),
 			);
 		}
 	}
@@ -79,10 +81,17 @@ function li_datos_portada(): array {
 	$marcas_top = array();
 	if ( $brands && ! is_wp_error( $brands ) ) {
 		foreach ( $brands as $b ) {
+			// La imagen del término gana; si no hay, el logo que trae el tema.
+			$propia = li_termino_imagen( $b->term_id );
+			$logo   = li_marca_logo( $b->slug );
+
 			$marcas_top[] = array(
 				'nombre' => $b->name,
+				'slug'   => $b->slug,
 				'cuenta' => (int) $b->count,
 				'url'    => (string) get_term_link( $b ),
+				'img'    => $propia ?: $logo['url'],
+				'fondo'  => $propia ? '' : $logo['fondo'],
 			);
 		}
 	}
