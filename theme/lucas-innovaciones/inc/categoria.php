@@ -50,6 +50,12 @@ function li_aplicar_filtros( WP_Query $q ): void {
 
 	$marcas    = li_filtro_marcas();
 	$atributos = li_filtro_atributos();
+	$precio    = li_filtro_precio();
+
+	if ( li_hay_precio( $precio ) ) {
+		// Lo lee `li_precio_clausulas()`, que es quien arma el JOIN.
+		$q->set( 'li_precio', $precio );
+	}
 
 	if ( ! $marcas && ! $atributos ) {
 		return;
@@ -339,9 +345,10 @@ function li_carrusel_marcas( WP_Term $term ): void {
 	?>
 	<section class="marcas-carrusel" aria-label="<?php esc_attr_e( 'Filtrar por marca', 'lucasinnovaciones' ); ?>">
 		<div class="marcas-carrusel__pista" data-li-carrusel>
+			<?php // "Todas" saca las marcas y nada más: para vaciar todo está "Limpiar todo". ?>
 			<a
 				class="marca-filtro<?php echo $activas ? '' : ' es-activa'; ?>"
-				href="<?php echo esc_url( (string) get_term_link( $term ) ); ?>"
+				href="<?php echo esc_url( li_url_con( array(), li_filtro_atributos() ) ); ?>"
 				data-li-filtro
 			>
 				<span class="medallon medallon--todas"><?php li_icono( 'filtro' ); ?></span>
@@ -633,8 +640,9 @@ function li_fragmento_resultados(): void {
 function li_filtros_activos( WP_Term $term ): void {
 	$activas = li_filtro_marcas();
 	$attrs   = li_filtro_atributos();
+	$precio  = li_filtro_precio();
 
-	if ( ! $activas && ! $attrs ) {
+	if ( ! $activas && ! $attrs && ! li_hay_precio( $precio ) ) {
 		return;
 	}
 	?>
@@ -655,6 +663,7 @@ function li_filtros_activos( WP_Term $term ): void {
 		<?php endforeach; ?>
 
 		<?php li_fichas_atributos(); ?>
+		<?php li_ficha_precio(); ?>
 
 		<a class="activos__limpiar" href="<?php echo esc_url( (string) get_term_link( $term ) ); ?>" data-li-filtro>
 			<?php esc_html_e( 'Limpiar todo', 'lucasinnovaciones' ); ?>

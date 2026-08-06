@@ -1453,6 +1453,80 @@ input[type="submit"]:hover {
   background-repeat: no-repeat;
 }
 
+/* Precio ----------------------------------------------------------------
+   Los tramos de arriba resuelven el caso normal; las cajas están para el
+   que ya sabe cuánto quiere gastar.
+   ----------------------------------------------------------------------- */
+
+.precio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-block-start: var(--e-3);
+}
+
+.precio__campo {
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+
+.precio__campo input {
+  inline-size: 100%;
+  height: 34px;
+  padding: 0 8px;
+  background: var(--li-card);
+  border: 1px solid var(--li-border);
+  border-radius: var(--li-radio-sm);
+  font-family: var(--f-mono);
+  font-size: var(--t-xs);
+  color: var(--li-text);
+}
+
+/* Las flechitas del campo numérico no entran en 34 px de alto. */
+.precio__campo input::-webkit-outer-spin-button,
+.precio__campo input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.precio__campo input {
+  appearance: textfield;
+}
+
+.precio__campo input:focus-visible {
+  border-color: var(--li-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--li-verde-suave);
+}
+
+.precio__guion {
+  flex: 0 0 auto;
+  color: var(--li-text-off);
+}
+
+.precio__ir {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  background: var(--li-secondary);
+  border: 0;
+  border-radius: var(--li-radio-sm);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--li-transicion);
+}
+
+.precio__ir .icono {
+  inline-size: 15px;
+  block-size: 15px;
+}
+
+.precio__ir:hover {
+  background: var(--li-primary-oscuro);
+}
+
 /* Orden ------------------------------------------------------------------ */
 
 .orden {

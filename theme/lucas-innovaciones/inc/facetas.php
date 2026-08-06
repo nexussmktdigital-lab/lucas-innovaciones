@@ -88,9 +88,10 @@ function li_url_listado(): string {
  *
  * @param string[]               $marcas     Slugs de marca.
  * @param array<string,string[]> $atributos  Taxonomía => slugs.
+ * @param array|null             $precio     Rango; `null` conserva el puesto.
  * @return string
  */
-function li_url_con( array $marcas, array $atributos ): string {
+function li_url_con( array $marcas, array $atributos, ?array $precio = null ): string {
 	$args = array();
 
 	if ( $marcas ) {
@@ -101,6 +102,17 @@ function li_url_con( array $marcas, array $atributos ): string {
 		if ( $slugs ) {
 			$args[ li_attr_param( $tax ) ] = implode( ',', $slugs );
 		}
+	}
+
+	// Tocar una marca o una característica no debe tirar el precio elegido:
+	// sin rango explícito se arrastra el que ya estaba.
+	$rango = null === $precio ? li_filtro_precio() : $precio;
+
+	if ( isset( $rango['min'] ) ) {
+		$args['precio_min'] = (string) (int) $rango['min'];
+	}
+	if ( isset( $rango['max'] ) ) {
+		$args['precio_max'] = (string) (int) $rango['max'];
 	}
 
 	// El orden elegido sobrevive a cualquier cambio de filtro.
@@ -146,12 +158,14 @@ function li_url_alternar_atributo( string $tax, string $slug ): string {
  * filtros puestos, todas esas veces piden exactamente lo mismo.
  *
  * @param array<string,string[]> $atributos Taxonomía => slugs.
+ * @param array|null             $precio    Rango; `null` usa el puesto.
  * @return int[]
  */
-function li_ids_contexto( array $atributos ): array {
+function li_ids_contexto( array $atributos, ?array $precio = null ): array {
 	static $memoria = array();
 
-	$clave = md5( (string) wp_json_encode( $atributos ) );
+	$rango = null === $precio ? li_filtro_precio() : $precio;
+	$clave = md5( (string) wp_json_encode( array( $atributos, $rango ) ) );
 	if ( isset( $memoria[ $clave ] ) ) {
 		return $memoria[ $clave ];
 	}
@@ -202,6 +216,7 @@ function li_ids_contexto( array $atributos ): array {
 		'fields'         => 'ids',
 		'no_found_rows'  => true,
 		'tax_query'      => $tax_query, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+		'li_precio'      => $rango,
 	);
 
 	if ( is_search() ) {
@@ -310,13 +325,11 @@ function li_facetas(): array {
  * Son enlaces, no casillas: sin JavaScript filtran igual, recargando.
  */
 function li_panel_filtros(): void {
-	$facetas = li_facetas();
+	// El precio va primero porque es el filtro que más se toca, y porque no
+	// depende de que el producto tenga atributos cargados: está siempre.
+	li_panel_precio();
 
-	if ( ! $facetas ) {
-		return;
-	}
-
-	foreach ( $facetas as $tax => $f ) :
+	foreach ( li_facetas() as $tax => $f ) :
 		?>
 		<section class="filtro">
 			<h2 class="filtro__titulo"><?php echo esc_html( $f['label'] ); ?></h2>

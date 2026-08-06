@@ -25,4 +25,5 @@ if ( class_exists( 'WooCommerce' ) ) {
 	require_once LI_DIR . '/inc/menu.php';
 	require_once LI_DIR . '/inc/categoria.php';
 	require_once LI_DIR . '/inc/facetas.php';
+	require_once LI_DIR . '/inc/precio.php';
 }

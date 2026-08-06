@@ -148,6 +148,25 @@
       ir(a.href, true);
     });
 
+    // El formulario de precio ya lleva los demás filtros como campos
+    // ocultos, así que la URL se arma entera con lo que él manda. Sin JS
+    // se envía solo y llega al mismo lugar.
+    document.addEventListener("submit", function (e) {
+      var f = e.target;
+      if (!f.matches || !f.matches("[data-li-precio]")) return;
+
+      e.preventDefault();
+
+      var u = new URL(f.getAttribute("action"), window.location.href);
+      u.search = "";
+
+      new FormData(f).forEach(function (v, k) {
+        if (String(v).trim() !== "") u.searchParams.set(k, v);
+      });
+
+      ir(u.toString(), true);
+    });
+
     document.addEventListener("change", function (e) {
       if (!e.target.matches || !e.target.matches("[data-li-orden]")) return;
 
