@@ -1,0 +1,25 @@
+# El sitio se despliega por MCP archivo por archivo, y cada archivo se
+# verifica comparando su MD5 con el de la copia local. Si git dejara CRLF al
+# hacer checkout, ese hash no coincidiria nunca aunque el contenido fuera
+# identico, y el repo y el servidor divergirian sin que nada avise. De ahi
+# el eol=lf: no es preferencia de estilo, es lo que hace verificable el
+# despliegue.
+
+* text=auto eol=lf
+
+# Los binarios no se normalizan: cualquier cambio de bytes los rompe.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.zip   binary
+*.gz    binary
+*.pdf   binary
+*.mo    binary
