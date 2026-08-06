@@ -43,8 +43,8 @@ $li_cat = ( $li_obj instanceof WP_Term && 'product_cat' === $li_obj->taxonomy ) 
 </div>
 
 <?php
-if ( $li_cat ) {
-	li_carrusel_marcas( $li_cat );
+if ( li_hay_carrusel( $li_obj ) ) {
+	li_carrusel_marcas();
 }
 ?>
 
@@ -79,10 +79,7 @@ if ( $li_cat ) {
 
 	<div class="catalogo__cuerpo" data-li-resultados>
 		<?php
-		if ( $li_cat ) {
-			li_filtros_activos( $li_cat );
-		}
-
+		li_filtros_activos();
 		li_render_resultados( $GLOBALS['wp_query'] );
 		?>
 	</div>

@@ -73,6 +73,12 @@ function li_filtro_atributos(): array {
  * @return string
  */
 function li_url_listado(): string {
+	// La búsqueda no vive en una página: es la raíz con `s` y `post_type`,
+	// que agrega li_args_base().
+	if ( is_search() ) {
+		return home_url( '/' );
+	}
+
 	$obj = get_queried_object();
 
 	if ( $obj instanceof WP_Term ) {
@@ -84,6 +90,26 @@ function li_url_listado(): string {
 }
 
 /**
+ * Lo que todo enlace del listado tiene que arrastrar sí o sí.
+ *
+ * En una categoría no hace falta nada: la categoría está en la ruta. En una
+ * búsqueda, en cambio, el término vive en la URL, y si un filtro no lo copia
+ * el visitante pierde lo que buscó al tocar una marca.
+ *
+ * @return array<string,string>
+ */
+function li_args_base(): array {
+	if ( ! is_search() ) {
+		return array();
+	}
+
+	return array(
+		's'         => get_search_query( false ),
+		'post_type' => 'product',
+	);
+}
+
+/**
  * Arma la URL del listado con un juego completo de filtros.
  *
  * @param string[]               $marcas     Slugs de marca.
@@ -92,7 +118,7 @@ function li_url_listado(): string {
  * @return string
  */
 function li_url_con( array $marcas, array $atributos, ?array $precio = null ): string {
-	$args = array();
+	$args = li_args_base();
 
 	if ( $marcas ) {
 		$args['marca'] = implode( ',', $marcas );
@@ -159,13 +185,15 @@ function li_url_alternar_atributo( string $tax, string $slug ): string {
  *
  * @param array<string,string[]> $atributos Taxonomía => slugs.
  * @param array|null             $precio    Rango; `null` usa el puesto.
+ * @param string[]|null          $marcas    Marcas; `null` usa las puestas.
  * @return int[]
  */
-function li_ids_contexto( array $atributos, ?array $precio = null ): array {
+function li_ids_contexto( array $atributos, ?array $precio = null, ?array $marcas = null ): array {
 	static $memoria = array();
 
-	$rango = null === $precio ? li_filtro_precio() : $precio;
-	$clave = md5( (string) wp_json_encode( array( $atributos, $rango ) ) );
+	$rango  = null === $precio ? li_filtro_precio() : $precio;
+	$marcas = null === $marcas ? li_filtro_marcas() : $marcas;
+	$clave  = md5( (string) wp_json_encode( array( $atributos, $rango, $marcas ) ) );
 	if ( isset( $memoria[ $clave ] ) ) {
 		return $memoria[ $clave ];
 	}
@@ -190,7 +218,6 @@ function li_ids_contexto( array $atributos, ?array $precio = null ): array {
 		);
 	}
 
-	$marcas = li_filtro_marcas();
 	if ( $marcas ) {
 		$tax_query[] = array(
 			'taxonomy' => 'product_brand',

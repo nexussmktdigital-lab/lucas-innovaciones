@@ -109,11 +109,13 @@ function li_url_filtro( WP_Term $term, array $marcas ): string {
 /**
  * URL que resulta de encender o apagar una marca sobre el estado actual.
  *
- * @param WP_Term $term Categoría.
- * @param string  $slug Marca a alternar.
+ * No recibe la categoría porque no le hace falta: `li_url_con()` saca la base
+ * del listado en curso, sea una categoría o una búsqueda.
+ *
+ * @param string $slug Marca a alternar.
  * @return string
  */
-function li_url_alternar_marca( WP_Term $term, string $slug ): string {
+function li_url_alternar_marca( string $slug ): string {
 	$actuales = li_filtro_marcas();
 
 	$nuevas = in_array( $slug, $actuales, true )
@@ -203,6 +205,94 @@ function li_marcas_de_categoria( WP_Term $term ): array {
 	set_transient( $clave, $out, 6 * HOUR_IN_SECONDS );
 
 	return $out;
+}
+
+/**
+ * Marcas presentes en un conjunto de productos.
+ *
+ * La versión por categoría de arriba recorre la rama entera y se cachea; ésta
+ * trabaja sobre los identificadores que le pasen, que es lo que hace falta en
+ * una búsqueda, donde el conjunto cambia con cada término y no hay nada que
+ * valga la pena guardar.
+ *
+ * @param int[] $ids Identificadores de producto.
+ * @return array<int,array<string,mixed>>
+ */
+function li_marcas_de_ids( array $ids ): array {
+	if ( ! $ids ) {
+		return array();
+	}
+
+	global $wpdb;
+
+	$lista = implode( ',', array_map( 'absint', $ids ) );
+
+	$filas = $wpdb->get_results(
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		"SELECT b.term_id, b.name, b.slug, COUNT(DISTINCT tr.object_id) AS n
+		 FROM {$wpdb->term_relationships} tr
+		 JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+		      AND tt.taxonomy = 'product_brand'
+		 JOIN {$wpdb->terms} b ON b.term_id = tt.term_id
+		 WHERE tr.object_id IN ({$lista})
+		 GROUP BY b.term_id, b.name, b.slug
+		 ORDER BY n DESC, b.name ASC",
+		// phpcs:enable
+		ARRAY_A
+	);
+
+	$out = array();
+	foreach ( $filas as $f ) {
+		$logo = li_marca_logo( $f['slug'] );
+
+		$out[] = array(
+			'nombre' => $f['name'],
+			'slug'   => $f['slug'],
+			'cuenta' => (int) $f['n'],
+			'img'    => li_termino_imagen( (int) $f['term_id'] ) ?: $logo['url'],
+			'fondo'  => $logo['fondo'],
+		);
+	}
+
+	return $out;
+}
+
+/**
+ * Marcas del listado en curso, sea categoría o búsqueda.
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function li_marcas_contexto(): array {
+	$obj = get_queried_object();
+
+	if ( $obj instanceof WP_Term && 'product_cat' === $obj->taxonomy ) {
+		return li_marcas_de_categoria( $obj );
+	}
+
+	/*
+	 * Se cuentan ignorando la marca puesta, no sobre el resultado final: si
+	 * se contaran sobre él, elegir Samsung dejaría el carrusel con Samsung
+	 * sola y no habría forma de sumar Motorola sin antes sacar la primera.
+	 */
+	return li_marcas_de_ids( li_ids_contexto( li_filtro_atributos(), null, array() ) );
+}
+
+/**
+ * ¿Corresponde dibujar el carrusel de marcas?
+ *
+ * En una categoría y en una búsqueda sí: el conjunto está acotado y elegir
+ * marca suele ser lo primero que uno hace. En la tienda entera no, porque son
+ * 93 marcas y una tira de 93 medallones no ayuda a decidir nada.
+ *
+ * @param mixed $obj Objeto consultado.
+ * @return bool
+ */
+function li_hay_carrusel( $obj ): bool {
+	if ( is_search() ) {
+		return true;
+	}
+
+	return $obj instanceof WP_Term && 'product_cat' === $obj->taxonomy;
 }
 
 add_action( 'woocommerce_update_product', 'li_limpiar_marcas_cat' );
@@ -328,14 +418,12 @@ function li_banners_categoria( WP_Term $term ): array {
    ------------------------------------------------------------------------- */
 
 /**
- * Carrusel de marcas de la categoría, cada una como filtro.
+ * Carrusel de marcas del listado, cada una como filtro.
  *
  * Son enlaces de verdad: sin JavaScript filtran igual, recargando.
- *
- * @param WP_Term $term Categoría.
  */
-function li_carrusel_marcas( WP_Term $term ): void {
-	$marcas = li_marcas_de_categoria( $term );
+function li_carrusel_marcas(): void {
+	$marcas = li_marcas_contexto();
 
 	if ( count( $marcas ) < 2 ) {
 		return;
@@ -359,7 +447,7 @@ function li_carrusel_marcas( WP_Term $term ): void {
 				<?php $activa = in_array( $m['slug'], $activas, true ); ?>
 				<a
 					class="marca-filtro<?php echo $activa ? ' es-activa' : ''; ?>"
-					href="<?php echo esc_url( li_url_alternar_marca( $term, $m['slug'] ) ); ?>"
+					href="<?php echo esc_url( li_url_alternar_marca( $m['slug'] ) ); ?>"
 					aria-pressed="<?php echo $activa ? 'true' : 'false'; ?>"
 					data-li-filtro
 				>
@@ -590,6 +678,39 @@ function li_render_resultados( WP_Query $q ): void {
 	}
 }
 
+add_action( 'template_redirect', 'li_busqueda_a_productos', 5 );
+/**
+ * Manda cualquier búsqueda a la búsqueda de productos.
+ *
+ * El buscador de la cabecera ya envía `post_type=product`, pero una URL
+ * pelada —un enlace viejo, un resultado de Google, alguien que escribe
+ * `?s=` a mano— caía en la plantilla genérica, sin grilla ni filtros. En una
+ * tienda el que busca busca productos: se redirige y hay una sola página de
+ * resultados en vez de dos.
+ */
+function li_busqueda_a_productos(): void {
+	if ( is_admin() || ! is_search() || is_robots() ) {
+		return;
+	}
+	if ( isset( $_GET['post_type'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return;
+	}
+
+	$args = array();
+	foreach ( array_keys( $_GET ) as $clave ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$k = sanitize_key( $clave );
+		if ( '' !== $k ) {
+			$args[ $k ] = sanitize_text_field( wp_unslash( $_GET[ $clave ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+	}
+
+	$args['s']         = get_search_query( false );
+	$args['post_type'] = 'product';
+
+	wp_safe_redirect( add_query_arg( $args, home_url( '/' ) ), 302 );
+	exit;
+}
+
 add_action( 'template_redirect', 'li_fragmento_resultados' );
 /**
  * Responde sólo el pedazo que cambia cuando se toca un filtro.
@@ -607,8 +728,7 @@ function li_fragmento_resultados(): void {
 		return;
 	}
 
-	$term   = get_queried_object();
-	$es_cat = $term instanceof WP_Term && 'product_cat' === $term->taxonomy;
+	$term = get_queried_object();
 
 	// Las facetas también cambian: al filtrar por marca, las capacidades
 	// disponibles y sus cuentas ya no son las mismas.
@@ -616,15 +736,13 @@ function li_fragmento_resultados(): void {
 	li_panel_filtros();
 	echo '</div>';
 
-	if ( $es_cat ) {
-		li_carrusel_marcas( $term );
+	if ( li_hay_carrusel( $term ) ) {
+		li_carrusel_marcas();
 	}
 
 	echo '<div data-li-resultados>';
 
-	if ( $es_cat ) {
-		li_filtros_activos( $term );
-	}
+	li_filtros_activos();
 
 	li_render_resultados( $GLOBALS['wp_query'] );
 
@@ -634,10 +752,8 @@ function li_fragmento_resultados(): void {
 
 /**
  * Fichas de los filtros puestos, cada una con su cruz para sacarlo.
- *
- * @param WP_Term $term Categoría.
  */
-function li_filtros_activos( WP_Term $term ): void {
+function li_filtros_activos(): void {
 	$activas = li_filtro_marcas();
 	$attrs   = li_filtro_atributos();
 	$precio  = li_filtro_precio();
@@ -656,7 +772,7 @@ function li_filtros_activos( WP_Term $term ): void {
 				continue;
 			}
 			?>
-			<a class="activo" href="<?php echo esc_url( li_url_alternar_marca( $term, $slug ) ); ?>" data-li-filtro>
+			<a class="activo" href="<?php echo esc_url( li_url_alternar_marca( $slug ) ); ?>" data-li-filtro>
 				<?php echo esc_html( $t->name ); ?>
 				<?php li_icono( 'cerrar' ); ?>
 			</a>
@@ -665,7 +781,8 @@ function li_filtros_activos( WP_Term $term ): void {
 		<?php li_fichas_atributos(); ?>
 		<?php li_ficha_precio(); ?>
 
-		<a class="activos__limpiar" href="<?php echo esc_url( (string) get_term_link( $term ) ); ?>" data-li-filtro>
+		<?php // Limpia los filtros, no el listado: la categoría o el término buscado quedan. ?>
+		<a class="activos__limpiar" href="<?php echo esc_url( li_url_con( array(), array(), li_precio_vacio() ) ); ?>" data-li-filtro>
 			<?php esc_html_e( 'Limpiar todo', 'lucasinnovaciones' ); ?>
 		</a>
 	</div>
