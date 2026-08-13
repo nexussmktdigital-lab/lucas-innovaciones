@@ -1,6 +1,6 @@
 # Migración de taxonomía — staging → producción
 
-**Estado:** ensayado y verificado en staging. **Pendiente de aplicar en producción.**
+**Estado: APLICADO EN PRODUCCIÓN el 2026-08-06.** Verificado — ver "Resultado" al final.
 **Generado:** 2026-08-06, comparando las dos bases en vivo, sólo lectura.
 
 Este documento existe porque la reestructuración de categorías se hizo directamente
@@ -250,6 +250,43 @@ propios, y `audio` marca 1 en vez de 106. El tema no usa ese contador — calcul
 con descendencia en `li_cuentas_por_rama()`— pero cualquier listado que use
 `hide_empty => true` haría desaparecer a Smartphones del menú. Es la razón por la que el
 tema no confía en `count`.
+
+---
+
+## Resultado de la ejecución — 2026-08-06
+
+Corrida en el orden de este documento, paso por paso, verificando entre cada uno.
+Todo con la API de WordPress (`wp_insert_term`, `wp_set_object_terms`,
+`wp_remove_object_terms`, `wp_delete_term`, `wp_update_term`) y no con SQL directo,
+para que WooCommerce mantenga sus propias estructuras.
+
+| Comprobación | Esperado | Obtenido |
+|---|---|---|
+| Términos de `product_cat` | 82 | **82** |
+| Categorías madre | 21 | **21** |
+| Productos en `sin-categorizar` | 0 | **0** |
+| Productos ocultos del catálogo | 6 | **6** |
+| Rama de `smartphones` | 76 | **76** |
+| Rama de `telefonos-y-tablets` | 83 | **83** |
+| Rama de `audio` | 106 | **106** |
+| Productos publicados | 803 | **803** |
+
+- 35 productos reasignados, 0 fallos.
+- 32 términos borrados, 0 errores. Cada uno se comprobó vacío y sin hijas **antes**
+  de borrarlo.
+- Los 12 renombres quedaron con el slug exacto pedido, sin sufijos `-2`. El orden
+  borrar → renombrar funcionó.
+- `wc_category_lookup` quedó correcta sola: la fila de `smartphones` lista su árbol
+  como `67, 1965`. Es la prueba de que convenía usar la API y no SQL: esa tabla la
+  mantiene WooCommerce por hooks, y a mano habría quedado desincronizada.
+- Los ids nuevos en producción son `smartphones` = 1965 y `solo-mostrador` = 1966
+  (en staging son 2068 y 1965). Quedan guardados en la opción `li_migracion_ids`.
+- **Verificación final:** los árboles de producción y staging se compararon término
+  por término como pares `slug < slug-del-padre`, independiente de los ids. 82 y 82,
+  idénticos, sin diferencias en ningún sentido.
+
+Respaldo previo: `wp-content/uploads/li-taxonomia-produccion-antes-20260806.json`,
+114 KB, 214 términos y 1.404 relaciones.
 
 ---
 
