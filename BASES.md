@@ -73,7 +73,7 @@ Marcas principales: Apple (57), Netmak (32), FoxBox (30), Noganet (21), Samsung 
 
 | Problema | Impacto |
 |---|---|
-| `siteurl`/`home` en `http://` con HTTPS activo y `FORCE_SSL_ADMIN` | Contenido mixto — bloqueante para checkout público |
+| `siteurl` en `http://` y `home` en `https://` con HTTPS activo y `FORCE_SSL_ADMIN` | Contenido mixto — bloqueante para checkout público. **Confirmado en producción el 2026-09-11** leyendo `/wp-json/`: `siteurl http://lucasinnovaciones.com.ar` · `home https://lucasinnovaciones.com.ar`. No afecta a la REST API: se verificó que autentica igual. |
 | HPOS desactivado (3.764 pedidos en tablas legacy) | Migrar después del corte de YITH, no antes |
 | `calc_taxes = yes` sin ninguna tasa cargada, precios "sin IVA" | Indefinición de precio final al público |
 | 1 zona de envío con solo "envío gratis" | No hay logística real configurada |

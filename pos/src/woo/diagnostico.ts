@@ -124,20 +124,28 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
     arreglo: wp.estado === 200 ? undefined : 'La API REST está deshabilitada o bloqueada.',
   });
 
-  // WooCommerce solo acepta clave y secreto en claro cuando detecta SSL. Si
-  // WordPress tiene siteurl en http://, exige peticiones firmadas con OAuth 1.0a
-  // e ignora la credencial, con lo que todo llega como anónimo.
+  // `siteurl` y `home` en http:// mientras el sitio corre por HTTPS producen
+  // contenido mixto: el navegador bloquea recursos y el checkout se rompe.
+  //
+  // No afecta a la autenticación de la API: eso depende de `is_ssl()`, que se
+  // evalúa en cada petición y no de estas dos opciones guardadas. Verificado
+  // contra el sitio real, donde siteurl está en http:// y la API autentica bien.
   if (siteurl || home) {
-    const enHttp = [siteurl, home].filter((u) => u?.startsWith('http://'));
+    const enHttp = [
+      siteurl?.startsWith('http://') ? 'siteurl' : null,
+      home?.startsWith('http://') ? 'home' : null,
+    ].filter(Boolean);
+
     pruebas.push({
-      nombre: 'WordPress se sabe en HTTPS',
+      nombre: 'Esquema del sitio (siteurl / home)',
       resultado: enHttp.length === 0 ? 'ok' : 'falla',
       detalle: `siteurl ${siteurl ?? '?'} · home ${home ?? '?'}`,
       arreglo:
         enHttp.length === 0
           ? undefined
-          : 'Están en http:// y por eso WooCommerce exige OAuth 1.0a e ignora la clave. ' +
-            'Hay que pasarlas a https:// en Ajustes > Generales de WordPress.',
+          : `${enHttp.join(' y ')} en http:// sobre un sitio HTTPS: produce contenido mixto y ` +
+            'rompe el checkout público. No afecta a esta API. Se corrige en Ajustes > ' +
+            'Generales, con cuidado por las URLs absolutas guardadas en el contenido.',
     });
   }
 

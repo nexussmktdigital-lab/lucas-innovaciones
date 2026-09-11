@@ -146,7 +146,7 @@ describe('diagnosticar', () => {
     );
   });
 
-  it('detecta siteurl en http, que es lo que hace que WooCommerce ignore la clave', async () => {
+  it('detecta siteurl en http y lo reporta como contenido mixto, no como falla de la API', async () => {
     const r = await diagnosticar(
       opciones(
         sitio({
@@ -159,9 +159,12 @@ describe('diagnosticar', () => {
       ),
     );
 
-    const ssl = r.find((p) => p.nombre.includes('HTTPS'))!;
-    expect(ssl.resultado).toBe('falla');
-    expect(ssl.arreglo).toContain('OAuth 1.0a');
+    const esquema = r.find((p) => p.nombre.includes('siteurl'))!;
+    expect(esquema.resultado).toBe('falla');
+    expect(esquema.arreglo).toContain('contenido mixto');
+    // No debe atribuirle la falla de autenticación: se verificó contra el sitio
+    // real que la API autentica con siteurl en http://.
+    expect(esquema.arreglo).toContain('No afecta a esta API');
 
     const existe = r.find((p) => p.nombre.includes('existe en este sitio'))!;
     expect(existe.resultado).toBe('falla');
