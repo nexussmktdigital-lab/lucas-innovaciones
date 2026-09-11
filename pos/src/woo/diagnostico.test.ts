@@ -7,14 +7,17 @@ const BASE = 'https://ejemplo.test/staging';
 function sitio(respuestas: Record<string, { estado: number; cuerpo: string }>): typeof fetch {
   return (async (entrada: string | URL) => {
     const url = new URL(String(entrada));
-    const clave = url.searchParams.has('consumer_key')
-      ? 'productos-query'
+    const ck = url.searchParams.get('consumer_key');
+    const clave = ck
+      ? ck.startsWith('ck_esta_clave_no_existe')
+        ? 'productos-inventada'
+        : 'productos-query'
       : url.pathname.endsWith('/wp-json/')
         ? 'wp-json'
         : url.pathname.includes('/products')
           ? 'productos-cabecera'
           : 'raiz';
-    const r = respuestas[clave] ?? { estado: 404, cuerpo: '' };
+    const r = respuestas[clave] ?? respuestas['productos-query'] ?? { estado: 404, cuerpo: '' };
     return new Response(r.cuerpo, { status: r.estado });
   }) as unknown as typeof fetch;
 }
@@ -27,7 +30,29 @@ const opciones = (fetchImpl: typeof fetch) => ({
   timeoutMs: 1000,
 });
 
-const WP_JSON_OK = { estado: 200, cuerpo: JSON.stringify({ namespaces: ['wp/v2', 'wc/v3'] }) };
+const WP_JSON_OK = {
+  estado: 200,
+  cuerpo: JSON.stringify({
+    namespaces: ['wp/v2', 'wc/v3'],
+    url: 'https://ejemplo.test/staging',
+    home: 'https://ejemplo.test/staging',
+  }),
+};
+
+/** Como responde WordPress cuando siteurl quedó en http:// (el caso de este sitio). */
+const WP_JSON_EN_HTTP = {
+  estado: 200,
+  cuerpo: JSON.stringify({
+    namespaces: ['wp/v2', 'wc/v3'],
+    url: 'http://ejemplo.test/staging',
+    home: 'http://ejemplo.test/staging',
+  }),
+};
+
+const SIN_CREDENCIALES = {
+  estado: 401,
+  cuerpo: '{"code":"woocommerce_rest_cannot_view","message":"Lo siento, no puedes listar recursos."}',
+};
 const RAIZ_OK = { estado: 200, cuerpo: '<html></html>' };
 
 describe('diagnosticar', () => {
@@ -51,10 +76,7 @@ describe('diagnosticar', () => {
         sitio({
           raiz: RAIZ_OK,
           'wp-json': WP_JSON_OK,
-          'productos-cabecera': {
-            estado: 401,
-            cuerpo: '{"code":"woocommerce_rest_cannot_view","message":"Lo siento"}',
-          },
+          'productos-cabecera': SIN_CREDENCIALES,
           'productos-query': { estado: 200, cuerpo: '[]' },
         }),
       ),
@@ -122,6 +144,49 @@ describe('diagnosticar', () => {
     expect(r.find((p) => p.nombre.includes('cabecera'))!.detalle).toContain(
       'WooCommerce no está activo',
     );
+  });
+
+  it('detecta siteurl en http, que es lo que hace que WooCommerce ignore la clave', async () => {
+    const r = await diagnosticar(
+      opciones(
+        sitio({
+          raiz: RAIZ_OK,
+          'wp-json': WP_JSON_EN_HTTP,
+          'productos-cabecera': SIN_CREDENCIALES,
+          'productos-query': SIN_CREDENCIALES,
+          'productos-inventada': SIN_CREDENCIALES,
+        }),
+      ),
+    );
+
+    const ssl = r.find((p) => p.nombre.includes('HTTPS'))!;
+    expect(ssl.resultado).toBe('falla');
+    expect(ssl.arreglo).toContain('OAuth 1.0a');
+
+    // Y la prueba decisiva confirma que la clave ni se evalúa.
+    const evaluada = r.find((p) => p.nombre.includes('se está evaluando'))!;
+    expect(evaluada.resultado).toBe('falla');
+    expect(evaluada.detalle).toContain('Tu clave probablemente esté bien');
+  });
+
+  it('cuando la clave si se evalua, apunta a los permisos y no al sitio', async () => {
+    const r = await diagnosticar(
+      opciones(
+        sitio({
+          raiz: RAIZ_OK,
+          'wp-json': WP_JSON_OK,
+          'productos-cabecera': SIN_CREDENCIALES,
+          'productos-query': SIN_CREDENCIALES,
+          'productos-inventada': {
+            estado: 401,
+            cuerpo: '{"code":"woocommerce_rest_authentication_error"}',
+          },
+        }),
+      ),
+    );
+    const evaluada = r.find((p) => p.nombre.includes('se está evaluando'))!;
+    expect(evaluada.resultado).toBe('ok');
+    expect(evaluada.arreglo).toContain('Lectura/Escritura');
   });
 
   it('si el sitio no responde, no sigue probando lo demas', async () => {

@@ -31,19 +31,27 @@ export interface OpcionesDiagnostico {
   timeoutMs?: number;
 }
 
-const raiz = z.object({ namespaces: z.array(z.string()).optional() }).loose();
+const raiz = z
+  .object({
+    namespaces: z.array(z.string()).optional(),
+    url: z.string().optional(),
+    home: z.string().optional(),
+  })
+  .loose();
 
 async function pedir(
   hacer: typeof fetch,
   url: string,
   timeoutMs: number,
   cabeceras: Record<string, string> = {},
+  cuerpoCompleto = false,
 ): Promise<{ estado: number; cuerpo: string } | { error: string }> {
   const ac = new AbortController();
   const reloj = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const r = await hacer(url, { headers: { Accept: 'application/json', ...cabeceras }, signal: ac.signal });
-    return { estado: r.status, cuerpo: (await r.text()).slice(0, 400) };
+    const texto = await r.text();
+    return { estado: r.status, cuerpo: cuerpoCompleto ? texto : texto.slice(0, 400) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   } finally {
@@ -80,7 +88,7 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
   });
 
   // 2. La API REST de WordPress.
-  const wp = await pedir(hacer, base + '/wp-json/', timeout);
+  const wp = await pedir(hacer, base + '/wp-json/', timeout, {}, true);
   if ('error' in wp) {
     pruebas.push({ nombre: 'API REST de WordPress', resultado: 'falla', detalle: wp.error });
     return pruebas;
@@ -97,23 +105,41 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
   }
 
   let tieneWc = false;
+  let siteurl: string | undefined;
+  let home: string | undefined;
   if (wp.estado === 200) {
     try {
-      tieneWc = (raiz.parse(JSON.parse(wp.cuerpo)).namespaces ?? []).some((n) =>
-        n.startsWith('wc/'),
-      );
+      const datos = raiz.parse(JSON.parse(wp.cuerpo));
+      tieneWc = (datos.namespaces ?? []).some((n) => n.startsWith('wc/'));
+      siteurl = datos.url;
+      home = datos.home;
     } catch {
-      // El cuerpo viene recortado a 400 caracteres: no poder parsearlo no
-      // significa que la API esté mal.
       tieneWc = wp.cuerpo.includes('wc/v3');
     }
   }
   pruebas.push({
     nombre: 'API REST de WordPress',
     resultado: wp.estado === 200 ? 'ok' : 'falla',
-    detalle: `HTTP ${wp.estado}${tieneWc ? ' · expone wc/v3' : ''}`,
+    detalle: `HTTP ${wp.estado}${tieneWc ? ' · expone wc/v3' : ' · NO expone wc/v3'}`,
     arreglo: wp.estado === 200 ? undefined : 'La API REST está deshabilitada o bloqueada.',
   });
+
+  // WooCommerce solo acepta clave y secreto en claro cuando detecta SSL. Si
+  // WordPress tiene siteurl en http://, exige peticiones firmadas con OAuth 1.0a
+  // e ignora la credencial, con lo que todo llega como anónimo.
+  if (siteurl || home) {
+    const enHttp = [siteurl, home].filter((u) => u?.startsWith('http://'));
+    pruebas.push({
+      nombre: 'WordPress se sabe en HTTPS',
+      resultado: enHttp.length === 0 ? 'ok' : 'falla',
+      detalle: `siteurl ${siteurl ?? '?'} · home ${home ?? '?'}`,
+      arreglo:
+        enHttp.length === 0
+          ? undefined
+          : 'Están en http:// y por eso WooCommerce exige OAuth 1.0a e ignora la clave. ' +
+            'Hay que pasarlas a https:// en Ajustes > Generales de WordPress.',
+    });
+  }
 
   // 3 y 4. Autenticación, por los dos caminos.
   const recurso = '/wp-json/wc/v3/products?per_page=1';
@@ -147,19 +173,51 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
         : undefined,
   });
 
+  // Prueba decisiva: si una clave inventada da el MISMO error que la real,
+  // WooCommerce no está evaluando ninguna de las dos. El problema no es la
+  // credencial: es que la autenticación por clave no se está ejecutando.
+  if (!cabeceraOk && !queryOk) {
+    const inventada =
+      `${base}${recurso}&consumer_key=ck_esta_clave_no_existe&consumer_secret=cs_tampoco`;
+    const conInventada = await pedir(hacer, inventada, timeout);
+    const mismoError =
+      !('error' in conInventada) &&
+      !('error' in porQuery) &&
+      conInventada.estado === porQuery.estado &&
+      codigoDe(conInventada.cuerpo) === codigoDe(porQuery.cuerpo);
+
+    pruebas.push({
+      nombre: 'La clave se está evaluando',
+      resultado: mismoError ? 'falla' : 'ok',
+      detalle: mismoError
+        ? 'Una clave inventada da exactamente el mismo error que la tuya: WooCommerce ' +
+          'no está evaluando ninguna. Tu clave probablemente esté bien.'
+        : `Una clave inventada da otro error (${'error' in conInventada ? conInventada.error : explicar(conInventada)}), ` +
+          'así que la tuya sí se evalúa y el problema es de permisos.',
+      arreglo: mismoError
+        ? 'Revisá siteurl/home en https:// (arriba). Si ya están bien, puede haber un ' +
+          'plugin de seguridad bloqueando la autenticación de la API.'
+        : 'Revisá que la clave tenga permiso de Lectura/Escritura y que su usuario sea administrador.',
+    });
+  }
+
   return pruebas;
+}
+
+/** Extrae el campo `code` de una respuesta de error de la API. */
+function codigoDe(cuerpo: string): string {
+  try {
+    return String((JSON.parse(cuerpo) as { code?: unknown }).code ?? '');
+  } catch {
+    return '';
+  }
 }
 
 /** Traduce el código de error de WooCommerce a la causa concreta. */
 function explicar(r: { estado: number; cuerpo: string }): string {
   if (r.estado === 200) return 'HTTP 200 · autentica';
 
-  let codigo = '';
-  try {
-    codigo = String((JSON.parse(r.cuerpo) as { code?: unknown }).code ?? '');
-  } catch {
-    /* cuerpo no JSON */
-  }
+  const codigo = codigoDe(r.cuerpo);
 
   const causas: Record<string, string> = {
     woocommerce_rest_cannot_view:
