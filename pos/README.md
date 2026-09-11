@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 1 (Base) terminada.** La pantalla de venta llega en la Fase 2.
+**Estado: Fase 2 (Venta de contado) terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket y cerrar el turno con arqueo.
 
 ---
 
@@ -106,6 +106,48 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 
 ---
 
+## Cómo funciona una venta
+
+1. **Se abre la caja** declarando el efectivo inicial. Sin caja abierta no se vende.
+2. **Se busca el producto** por nombre, SKU, marca, código de barras o IMEI. El
+   buscador va contra el espejo local, no contra WooCommerce: la red no está en
+   el camino. `Enter` agrega el primero, que con el lector de código de barras es
+   siempre el correcto. `F2` vuelve al buscador desde donde sea.
+3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio.
+   Los descuentos los ve solo el dueño.
+4. **El cobro** (`F12`) admite varios medios en la misma venta y calcula el
+   vuelto, que solo sale del efectivo entregado.
+5. **Al confirmar**, en una sola transacción: se crea la venta, se descuenta
+   stock, se impacta la caja, se audita y se encola el ajuste a WooCommerce.
+   Después se abre el ticket, que se manda a imprimir solo.
+6. **Al cerrar el turno** se cuenta el efectivo. Si no cuadra, hay que explicar
+   por qué antes de poder cerrar.
+
+### Tres decisiones que conviene conocer
+
+**El servidor no le cree al navegador.** El cliente manda qué producto y cuántas
+unidades; el precio lo reconstruye el servidor leyendo el catálogo. Un navegador
+manipulado no puede cambiar un precio, y el precio manual solo se acepta en
+productos marcados como editables.
+
+**El precio en pesos de un producto en dólares se calcula, no se tipea.** Es la
+guarda estructural contra el error de agosto: nueve iPhones cargados a US$ 6.300
+y publicados a $6.300. Si no hay cotización cargada, el producto en dólares no
+se puede vender y el sistema lo dice.
+
+**WooCommerce se encola, no se llama dentro de la transacción.** Una llamada de
+red adentro tiene un modo de falla feo: si Woo descuenta y después falla el
+commit, se pierde stock sin venta. Así la venta queda firme en el POS y el
+ajuste viaja después, con reintentos. La pantalla muestra cuántos quedan
+pendientes.
+
+El ajuste que se le manda a Woo es el stock **absoluto** que tiene el POS, no la
+resta. Reintentarlo escribe el mismo número, así que es idempotente y se cura
+solo. Si Woo tiene un valor que no esperábamos, queda registrado en
+`sync_conflicts`.
+
+---
+
 ## Sincronización con WooCommerce
 
 ```bash
@@ -183,6 +225,16 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Criterio | Dónde |
 |---|---|
 | Ninguna línea de venta puede guardarse sin `product_id` válido, ni por SQL directo | `src/db/esquema.test.ts` |
+| Reintentar tres veces la misma venta descuenta el stock una sola vez | `src/ventas/confirmar.test.ts` |
+| Dos ventas de la última unidad: la segunda avisa, el stock nunca queda negativo | `src/ventas/confirmar.test.ts` |
+| Una venta fallida no deja nada a medias | `src/ventas/confirmar.test.ts` |
+| El precio que manda el navegador se ignora | `src/ventas/confirmar.test.ts` |
+| Con vuelto, a la caja entra el neto y no lo que entregó el cliente | `src/ventas/confirmar.test.ts` |
+| No se puede fiar sin cliente ni vender sin caja abierta | `src/ventas/confirmar.test.ts` |
+| El cierre de caja exige justificar la diferencia | `src/caja/sesion.test.ts` |
+| Drenar la cola dos veces no vuelve a descontar en Woo | `src/woo/cola.test.ts` |
+| El ticket escapa el HTML del catálogo y usa la hora de Buenos Aires | `src/ventas/ticket.test.ts` |
+| Venta completa desde el navegador, con vuelto y ticket | `e2e/venta.spec.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |
@@ -203,12 +255,17 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 src/
   app/            Rutas de Next (App Router)
     (pos)/        Shell del POS, detrás de sesión
+      vender/     Pantalla de venta: buscador, carrito y cobro
+      caja/       Apertura, resumen del turno y arqueo
     ingresar/     Pantalla de ingreso
-    api/          Auth.js y webhooks de WooCommerce
+    ticket/       Comprobante imprimible
+    api/          Buscador, Auth.js y webhooks de WooCommerce
   auth/           Sesión, PIN, permisos por rol
+  caja/           Sesión de caja: abrir, resumir, cerrar
   db/             Esquema Drizzle, migraciones, seed, base de test
   lib/            Dinero en centavos, fechas, texto, auditoría
-  woo/            Cliente REST, mapeo, sincronización, webhooks
+  ventas/         Carrito, buscador, confirmación de venta y ticket
+  woo/            Cliente REST, mapeo, sincronización, cola, webhooks
   scripts/        Comandos de consola
 drizzle/          Migraciones SQL versionadas
 e2e/              Tests de Playwright
@@ -238,8 +295,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Base: esquema, migraciones, auth, layout, sincronización, auditoría | **Hecha** |
-| 2 | Venta contado: buscador, carrito, pago mixto, ticket, stock, caja básica | Siguiente |
-| 3 | Dólares y calidad de datos: doble visualización, validaciones, marcador de producto real | |
+| 2 | Venta contado: buscador, carrito, pago mixto, ticket, stock, caja básica | **Hecha** |
+| 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | Siguiente |
 | 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | |
 | 5 | WhatsApp: comprobantes y recordatorios | |
 | 6 | Gastos y cuentas monetarias | |
