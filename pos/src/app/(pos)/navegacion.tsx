@@ -20,7 +20,7 @@ const SECCIONES = [
   { href: '/reportes', etiqueta: 'Reportes', tecla: 'F6', fase: 10, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 1;
+const FASE_ACTUAL = 2;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();
