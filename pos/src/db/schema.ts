@@ -336,6 +336,18 @@ export const cashMovements = pgTable(
 /* Venta                                                                      */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Correlativo de ventas, uno por terminal.
+ *
+ * Se lleva en una tabla y no contando ventas: el conteo se corre con dos ventas
+ * simultaneas. El incremento va con un upsert que devuelve el numero nuevo, que
+ * es atomico y toma el candado de la fila sin necesidad de pedirlo.
+ */
+export const saleCounters = pgTable('sale_counters', {
+  terminal: text().primaryKey(),
+  ultimo: integer().notNull().default(0),
+});
+
 export const sales = pgTable(
   'sales',
   {
