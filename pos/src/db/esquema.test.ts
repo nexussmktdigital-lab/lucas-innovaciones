@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { crearBaseDePrueba, rechazaCon, type TestDb } from './test-db';
+import { sembrar } from './seed';
 import {
   auditLog,
   cashSessions,
@@ -330,5 +331,42 @@ describe('gastos', () => {
       })
       .returning();
     expect(ok!.montoCentavos).toBe(50_000_000);
+  });
+});
+
+describe('sembrar', () => {
+  it('omite el catálogo de prueba cuando ya hay catálogo real sincronizado', async () => {
+    const otra = await crearBaseDePrueba();
+
+    // Simula un catálogo traído de WooCommerce: lo que lo distingue es
+    // `lastSyncedAt`, que solo pone la sincronización.
+    await otra.insert(products).values(
+      Array.from({ length: 60 }, (_, i) => ({
+        wooId: 20_000 + i,
+        nombre: `Producto real ${i}`,
+        precioCentavos: 100_000,
+        lastSyncedAt: new Date(),
+      })),
+    );
+
+    const r = await sembrar(otra);
+    expect(r.catalogoOmitido).toBe(true);
+    expect(r.productos).toBe(0);
+
+    // Los usuarios y las cuentas sí se crean: hacen falta para poder entrar.
+    const usuarios = await otra.select().from(users);
+    expect(usuarios.length).toBeGreaterThan(0);
+
+    // Y no se coló ningún producto de prueba.
+    const conServicio = await otra.select().from(products).where(eq(products.esServicio, true));
+    expect(conServicio).toHaveLength(0);
+  });
+
+  it('con la base vacía sí carga el catálogo de prueba', async () => {
+    const otra = await crearBaseDePrueba();
+    const r = await sembrar(otra);
+    expect(r.catalogoOmitido).toBe(false);
+    expect(r.productos).toBeGreaterThan(0);
+    expect((await otra.select().from(products)).length).toBe(r.productos);
   });
 });

@@ -8,7 +8,7 @@
  * `catalogo-prioridad-fotos.csv`), mas los servicios y chips que hoy se cargan
  * como item generico y con D24 pasan a ser productos de verdad.
  */
-import { sql } from 'drizzle-orm';
+import { count, isNotNull, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import type { BaseDatos } from './tipos';
 import { hashearPassword, hashearPin } from '@/auth/pin';
@@ -107,13 +107,30 @@ export interface ResumenSemilla {
   emailDuenio: string;
   passwordDuenio: string;
   pinVendedor: string;
+  /** True si se omitió el catálogo de prueba por haber catálogo real. */
+  catalogoOmitido: boolean;
+}
+
+export interface OpcionesSemilla {
+  /**
+   * Forzar la carga del catálogo de prueba aunque ya haya catálogo
+   * sincronizado. Solo para desarrollo: mezclar los dos deja productos que no
+   * existen en WooCommerce y que al venderse no se pueden sincronizar.
+   */
+  forzarCatalogo?: boolean;
 }
 
 /**
  * Carga los datos de prueba. Es idempotente: correrla dos veces no duplica.
  * La usa tanto `npm run db:seed` como `npm run demo`.
+ *
+ * El catálogo de prueba se omite si la base ya tiene productos traídos de
+ * WooCommerce: son dos mundos que no se pueden mezclar.
  */
-export async function sembrar(db: BaseDatos): Promise<ResumenSemilla> {
+export async function sembrar(
+  db: BaseDatos,
+  opciones: OpcionesSemilla = {},
+): Promise<ResumenSemilla> {
   const [duenio] = await db
     .insert(schema.users)
     .values({
@@ -167,6 +184,16 @@ export async function sembrar(db: BaseDatos): Promise<ResumenSemilla> {
     ])
     .onConflictDoNothing();
 
+  // ¿Hay catálogo real? Un producto con `lastSyncedAt` vino de WooCommerce.
+  const [yaSincronizado] = await db
+    .select({ cuantos: count() })
+    .from(schema.products)
+    .where(isNotNull(schema.products.lastSyncedAt));
+
+  const hayCatalogoReal = (yaSincronizado?.cuantos ?? 0) > CATALOGO.length;
+  const catalogoOmitido = hayCatalogoReal && !opciones.forzarCatalogo;
+
+  if (!catalogoOmitido) {
   await db
     .insert(schema.products)
     .values(
@@ -193,6 +220,7 @@ export async function sembrar(db: BaseDatos): Promise<ResumenSemilla> {
       })),
     )
     .onConflictDoNothing();
+  }
 
   await db
     .insert(schema.customers)
@@ -204,10 +232,11 @@ export async function sembrar(db: BaseDatos): Promise<ResumenSemilla> {
     .onConflictDoNothing();
 
   return {
-    productos: CATALOGO.length,
+    productos: catalogoOmitido ? 0 : CATALOGO.length,
     categoriasDeGasto: CATEGORIAS_GASTO.length,
     emailDuenio: 'lucas@lucasinnovaciones.com.ar',
     passwordDuenio: PASSWORD_DUENIO,
     pinVendedor: PIN_VENDEDOR,
+    catalogoOmitido,
   };
 }
