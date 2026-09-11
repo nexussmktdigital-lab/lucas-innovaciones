@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lucas Innovaciones — Cotización
  * Description: Mantiene en pesos los precios de los productos cargados en dólares. Toma el dólar blue de Córdoba desde InfoDolar dos veces por día y reescribe los precios en ARS.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires PHP: 8.1
  * Author: Lucas Innovaciones
  * Text Domain: lucas-cotizacion
@@ -21,7 +21,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class Lucas_Cotizacion {
 
-	public const VERSION = '1.0.0';
+	public const VERSION = '1.1.0';
 
 	/** Opción con la cotización vigente. */
 	private const OPT_ACTUAL = 'li_cotizacion_actual';
@@ -71,6 +71,9 @@ final class Lucas_Cotizacion {
 
 		// Referencia visible en la ficha de producto.
 		add_filter( 'woocommerce_get_price_html', array( $i, 'referencia_usd' ), 10, 2 );
+
+		// Lectura de la cotización para el POS.
+		add_action( 'rest_api_init', array( $i, 'registrar_rest' ) );
 
 		register_deactivation_hook( __FILE__, array( __CLASS__, 'desprogramar' ) );
 	}
@@ -324,6 +327,50 @@ final class Lucas_Cotizacion {
 	/* ---------------------------------------------------------------------
 	 * Estado
 	 * ------------------------------------------------------------------ */
+
+	/* ---------------------------------------------------------------------
+	 * REST
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Expone la cotización vigente en `wp-json/li-cotizacion/v1/actual`.
+	 *
+	 * El POS necesita el mismo número que se usó para reescribir los precios,
+	 * para congelarlo en cada venta. Es de solo lectura y no devuelve nada que
+	 * no esté ya publicado en la ficha de cada producto en dólares, así que la
+	 * ruta es pública: pedir credenciales acá solo agregaría un punto de falla
+	 * más en el arranque del POS.
+	 */
+	public function registrar_rest(): void {
+		register_rest_route(
+			'li-cotizacion/v1',
+			'/actual',
+			array(
+				'methods'             => 'GET',
+				'permission_callback' => '__return_true',
+				'callback'            => array( $this, 'rest_actual' ),
+			)
+		);
+	}
+
+	public function rest_actual(): WP_REST_Response {
+		$c = $this->actual();
+		if ( null === $c ) {
+			return new WP_REST_Response(
+				array( 'error' => 'Todavía no hay cotización cargada.' ),
+				503
+			);
+		}
+
+		return new WP_REST_Response(
+			array(
+				'venta'  => (float) $c['venta'],
+				'fuente' => (string) ( $c['fuente'] ?? 'desconocida' ),
+				'ts'     => (int) ( $c['ts'] ?? 0 ),
+			),
+			200
+		);
+	}
 
 	/**
 	 * @return array{venta:float,compra:float,fuente:string,ts:int}|null
