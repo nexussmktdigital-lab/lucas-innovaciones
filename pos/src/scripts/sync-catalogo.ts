@@ -4,6 +4,7 @@
  * Uso:
  *   npm run woo:sync                     sincroniza todo
  *   npm run woo:sync -- --verificar      solo prueba credenciales y conteo
+ *   npm run woo:sync -- --diagnostico    prueba eslabon por eslabon cuando algo falla
  *   npm run woo:sync -- --avisos ruta.csv  guarda los avisos de calidad
  */
 import 'dotenv/config';
@@ -13,6 +14,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@/db/schema';
 import { urlDeConexion } from '@/db/url';
 import { ClienteWoo } from '@/woo/cliente';
+import { diagnosticar } from '@/woo/diagnostico';
 import { cotizacionDesdeWoo } from '@/woo/cotizacion';
 import { sincronizarCatalogo } from '@/woo/sincronizar';
 import { formatearARS } from '@/lib/dinero';
@@ -27,6 +29,24 @@ async function main() {
   if (!url) {
     console.error('Falta DATABASE_URL. Copiá .env.example a .env y completala.');
     process.exit(1);
+  }
+
+  if (process.argv.includes('--diagnostico')) {
+    const pruebas = await diagnosticar({
+      url: process.env.WOO_URL ?? '',
+      consumerKey: process.env.WOO_CONSUMER_KEY ?? '',
+      consumerSecret: process.env.WOO_CONSUMER_SECRET ?? '',
+    });
+
+    console.log(`\nDiagnóstico de ${process.env.WOO_URL}\n`);
+    const simbolo = { ok: '  OK  ', falla: 'FALLA ', omitido: '  --  ' };
+    for (const p of pruebas) {
+      console.log(`[${simbolo[p.resultado]}] ${p.nombre}`);
+      console.log(`          ${p.detalle}`);
+      if (p.arreglo) console.log(`          → ${p.arreglo}`);
+    }
+    console.log('');
+    return;
   }
 
   const cliente = ClienteWoo.desdeEntorno();
