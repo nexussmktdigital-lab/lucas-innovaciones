@@ -173,9 +173,17 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
         : undefined,
   });
 
-  // Prueba decisiva: si una clave inventada da el MISMO error que la real,
-  // WooCommerce no está evaluando ninguna de las dos. El problema no es la
-  // credencial: es que la autenticación por clave no se está ejecutando.
+  // Si una clave inventada da el MISMO error que la real, las dos son
+  // desconocidas para este sitio.
+  //
+  // El detalle que lo explica: cuando el consumer_key no está en la tabla,
+  // WooCommerce devuelve `false` en silencio (sin fijar ningún error), cae al
+  // camino de OAuth, ahí tampoco encuentra parámetros firmados, y la petición
+  // termina como anónima. Por eso una clave que no existe da
+  // `woocommerce_rest_cannot_view` y no `woocommerce_rest_authentication_error`.
+  //
+  // La causa más común de que una clave real no esté en la tabla: se generó en
+  // otro sitio. Producción y staging son dos WordPress con dos bases separadas.
   if (!cabeceraOk && !queryOk) {
     const inventada =
       `${base}${recurso}&consumer_key=ck_esta_clave_no_existe&consumer_secret=cs_tampoco`;
@@ -186,17 +194,22 @@ export async function diagnosticar(o: OpcionesDiagnostico): Promise<Prueba[]> {
       conInventada.estado === porQuery.estado &&
       codigoDe(conInventada.cuerpo) === codigoDe(porQuery.cuerpo);
 
+    const otroSitio = base.includes('/staging')
+      ? base.replace(/\/staging\/?$/, '')
+      : `${base}/staging`;
+
     pruebas.push({
-      nombre: 'La clave se está evaluando',
+      nombre: 'La clave existe en este sitio',
       resultado: mismoError ? 'falla' : 'ok',
       detalle: mismoError
-        ? 'Una clave inventada da exactamente el mismo error que la tuya: WooCommerce ' +
-          'no está evaluando ninguna. Tu clave probablemente esté bien.'
+        ? 'Una clave inventada da exactamente el mismo error que la tuya: para este ' +
+          'sitio las dos son desconocidas.'
         : `Una clave inventada da otro error (${'error' in conInventada ? conInventada.error : explicar(conInventada)}), ` +
-          'así que la tuya sí se evalúa y el problema es de permisos.',
+          'así que la tuya sí está en la base y el problema es de permisos.',
       arreglo: mismoError
-        ? 'Revisá siteurl/home en https:// (arriba). Si ya están bien, puede haber un ' +
-          'plugin de seguridad bloqueando la autenticación de la API.'
+        ? `Lo más probable es que la clave se haya generado en el otro sitio. Probá con ` +
+          `WOO_URL="${otroSitio}". Si tampoco, generá una clave nueva desde el escritorio ` +
+          `de ESTE sitio, o revisá si un plugin de seguridad bloquea la autenticación.`
         : 'Revisá que la clave tenga permiso de Lectura/Escritura y que su usuario sea administrador.',
     });
   }

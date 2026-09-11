@@ -163,10 +163,27 @@ describe('diagnosticar', () => {
     expect(ssl.resultado).toBe('falla');
     expect(ssl.arreglo).toContain('OAuth 1.0a');
 
-    // Y la prueba decisiva confirma que la clave ni se evalúa.
-    const evaluada = r.find((p) => p.nombre.includes('se está evaluando'))!;
-    expect(evaluada.resultado).toBe('falla');
-    expect(evaluada.detalle).toContain('Tu clave probablemente esté bien');
+    const existe = r.find((p) => p.nombre.includes('existe en este sitio'))!;
+    expect(existe.resultado).toBe('falla');
+  });
+
+  it('ante una clave desconocida, propone probar contra el otro sitio', async () => {
+    const r = await diagnosticar(
+      opciones(
+        sitio({
+          raiz: RAIZ_OK,
+          'wp-json': WP_JSON_OK,
+          'productos-cabecera': SIN_CREDENCIALES,
+          'productos-query': SIN_CREDENCIALES,
+          'productos-inventada': SIN_CREDENCIALES,
+        }),
+      ),
+    );
+    const existe = r.find((p) => p.nombre.includes('existe en este sitio'))!;
+    expect(existe.resultado).toBe('falla');
+    expect(existe.detalle).toContain('las dos son desconocidas');
+    // El sitio de prueba es .../staging, así que sugiere la raíz.
+    expect(existe.arreglo).toContain('WOO_URL="https://ejemplo.test"');
   });
 
   it('cuando la clave si se evalua, apunta a los permisos y no al sitio', async () => {
@@ -184,9 +201,9 @@ describe('diagnosticar', () => {
         }),
       ),
     );
-    const evaluada = r.find((p) => p.nombre.includes('se está evaluando'))!;
-    expect(evaluada.resultado).toBe('ok');
-    expect(evaluada.arreglo).toContain('Lectura/Escritura');
+    const existe = r.find((p) => p.nombre.includes('existe en este sitio'))!;
+    expect(existe.resultado).toBe('ok');
+    expect(existe.arreglo).toContain('Lectura/Escritura');
   });
 
   it('si el sitio no responde, no sigue probando lo demas', async () => {
