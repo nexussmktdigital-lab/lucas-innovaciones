@@ -2,7 +2,7 @@
 
 **Sitio:** lucasinnovaciones.com.ar
 **Fecha:** 2026-08-03
-**Estado:** bases definidas — pendiente diseño y desarrollo
+**Estado:** bases definidas · **POS en desarrollo (Fase 1 terminada)** — ver [`pos/README.md`](pos/README.md)
 
 ---
 
@@ -144,6 +144,10 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | D21 | **Carrito y finalizar compra se quedan con los bloques de WooCommerce**, no se convierten a shortcodes clásicos | Ambas páginas ya estaban construidas con bloques. Se evaluó pasarlas al checkout clásico para tener control total por plantillas, y **se descartó**: el plugin de Mercado Pago declara compatibilidad `cart_checkout_blocks` y registra sus métodos vía `woocommerce_blocks_payment_method_type_registration`, y sobre todo **los bloques traen retiro en el local de forma nativa**, que para este negocio es el canal principal. El tema aporta el envoltorio y una hoja (`blocks.css`) que traduce los bloques al sistema visual. |
 | D20 | **Vidrios, hidrogeles y fundas pasan a productos variables por modelo** | Atributo `pa_modelo` con 40 modelos, derivados de los teléfonos con venta real. Piloto ejecutado sobre el producto #1 en rotación. Suma un toque al flujo del cajero en búsqueda por texto; con lector de código de barras va directo a la variación. Ver sección 4.1 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
 | D19 | **Las réplicas salen del catálogo online, quedan solo para mostrador** | Se creó la categoría **`Solo mostrador`** + visibilidad oculta. 6 productos procesados, marcas genuinas removidas. Siguen vendibles en el POS. Es la regla reutilizable para cualquier producto que no deba estar online. Ver sección 4.2 de [MAPA-ATRIBUTOS.md](MAPA-ATRIBUTOS.md). |
+| **D23** | **El POS se construye como aplicación Next.js separada, no como plugin de WordPress.** *Deroga D5.* Stack: Next.js 15 + PostgreSQL (Neon/Supabase) + Drizzle + Auth.js v5, desplegado en Vercel. WooCommerce sigue siendo fuente de verdad de catálogo, precio y stock (D4 se mantiene); el POS es dueño de ventas, fiado, caja, gastos y auditoría, que Woo no sabe llevar. **Contrapartida asumida: el corte de YITH se corre varios meses y la membresía se sigue pagando durante todo el desarrollo.** También deroga el orden de D8 en lo que hace al POS: se construye en paralelo a la web, no al final. |
+| **D24** | **Ninguna línea de venta puede existir sin un producto real.** *Deroga D12.* La restricción vive en la base (`sale_items.product_id` NOT NULL con clave foránea), no en la aplicación. Para que sea cumplible sin frenar al mostrador, el 58% que hoy se carga como venta libre se resuelve catalogando lo que realmente se vende: **servicios técnicos y chips pasan a ser productos** de la categoría `Solo mostrador` (D19), sin gestión de stock y con precio editable en la venta; y **el fiado sale de las líneas de pedido** al módulo de cuenta corriente. Resuelve P9 y P11 por otra vía. |
+| **D25** | **Sin modo offline en la v1; offline acotado en la v1.1.** *Confirma D1.* La v1.1 suma solo caché del catálogo y cola de la venta confirmada, no resolución elaborada de conflictos. Consecuencia: si WooCommerce está caído, el POS no vende — lo cubre la Regla 0 (rollback a YITH durante la convivencia). El offline era el 30-40% del esfuerzo y el negocio operó 3.764 pedidos sin él. |
+| **D26** | **Cheque y Mercado Pago se suman como medios de pago del mostrador.** No estaban en el alcance original pero sí en la operación real: 1% del histórico es cheque y el gateway de Mercado Pago ya está instalado. |
 
 ---
 
@@ -204,7 +208,7 @@ Paridad con lo que YITH hace hoy, verificado contra su configuración real en es
 - Cierre de sesión con reporte: cantidad de pedidos, productos vendidos, total por medio de pago, ventas netas, efectivo esperado en caja, nota libre
 
 ### Venta
-- **Venta libre de monto abierto** — concepto escrito a mano + precio + cantidad, sin producto de catálogo. **Es el 58% de la facturación (D12)**: tiene que ser una acción de primer nivel, no un rodeo con un "producto ficticio" como hoy. Debe permitir guardar conceptos frecuentes ("Virus", "Soft", "limpieza", "chip") como accesos rápidos reutilizables.
+- ~~**Venta libre de monto abierto**~~ — **eliminada por D24.** Lo que hoy se carga como monto abierto se resuelve catalogando servicios técnicos y chips como productos de `Solo mostrador`, con precio editable en la venta, y sacando el fiado a su propio módulo. El texto original se conserva abajo porque describe los conceptos frecuentes que hay que dar de alta. ~~concepto escrito a mano + precio + cantidad, sin producto de catálogo. **Es el 58% de la facturación (D12)**~~: tiene que ser una acción de primer nivel, no un rodeo con un "producto ficticio" como hoy. Debe permitir guardar conceptos frecuentes ("Virus", "Soft", "limpieza", "chip") como accesos rápidos reutilizables.
 - Buscador de productos por nombre y SKU (resultados limitados)
 - Lector de código de barras (entrada tipo teclado HID)
 - Navegación por categorías
@@ -242,6 +246,12 @@ Compras y proveedores, control de márgenes, múltiples cajas o depósitos, fact
 ---
 
 ## 6. Arquitectura técnica
+
+> **Derogada por D23.** Esta sección describe el POS como plugin de WordPress.
+> La arquitectura vigente es una aplicación Next.js separada; ver
+> [`pos/README.md`](pos/README.md). Se conserva el texto porque documenta el
+> mapeo de la meta de YITH y la compatibilidad histórica, que siguen valiendo
+> para la migración del histórico.
 
 ### Stack
 
