@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "POS: instalar dependencias",
+      "detail": "Se corre una sola vez, la primera vez que abrís el proyecto.",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/pos" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "POS: ver la demo",
+      "detail": "Levanta una base embebida, carga datos de prueba y abre el POS en localhost:3000.",
+      "type": "shell",
+      "command": "npm run demo",
+      "options": { "cwd": "${workspaceFolder}/pos" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "runOptions": { "instanceLimit": 1 }
+    },
+    {
+      "label": "POS: ver la demo desde cero",
+      "detail": "Igual que la anterior pero borra los datos de prueba y los vuelve a cargar.",
+      "type": "shell",
+      "command": "npm run demo -- --reset",
+      "options": { "cwd": "${workspaceFolder}/pos" },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "POS: correr los tests",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/pos" },
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "POS: revisar tipos",
+      "type": "shell",
+      "command": "npm run typecheck",
+      "options": { "cwd": "${workspaceFolder}/pos" },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

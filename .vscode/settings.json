@@ -1,0 +1,14 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "typescript.tsdk": "pos/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "files.eol": "\n",
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.demo": true,
+    "**/drizzle/meta": true
+  },
+  "files.associations": { "*.css": "tailwindcss" }
+}

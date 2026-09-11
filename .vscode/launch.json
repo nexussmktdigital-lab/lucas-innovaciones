@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "POS: demo con depurador",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/pos",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "demo"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

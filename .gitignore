@@ -11,7 +11,15 @@ desktop.ini
 .DS_Store
 
 # Editores
-.vscode/
+# El patron es `.vscode/*` y no `.vscode/`: git no puede reincluir archivos si la
+# carpeta entera esta excluida. Se versiona solo la configuracion compartida del
+# proyecto (tareas, extensiones recomendadas, ajustes); todo lo demas que VS Code
+# escriba ahi sigue siendo personal.
+.vscode/*
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
 .idea/
 *.swp
 node_modules
