@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "demo": "tsx src/scripts/demo.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts",
+    "db:seed": "tsx src/scripts/seed.ts",
     "woo:sync": "tsx src/scripts/sync-catalogo.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -34,6 +35,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.11",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
