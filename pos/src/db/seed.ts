@@ -1,18 +1,16 @@
 /**
  * Datos de prueba para trabajar sin WooCommerce conectado.
  *
- * Uso:
- *   npm run db:seed            agrega los datos
- *   npm run db:seed -- --reset vacia primero y vuelve a cargar
+ * Este modulo solo define datos y funciones: no hace nada al importarse.
+ * El comando vive en `src/scripts/seed.ts`.
  *
  * Los productos son una muestra real del catalogo (los de mayor rotacion segun
  * `catalogo-prioridad-fotos.csv`), mas los servicios y chips que hoy se cargan
  * como item generico y con D24 pasan a ser productos de verdad.
  */
-import 'dotenv/config';
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { sql } from 'drizzle-orm';
 import * as schema from './schema';
+import type { BaseDatos } from './tipos';
 import { hashearPassword, hashearPin } from '@/auth/pin';
 import { usdAPesos } from '@/lib/dinero';
 
@@ -85,121 +83,131 @@ const CATEGORIAS_GASTO = [
   'Otros',
 ];
 
-async function main() {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error('Falta DATABASE_URL. Copiá .env.example a .env y completala.');
-    process.exit(1);
-  }
-
-  const sql = postgres(url, { max: 1 });
-  const db = drizzle(sql, { schema, casing: 'snake_case' });
-
-  try {
-    if (process.argv.includes('--reset')) {
-      const tablas = await sql<{ tablename: string }[]>`
-        SELECT tablename FROM pg_tables
-         WHERE schemaname = 'public' AND tablename <> '__drizzle_migrations'
-      `;
-      if (tablas.length > 0) {
-        const lista = tablas.map((t) => `"${t.tablename}"`).join(', ');
-        await sql.unsafe(`TRUNCATE ${lista} RESTART IDENTITY CASCADE`);
-        console.log(`Vaciadas ${tablas.length} tablas.`);
-      }
-    }
-
-    const [duenio] = await db
-      .insert(schema.users)
-      .values({
-        nombre: 'Lucas',
-        email: 'lucas@lucasinnovaciones.com.ar',
-        passwordHash: await hashearPassword(PASSWORD_DUENIO),
-        rol: 'owner',
-      })
-      .onConflictDoNothing()
-      .returning();
-
-    await db
-      .insert(schema.users)
-      .values({
-        nombre: 'Vendedor de mostrador',
-        pinHash: await hashearPin(PIN_VENDEDOR),
-        rol: 'seller',
-      })
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.monetaryAccounts)
-      .values([
-        { nombre: 'Caja en efectivo', tipo: 'efectivo' },
-        { nombre: 'Banco', tipo: 'banco' },
-        { nombre: 'Mercado Pago', tipo: 'mercadopago' },
-      ])
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.exchangeRates)
-      .values({
-        valorCentavos: TC_CENTAVOS,
-        vigenteDesde: new Date(),
-        origen: 'manual',
-        cargadoPor: duenio?.id ?? null,
-      })
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.expenseCategories)
-      .values(CATEGORIAS_GASTO.map((nombre, orden) => ({ nombre, orden })))
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.payees)
-      .values([
-        { nombre: 'Distribuidora Córdoba Celular', tipo: 'proveedor' },
-        { nombre: 'Técnico externo — Pablo', tipo: 'tecnico' },
-        { nombre: 'EPEC', tipo: 'servicio' },
-      ])
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.products)
-      .values(
-        CATALOGO.map((p) => ({
-          wooId: p.wooId,
-          sku: p.sku,
-          nombre: p.nombre,
-          categoria: p.categoria,
-          marca: p.marca,
-          moneda: (p.usd ? 'USD' : 'ARS') as 'ARS' | 'USD',
-          precioUsdCentavos: p.usd ? Math.round(p.usd * 100) : null,
-          // En un producto en dólares el precio en pesos NO se tipea: se calcula.
-          precioCentavos: p.usd ? usdAPesos(Math.round(p.usd * 100), TC_CENTAVOS) : p.precio * 100,
-          stock: p.stock,
-          gestionaStock: !p.servicio,
-          esServicio: Boolean(p.servicio),
-          precioEditable: Boolean(p.servicio),
-          activo: true,
-          lastSyncedAt: new Date(),
-        })),
-      )
-      .onConflictDoNothing();
-
-    await db
-      .insert(schema.customers)
-      .values([
-        { nombre: 'Consumidor final', telefono: null },
-        { nombre: 'Mayco Villafañe', telefono: '+5493571000001' },
-        { nombre: 'Gaby González', telefono: '+5493571000002' },
-      ])
-      .onConflictDoNothing();
-
-    console.log('Datos de prueba cargados.');
-    console.log(`  Dueño:    lucas@lucasinnovaciones.com.ar / ${PASSWORD_DUENIO}`);
-    console.log(`  Vendedor: PIN ${PIN_VENDEDOR}`);
-    console.log(`  ${CATALOGO.length} productos, ${CATEGORIAS_GASTO.length} categorías de gasto.`);
-  } finally {
-    await sql.end();
-  }
+/**
+ * Vacia las tablas de datos conservando el esquema.
+ *
+ * Los disparadores de inmutabilidad actuan por fila y no bloquean TRUNCATE, que
+ * es justamente lo que permite reiniciar una base de desarrollo.
+ */
+export async function vaciar(db: BaseDatos): Promise<number> {
+  const filas = await db.execute<{ tablename: string }>(
+    sql`SELECT tablename FROM pg_tables
+         WHERE schemaname = 'public' AND tablename <> '__drizzle_migrations'`,
+  );
+  const tablas = Array.from(filas as unknown as { tablename: string }[]);
+  if (tablas.length === 0) return 0;
+  const lista = tablas.map((t) => `"${t.tablename}"`).join(', ');
+  await db.execute(sql.raw(`TRUNCATE ${lista} RESTART IDENTITY CASCADE`));
+  return tablas.length;
 }
 
-await main();
+export interface ResumenSemilla {
+  productos: number;
+  categoriasDeGasto: number;
+  emailDuenio: string;
+  passwordDuenio: string;
+  pinVendedor: string;
+}
+
+/**
+ * Carga los datos de prueba. Es idempotente: correrla dos veces no duplica.
+ * La usa tanto `npm run db:seed` como `npm run demo`.
+ */
+export async function sembrar(db: BaseDatos): Promise<ResumenSemilla> {
+  const [duenio] = await db
+    .insert(schema.users)
+    .values({
+      nombre: 'Lucas',
+      email: 'lucas@lucasinnovaciones.com.ar',
+      passwordHash: await hashearPassword(PASSWORD_DUENIO),
+      rol: 'owner',
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  await db
+    .insert(schema.users)
+    .values({
+      nombre: 'Vendedor de mostrador',
+      pinHash: await hashearPin(PIN_VENDEDOR),
+      rol: 'seller',
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.monetaryAccounts)
+    .values([
+      { nombre: 'Caja en efectivo', tipo: 'efectivo' },
+      { nombre: 'Banco', tipo: 'banco' },
+      { nombre: 'Mercado Pago', tipo: 'mercadopago' },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.exchangeRates)
+    .values({
+      valorCentavos: TC_CENTAVOS,
+      vigenteDesde: new Date(),
+      origen: 'manual',
+      cargadoPor: duenio?.id ?? null,
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.expenseCategories)
+    .values(CATEGORIAS_GASTO.map((nombre, orden) => ({ nombre, orden })))
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.payees)
+    .values([
+      { nombre: 'Distribuidora Córdoba Celular', tipo: 'proveedor' },
+      { nombre: 'Técnico externo — Pablo', tipo: 'tecnico' },
+      { nombre: 'EPEC', tipo: 'servicio' },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.products)
+    .values(
+      CATALOGO.map((p) => ({
+        wooId: p.wooId,
+        sku: p.sku,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        marca: p.marca,
+        moneda: (p.usd ? 'USD' : 'ARS') as 'ARS' | 'USD',
+        precioUsdCentavos: p.usd ? Math.round(p.usd * 100) : null,
+        // En un producto en dólares el precio en pesos NO se tipea: se calcula.
+        precioCentavos: p.usd ? usdAPesos(Math.round(p.usd * 100), TC_CENTAVOS) : p.precio * 100,
+        stock: p.stock,
+        gestionaStock: !p.servicio,
+        esServicio: Boolean(p.servicio),
+        precioEditable: Boolean(p.servicio),
+        // Mismo criterio que el mapeo de WooCommerce: sin SKU o sin precio real,
+        // la ficha esta incompleta. Ninguna del seed tiene imagen, igual que el
+        // catalogo real (97% sin foto), pero eso se mide por columna aparte.
+        fichaIncompleta: !p.sku || (!p.usd && p.precio < 100),
+        activo: true,
+        lastSyncedAt: new Date(),
+      })),
+    )
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.customers)
+    .values([
+      { nombre: 'Consumidor final', telefono: null },
+      { nombre: 'Mayco Villafañe', telefono: '+5493571000001' },
+      { nombre: 'Gaby González', telefono: '+5493571000002' },
+    ])
+    .onConflictDoNothing();
+
+  return {
+    productos: CATALOGO.length,
+    categoriasDeGasto: CATEGORIAS_GASTO.length,
+    emailDuenio: 'lucas@lucasinnovaciones.com.ar',
+    passwordDuenio: PASSWORD_DUENIO,
+    pinVendedor: PIN_VENDEDOR,
+  };
+}
