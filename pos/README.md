@@ -36,13 +36,27 @@ mandan sobre este código:
 ## Verlo andando en dos minutos
 
 No hace falta instalar PostgreSQL, ni crear cuenta en ningún lado, ni tener
-credenciales de WooCommerce. Solo Node 22 o superior:
+credenciales de WooCommerce. Solo Node 22 o superior
+([nodejs.org](https://nodejs.org)).
+
+**Desde la terminal:**
 
 ```bash
 cd pos
 npm install
 npm run demo
 ```
+
+**Desde VS Code**, sin escribir comandos: abrir la carpeta del repositorio y
+usar `Ctrl+Shift+P` → *Tasks: Run Task*. Están cargadas:
+
+| Tarea | Qué hace |
+|---|---|
+| **POS: instalar dependencias** | Solo la primera vez. |
+| **POS: ver la demo** | Levanta todo y abre el POS. |
+| **POS: ver la demo desde cero** | Igual, pero borra los datos de prueba antes. |
+| **POS: correr los tests** | |
+| **POS: revisar tipos** | |
 
 Y abrir <http://localhost:3000>. El comando levanta un PostgreSQL embebido
 (PGlite, el mismo motor compilado a WASM que usan los tests), aplica las
