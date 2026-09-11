@@ -5,6 +5,7 @@ import 'dotenv/config';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { normalizarUrlDeConexion } from './url';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -12,7 +13,12 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { max: 1 });
+const { url: limpia, descartados } = normalizarUrlDeConexion(url);
+if (descartados.length > 0) {
+  console.log(`Se ignoran parámetros de libpq que el driver de Node no usa: ${descartados.join(', ')}`);
+}
+
+const sql = postgres(limpia, { max: 1 });
 
 try {
   await migrate(drizzle(sql), { migrationsFolder: './drizzle' });

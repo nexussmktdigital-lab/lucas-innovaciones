@@ -9,6 +9,7 @@ import 'dotenv/config';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@/db/schema';
+import { urlDeConexion } from '@/db/url';
 import { sembrar, vaciar } from '@/db/seed';
 
 const url = process.env.DATABASE_URL;
@@ -17,7 +18,7 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { max: 1 });
+const sql = postgres(urlDeConexion(url), { max: 1 });
 const db = drizzle(sql, { schema, casing: 'snake_case' });
 
 try {

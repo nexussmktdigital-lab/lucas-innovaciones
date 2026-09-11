@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from './schema';
+import { urlDeConexion } from './url';
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -13,7 +14,7 @@ if (!url) {
  */
 const global_ = globalThis as unknown as { __liSql?: ReturnType<typeof postgres> };
 
-const sql = global_.__liSql ?? postgres(url, { max: 5, prepare: false });
+const sql = global_.__liSql ?? postgres(urlDeConexion(url), { max: 5, prepare: false });
 if (process.env.NODE_ENV !== 'production') global_.__liSql = sql;
 
 export const db = drizzle(sql, { schema, casing: 'snake_case' });

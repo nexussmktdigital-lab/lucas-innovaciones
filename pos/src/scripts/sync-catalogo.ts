@@ -11,6 +11,7 @@ import { writeFile } from 'node:fs/promises';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@/db/schema';
+import { urlDeConexion } from '@/db/url';
 import { ClienteWoo } from '@/woo/cliente';
 import { cotizacionDesdeWoo } from '@/woo/cotizacion';
 import { sincronizarCatalogo } from '@/woo/sincronizar';
@@ -36,7 +37,7 @@ async function main() {
     return;
   }
 
-  const sql = postgres(url, { max: 1 });
+  const sql = postgres(urlDeConexion(url), { max: 1 });
   const db = drizzle(sql, { schema, casing: 'snake_case' });
 
   try {
