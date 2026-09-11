@@ -33,7 +33,34 @@ mandan sobre este código:
 
 ---
 
-## Instalación
+## Verlo andando en dos minutos
+
+No hace falta instalar PostgreSQL, ni crear cuenta en ningún lado, ni tener
+credenciales de WooCommerce. Solo Node 22 o superior:
+
+```bash
+cd pos
+npm install
+npm run demo
+```
+
+Y abrir <http://localhost:3000>. El comando levanta un PostgreSQL embebido
+(PGlite, el mismo motor compilado a WASM que usan los tests), aplica las
+migraciones, carga 27 productos de prueba y arranca el POS. Las credenciales se
+imprimen en la consola.
+
+Los datos quedan en `.demo/` y sobreviven a los reinicios. Para empezar de cero:
+
+```bash
+npm run demo -- --reset
+```
+
+Es solo para mirar y para desarrollar: PGlite corre dentro del proceso y no
+sirve para producción.
+
+---
+
+## Instalación para desarrollo real
 
 Requisitos: Node 22 o superior, y una base PostgreSQL 16 (Neon o Supabase).
 
@@ -61,7 +88,7 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 | `WOO_CONSUMER_KEY` / `WOO_CONSUMER_SECRET` | Clave de la REST API de WooCommerce, con permiso de lectura y escritura. |
 | `WOO_WEBHOOK_SECRET` | Secreto compartido de los webhooks. Sin esto, el endpoint rechaza todo con 503. |
 | `WOO_AUTH_QUERY` | `true` si el hosting descarta la cabecera `Authorization` (pasa con LiteSpeed). Manda la credencial por query string, que también es método oficial de Woo sobre HTTPS. |
-| `POS_TERMINAL` | Prefijo del número de venta, ej. `T1`. Una terminal por despliegue. |
+| `POS_TERMINAL` | Prefijo del número de venta, ej. `T1`. Una terminal por despliegue: define de dónde salió cada venta y a qué caja pertenece. Con una sola caja, dejar `T1`. |
 
 ---
 
@@ -128,6 +155,13 @@ Los de Playwright sí necesitan la base migrada y sembrada:
 
 ```bash
 npm run db:migrate && npm run db:seed -- --reset && npm run build && npm run test:e2e
+```
+
+Los de Playwright también se pueden correr contra la demo, sin base propia:
+
+```bash
+npm run demo                              # en una terminal
+E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 ```
 
 ### Qué se verifica
