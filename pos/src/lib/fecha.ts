@@ -14,6 +14,10 @@ const FORMATO_FECHA = new Intl.DateTimeFormat('es-AR', {
   year: 'numeric',
 });
 
+/**
+ * Reloj de 24 horas a propósito: en un ticket térmico «15:30» ocupa menos que
+ * «03:30 p. m.» y no se puede leer mal.
+ */
 const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-AR', {
   timeZone: ZONA_HORARIA,
   day: '2-digit',
@@ -21,6 +25,7 @@ const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-AR', {
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
+  hour12: false,
 });
 
 export function formatearFecha(d: Date): string {
