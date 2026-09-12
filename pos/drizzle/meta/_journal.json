@@ -50,6 +50,13 @@
       "when": 1789234891017,
       "tag": "0006_limite_de_credito",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789251782813,
+      "tag": "0007_mensajes_de_whatsapp",
+      "breakpoints": true
     }
   ]
 }

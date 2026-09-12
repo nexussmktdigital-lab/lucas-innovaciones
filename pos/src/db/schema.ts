@@ -109,6 +109,8 @@ export const origenCotizacionEnum = pgEnum('origen_cotizacion', [
 
 export const estadoSyncEnum = pgEnum('estado_sync', ['pendiente', 'procesando', 'ok', 'fallido']);
 
+export const tipoMensajeEnum = pgEnum('tipo_mensaje', ['comprobante', 'recordatorio_fiado']);
+
 /* -------------------------------------------------------------------------- */
 /* Identidad y configuracion                                                  */
 /* -------------------------------------------------------------------------- */
@@ -721,6 +723,35 @@ export const stockMovements = pgTable(
     index('stock_movements_product_idx').on(t.productId),
     index('stock_movements_fecha_idx').on(t.createdAt),
     check('stock_movements_cantidad_ck', sql`${t.cantidad} <> 0`),
+  ],
+);
+
+/**
+ * Mensajes de WhatsApp preparados desde el POS.
+ *
+ * Dice **preparado** y no «enviado» a proposito: el POS arma el texto y abre
+ * WhatsApp con el mensaje escrito; quien aprieta enviar es la persona. Guardar
+ * esto como «enviado» seria mentir en la unica tabla que despues se usa para
+ * decidir si volver a insistirle a un cliente.
+ */
+export const whatsappMessages = pgTable(
+  'whatsapp_messages',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    tipo: tipoMensajeEnum().notNull(),
+    customerId: uuid().references(() => customers.id),
+    /** Telefono al que se abrio el chat, en E.164. */
+    telefono: text().notNull(),
+    /** El texto tal cual quedo. Es lo que se le dijo al cliente. */
+    texto: text().notNull(),
+    referenciaTipo: text(),
+    referenciaId: uuid(),
+    preparadoPorId: uuid().references(() => users.id),
+    preparadoEn: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('whatsapp_messages_cliente_idx').on(t.customerId),
+    index('whatsapp_messages_fecha_idx').on(t.preparadoEn),
   ],
 );
 
