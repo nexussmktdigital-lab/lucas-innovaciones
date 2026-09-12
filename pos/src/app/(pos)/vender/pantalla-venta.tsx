@@ -65,6 +65,8 @@ export default function PantallaVenta({
   const [clienteId, setClienteId] = useState<string | null>(null);
   const [cobrando, setCobrando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  /** Solo se usa si el navegador bloqueó la ventana del comprobante. */
+  const [ultimoTicket, setUltimoTicket] = useState<{ id: string; numero: string } | null>(null);
   const enfocarBuscador = useRef<() => void>(() => {});
 
   const totales = useMemo(() => calcularTotales(lineas, descuentoGlobal), [lineas, descuentoGlobal]);
@@ -117,12 +119,14 @@ export default function PantallaVenta({
             descuentoCentavos: 0,
             stockDisponible: disponible,
             gestionaStock: r.gestionaStock,
-            precioEditable: r.precioEditable,
+            // Escribir el precio es atribución del dueño. El servidor lo
+            // rechaza igual; esto evita que el vendedor lo intente.
+            precioEditable: r.precioEditable && esDuenio,
           },
         ];
       });
     },
-    [tcCentavos],
+    [tcCentavos, esDuenio],
   );
 
   const cambiarCantidad = useCallback((clave: string, cantidad: number) => {
@@ -181,11 +185,22 @@ export default function PantallaVenta({
   }, [lineas.length, cobrando]);
 
   async function confirmar(datos: Parameters<typeof registrarVenta>[0]) {
-    const r = await registrarVenta(datos);
-    if (!r.ok) return r;
+    // La ventana del ticket se pide ANTES de esperar al servidor. Abrirla
+    // después es abrirla fuera del gesto del cajero, y Safari —el navegador de
+    // la caja— la bloquea: la venta entraba y el comprobante no salía nunca.
+    const ventana = window.open('', '_blank', 'width=420,height=760');
 
-    // El ticket se abre en otra pestaña y se manda a imprimir solo.
-    window.open(`/ticket/${r.ventaId}`, '_blank', 'width=420,height=760');
+    const r = await registrarVenta(datos);
+    if (!r.ok) {
+      ventana?.close();
+      return r;
+    }
+
+    // El ticket se manda a imprimir solo. Si el navegador igual bloqueó la
+    // ventana, queda el enlace en pantalla: nunca se pierde el comprobante.
+    if (ventana) ventana.location.href = `/ticket/${r.ventaId}`;
+    else setUltimoTicket({ id: r.ventaId, numero: r.numero });
+
     vaciar();
     setCobrando(false);
     router.refresh();
@@ -229,6 +244,25 @@ export default function PantallaVenta({
             className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
           >
             {aviso}
+          </p>
+        ) : null}
+
+        {ultimoTicket ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          >
+            La venta <strong>{ultimoTicket.numero}</strong> quedó registrada, pero el navegador
+            bloqueó la ventana del comprobante.{' '}
+            <a
+              href={`/ticket/${ultimoTicket.id}`}
+              target="_blank"
+              rel="noopener"
+              onClick={() => setUltimoTicket(null)}
+              className="font-semibold underline underline-offset-2"
+            >
+              Abrir el ticket
+            </a>
           </p>
         ) : null}
 

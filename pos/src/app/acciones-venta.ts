@@ -15,6 +15,7 @@ import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
+import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 
 const medioPago = z.enum([
@@ -108,6 +109,24 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
     return { ok: false, error: 'Los descuentos los tiene que autorizar el dueño.' };
   }
 
+  // Escribir el precio de un servicio es lo mismo que descontar: hay que poder
+  // hacerlo, pero no sin que quede claro quién lo autorizó. La pantalla ya no
+  // le muestra el campo al vendedor; esto es lo que lo hace cumplir de verdad.
+  const hayPrecioEscrito = validado.data.lineas.some((l) => l.precioManualCentavos != null);
+
+  if (hayPrecioEscrito && !puede(sesion.user.rol, 'venta.editar_precio')) {
+    return {
+      ok: false,
+      error: 'Escribir el precio de un producto lo tiene que autorizar el dueño.',
+    };
+  }
+
+  // Saltear la guarda de precios es decisión del dueño. Si no lo es, se ignora
+  // la bandera y la venta vuelve a pasar por el control: la pantalla no es la
+  // que decide esto.
+  const salteaGuardaDePrecios =
+    (validado.data.confirmarPreciosSospechosos ?? false) && sesion.user.rol === 'owner';
+
   try {
     const venta = await confirmarVenta(db, {
       lineas: validado.data.lineas.map((l) => ({
@@ -132,8 +151,8 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       terminal,
       idempotencyKey: validado.data.idempotencyKey,
       nota: validado.data.nota ?? null,
-      autorizadaPorId: hayDescuento ? sesion.user.id : null,
-      confirmarPreciosSospechosos: validado.data.confirmarPreciosSospechosos ?? false,
+      autorizadaPorId: hayDescuento || hayPrecioEscrito ? sesion.user.id : null,
+      confirmarPreciosSospechosos: salteaGuardaDePrecios,
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
@@ -163,5 +182,59 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       ok: false,
       error: 'No se pudo confirmar la venta. No se cobró nada: probá de nuevo.',
     };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Anulación                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface EstadoAnulacion {
+  error?: string;
+  ok?: string;
+}
+
+/**
+ * Anula una venta del turno abierto.
+ *
+ * Solo el dueño: reponer stock y sacar plata de la caja no es una operación de
+ * mostrador. El motivo es obligatorio y queda en la bitácora.
+ */
+export async function anularVentaAccion(
+  _previo: EstadoAnulacion,
+  datos: FormData,
+): Promise<EstadoAnulacion> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'venta.anular')) {
+    return { error: 'Anular una venta lo tiene que hacer el dueño.' };
+  }
+
+  const ventaId = String(datos.get('ventaId') ?? '');
+  const motivo = String(datos.get('motivo') ?? '');
+
+  if (!z.string().uuid().safeParse(ventaId).success) {
+    return { error: 'No se reconoce esa venta.' };
+  }
+
+  try {
+    const r = await anularVenta(db, { ventaId, usuarioId: sesion.user.id, motivo });
+
+    // El stock repuesto también tiene que llegar a la tienda online.
+    void drenarEnSegundoPlano(db);
+
+    revalidatePath('/ventas');
+    revalidatePath('/caja');
+
+    return {
+      ok:
+        `Venta ${r.numero} anulada. Se repusieron ${r.unidadesRepuestas} ` +
+        `${r.unidadesRepuestas === 1 ? 'unidad' : 'unidades'} y salieron ` +
+        `${(r.revertidoCentavos / 100).toLocaleString('es-AR')} pesos de la caja.`,
+    };
+  } catch (error) {
+    if (error instanceof ErrorAnulacion) return { error: error.message };
+    console.error('[venta] Falló la anulación:', error);
+    return { error: 'No se pudo anular la venta. No se tocó nada: probá de nuevo.' };
   }
 }
