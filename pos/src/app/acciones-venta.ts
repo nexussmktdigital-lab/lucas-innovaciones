@@ -61,13 +61,24 @@ const esquemaVenta = z.object({
   clienteId: z.string().uuid().nullish(),
   idempotencyKey: z.string().min(8).max(100),
   nota: z.string().max(500).nullish(),
+  /** El dueño vio el cartel de precio sospechoso y decidió vender igual. */
+  confirmarPreciosSospechosos: z.boolean().optional(),
 });
 
 export type DatosDeVenta = z.input<typeof esquemaVenta>;
 
 export type ResultadoDeVenta =
   | { ok: true; ventaId: string; numero: string; totalCentavos: number; vueltoCentavos: number }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /**
+       * Cuando es `precio_sospechoso`, la pantalla puede ofrecerle al dueño
+       * confirmar y reintentar. Cualquier otro motivo no se puede saltear.
+       */
+      motivo?: string;
+      puedeConfirmar?: boolean;
+    };
 
 export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVenta> {
   const sesion = await auth();
@@ -122,6 +133,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       idempotencyKey: validado.data.idempotencyKey,
       nota: validado.data.nota ?? null,
       autorizadaPorId: hayDescuento ? sesion.user.id : null,
+      confirmarPreciosSospechosos: validado.data.confirmarPreciosSospechosos ?? false,
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
@@ -137,7 +149,15 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       vueltoCentavos: venta.vueltoCentavos,
     };
   } catch (error) {
-    if (error instanceof ErrorVenta) return { ok: false, error: error.message };
+    if (error instanceof ErrorVenta) {
+      return {
+        ok: false,
+        error: error.message,
+        motivo: error.motivo,
+        // Saltear la guarda de precios es decisión del dueño, no del vendedor.
+        puedeConfirmar: error.motivo === 'precio_sospechoso' && sesion.user.rol === 'owner',
+      };
+    }
     console.error('[venta] Falló la confirmación:', error);
     return {
       ok: false,

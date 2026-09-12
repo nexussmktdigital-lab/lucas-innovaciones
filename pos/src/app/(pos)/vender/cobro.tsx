@@ -55,6 +55,8 @@ export default function Cobro({
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Precio sospechoso: el dueño tiene que decidir a sabiendas. */
+  const [aConfirmar, setAConfirmar] = useState<string | null>(null);
   const clave = useRef(nuevaClave());
   const primerCampo = useRef<HTMLInputElement>(null);
 
@@ -96,12 +98,14 @@ export default function Cobro({
     setPagos((p) => p.map((pago, j) => (j === i ? { ...pago, ...cambios } : pago)));
   }
 
-  async function confirmar() {
+  async function confirmar(saltearGuardaDePrecios = false) {
     if (problemas.length > 0 || enviando) return;
     setEnviando(true);
     setError(null);
+    setAConfirmar(null);
 
     const r = await onConfirmar({
+      confirmarPreciosSospechosos: saltearGuardaDePrecios,
       lineas: lineas.map((l) => ({
         productId: l.productId,
         variantId: l.variantId ?? null,
@@ -122,7 +126,8 @@ export default function Cobro({
     });
 
     if (!r.ok) {
-      setError(r.error);
+      if (r.puedeConfirmar) setAConfirmar(r.error);
+      else setError(r.error);
       setEnviando(false);
     }
   }
@@ -282,10 +287,38 @@ export default function Cobro({
           </p>
         ) : null}
 
+        {aConfirmar ? (
+          <div
+            role="alert"
+            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/10 p-3"
+          >
+            <p className="text-sm font-semibold text-(--color-alerta)">
+              Frená: revisá el precio antes de cobrar
+            </p>
+            <p className="mt-1 text-sm">{aConfirmar}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onCerrar}
+                className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-3 text-sm font-semibold text-white"
+              >
+                Volver y revisar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmar(true)}
+                className="min-h-10 rounded-(--radius-caja) border border-(--color-alerta) px-3 text-sm font-medium"
+              >
+                El precio está bien, cobrar igual
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <button
           type="button"
-          onClick={confirmar}
-          disabled={problemas.length > 0 || enviando}
+          onClick={() => void confirmar()}
+          disabled={problemas.length > 0 || enviando || aConfirmar !== null}
           className="mt-4 min-h-14 w-full rounded-(--radius-caja) bg-(--color-ok) text-lg font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
         >
           {enviando ? 'Confirmando…' : 'Confirmar venta e imprimir'}
