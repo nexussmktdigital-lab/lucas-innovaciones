@@ -91,6 +91,8 @@ beforeEach(async () => {
         wooId: 7001,
         nombre: 'iPhone 14 Pro 256GB',
         sku: 'IP14P-256',
+        categoria: 'Smartphones nuevos',
+        marca: 'Apple',
         moneda: 'USD',
         precioUsdCentavos: 137_000,
         precioCentavos: 213_900_000,
@@ -428,5 +430,83 @@ describe('caja', () => {
 describe('carrito vacío', () => {
   it('no se confirma', async () => {
     await expect(confirmarVenta(db, solicitud({ lineas: [] }))).rejects.toThrow(ErrorVenta);
+  });
+});
+
+describe('validación de cordura de precios', () => {
+  /** El error de agosto: un iPhone cargado en pesos con la cifra del dólar. */
+  async function iPhoneMalCargado() {
+    const [p] = await db
+      .insert(products)
+      .values({
+        wooId: 7099,
+        nombre: 'iPhone 15 Pro Max 1TB',
+        sku: 'IP15PM-1T',
+        categoria: 'Smartphones nuevos',
+        marca: 'Apple',
+        precioCentavos: 630_000, // $6.300, cuando en realidad son US$ 6.300
+        stock: 9,
+      })
+      .returning();
+    return p!.id;
+  }
+
+  it('frena la venta y explica por qué', async () => {
+    const id = await iPhoneMalCargado();
+
+    const error = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: id, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 630_000, monetaryAccountId: cajaId }],
+      }),
+    ).catch((e: unknown) => e as ErrorVenta);
+
+    expect(error).toBeInstanceOf(ErrorVenta);
+    expect((error as ErrorVenta).motivo).toBe('precio_sospechoso');
+    expect((error as ErrorVenta).message).toMatch(/iPhone 15 Pro Max/);
+    expect((error as ErrorVenta).message).toMatch(/cifra en dólares/);
+    expect((error as ErrorVenta).sospechas).toHaveLength(1);
+
+    // Y no dejó nada a medias.
+    expect(await db.select().from(sales)).toHaveLength(0);
+  });
+
+  it('el dueño puede confirmarla a sabiendas, y queda auditado', async () => {
+    const id = await iPhoneMalCargado();
+
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: id, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 630_000, monetaryAccountId: cajaId }],
+        confirmarPreciosSospechosos: true,
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(630_000);
+
+    const [bitacora] = await db.select().from(auditLog);
+    expect(
+      (bitacora!.valorNuevo as { preciosSospechososConfirmados: boolean })
+        .preciosSospechososConfirmados,
+    ).toBe(true);
+  });
+
+  it('no molesta con los accesorios, que son la mayoría del catálogo', async () => {
+    // El vidrio de $5.000 no tiene piso: la venta pasa sin ruido.
+    const r = await confirmarVenta(db, solicitud());
+    expect(r.numero).toBe('T1-000001');
+  });
+
+  it('tampoco molesta con un iPhone bien cargado en dólares', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: iphoneId, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 213_900_000, monetaryAccountId: cajaId }],
+      }),
+    );
+    expect(r.totalCentavos).toBe(213_900_000);
   });
 });

@@ -44,6 +44,7 @@ import {
   type Pago,
   type ProductoVendible,
 } from './carrito';
+import { explicarSospechas, revisarVenta, type Sospecha } from './cordura';
 
 export class ErrorVenta extends Error {
   constructor(
@@ -54,7 +55,10 @@ export class ErrorVenta extends Error {
       | 'pago_insuficiente'
       | 'carrito_vacio'
       | 'sin_caja'
+      | 'precio_sospechoso'
       | 'datos_invalidos',
+    /** Detalle estructurado, para que la pantalla pueda ofrecer confirmar. */
+    readonly sospechas?: readonly Sospecha[],
   ) {
     super(message);
     this.name = 'ErrorVenta';
@@ -84,6 +88,8 @@ export interface SolicitudDeVenta {
   nota?: string | null;
   /** Dueño que autorizó un descuento o un precio editado, si hizo falta. */
   autorizadaPorId?: string | null;
+  /** El dueño vio el cartel de precio sospechoso y decidió vender igual. */
+  confirmarPreciosSospechosos?: boolean;
   ip?: string | null;
 }
 
@@ -179,7 +185,7 @@ export async function confirmarVenta(
     const idsProducto = [...new Set(solicitud.lineas.map((l) => l.productId))].sort();
     const filasProducto = filasDe<Record<string, unknown>>(
       await tx.execute(sql`
-        SELECT id, nombre, precio_centavos, moneda, precio_usd_centavos,
+        SELECT id, nombre, categoria, marca, precio_centavos, moneda, precio_usd_centavos,
                precio_editable, gestiona_stock, stock, stock_comprometido, woo_id, costo_centavos
           FROM products
          WHERE id IN (${sql.join(
@@ -191,11 +197,21 @@ export async function confirmarVenta(
       `),
     );
 
-    const catalogo = new Map<string, ProductoVendible & { wooId: number | null; costoCentavos: number | null }>();
+    const catalogo = new Map<
+      string,
+      ProductoVendible & {
+        wooId: number | null;
+        costoCentavos: number | null;
+        categoria: string | null;
+        marca: string | null;
+      }
+    >();
     for (const f of filasProducto) {
       catalogo.set(String(f.id), {
         id: String(f.id),
         nombre: String(f.nombre),
+        categoria: f.categoria === null ? null : String(f.categoria),
+        marca: f.marca === null ? null : String(f.marca),
         precioCentavos: Number(f.precio_centavos),
         moneda: f.moneda as 'ARS' | 'USD',
         precioUsdCentavos: f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
@@ -235,7 +251,33 @@ export async function confirmarVenta(
       );
     }
 
-    // 6. Stock. Se valida el total pedido por producto, no línea por línea:
+    // 6. Cordura de precios. Un producto que debería estar en dólares y quedó
+    //    cargado en pesos con la cifra del dólar pasa todas las demás
+    //    validaciones: para el sistema es un iPhone barato. Esto lo frena y
+    //    pide que el dueño lo confirme a sabiendas.
+    if (!solicitud.confirmarPreciosSospechosos) {
+      const sospechas = revisarVenta(
+        lineas.map((l) => {
+          const p = catalogo.get(l.productId)!;
+          return {
+            producto: {
+              nombre: p.nombre,
+              categoria: p.categoria,
+              marca: p.marca,
+              moneda: p.moneda,
+              precioUsdCentavos: p.precioUsdCentavos,
+            },
+            precioCentavos: l.precioUnitarioCentavos,
+          };
+        }),
+      );
+
+      if (sospechas.length > 0) {
+        throw new ErrorVenta(explicarSospechas(sospechas), 'precio_sospechoso', sospechas);
+      }
+    }
+
+    // 7. Stock. Se valida el total pedido por producto, no línea por línea:
     //    el mismo producto puede estar en dos renglones del carrito.
     for (const [productId, pedido] of pedidoPorProducto) {
       if (pedido === 0) continue;
@@ -249,7 +291,7 @@ export async function confirmarVenta(
       }
     }
 
-    // 7. Totales y cobro, recalculados en el servidor.
+    // 8. Totales y cobro, recalculados en el servidor.
     const totales = calcularTotales(lineas, solicitud.descuentoGlobal ?? null);
     const problemas = problemasDelCobro(totales, solicitud.pagos, {
       hayCliente: Boolean(solicitud.clienteId),
@@ -259,7 +301,7 @@ export async function confirmarVenta(
     }
     const cobro = calcularCobro(totales.totalCentavos, solicitud.pagos);
 
-    // 8. Número correlativo. El upsert es atómico y toma el candado de la fila.
+    // 9. Número correlativo. El upsert es atómico y toma el candado de la fila.
     const [contador] = filasDe<{ ultimo: number }>(
       await tx.execute(sql`
         INSERT INTO sale_counters (terminal, ultimo) VALUES (${solicitud.terminal}, 1)
@@ -269,7 +311,7 @@ export async function confirmarVenta(
     );
     const numero = numeroDeVenta(solicitud.terminal, Number(contador!.ultimo));
 
-    // 9. La venta.
+    // 10. La venta.
     const [venta] = await tx
       .insert(sales)
       .values({
@@ -294,7 +336,7 @@ export async function confirmarVenta(
 
     const ventaId = venta!.id;
 
-    // 10. Las líneas.
+    // 11. Las líneas.
     await tx.insert(saleItems).values(
       lineas.map((l) => ({
         saleId: ventaId,
@@ -311,7 +353,7 @@ export async function confirmarVenta(
       })),
     );
 
-    // 11. Los pagos.
+    // 12. Los pagos.
     await tx.insert(salePayments).values(
       solicitud.pagos.map((p) => ({
         saleId: ventaId,
@@ -324,7 +366,7 @@ export async function confirmarVenta(
       })),
     );
 
-    // 12. Stock: se descuenta y queda el asiento.
+    // 13. Stock: se descuenta y queda el asiento.
     for (const [productId, pedido] of pedidoPorProducto) {
       if (pedido === 0) continue;
       const p = catalogo.get(productId)!;
@@ -353,7 +395,7 @@ export async function confirmarVenta(
         .where(eq(productVariants.id, l.variantId));
     }
 
-    // 13. Caja. El vuelto sale del efectivo, así que a la caja entra el neto.
+    // 14. Caja. El vuelto sale del efectivo, así que a la caja entra el neto.
     for (const pago of solicitud.pagos) {
       const tipoCuenta = tipoDeCuentaPara(pago.medio);
       if (!tipoCuenta) continue; // cuenta corriente: no entra plata
@@ -382,7 +424,7 @@ export async function confirmarVenta(
         .where(eq(monetaryAccounts.id, cuentaId));
     }
 
-    // 14. Cola de sincronización con WooCommerce.
+    // 15. Cola de sincronización con WooCommerce.
     const aDescontar = [...pedidoPorProducto.entries()]
       .filter(([, pedido]) => pedido > 0)
       .map(([productId, pedido]) => ({
@@ -401,7 +443,7 @@ export async function confirmarVenta(
       });
     }
 
-    // 15. Auditoría, dentro de la misma transacción que lo que describe.
+    // 16. Auditoría, dentro de la misma transacción que lo que describe.
     await tx.insert(auditLog).values({
       usuarioId: solicitud.vendedorId,
       accion: 'venta.confirmar',
@@ -413,6 +455,7 @@ export async function confirmarVenta(
         unidades: totales.unidades,
         medios: solicitud.pagos.map((p) => p.medio),
         autorizadaPor: solicitud.autorizadaPorId ?? null,
+        preciosSospechososConfirmados: solicitud.confirmarPreciosSospechosos ?? false,
       },
       ip: solicitud.ip ?? null,
     });
