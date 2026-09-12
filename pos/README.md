@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 3.7 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 4 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -142,9 +142,11 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 5. **Al confirmar**, en una sola transacción: se crea la venta, se descuenta
    stock, se impacta la caja, se audita y se encola el ajuste a WooCommerce.
    Después se abre el ticket, que se manda a imprimir solo.
-6. **Ventas del turno** (`F4`) muestra todo lo que se vendió, permite volver a
+6. **Si se fía**, hay que elegir un cliente y lo tiene que hacer el dueño. La
+   deuda queda en su cuenta corriente, en la misma transacción que la venta.
+7. **Ventas del turno** (`F4`) muestra todo lo que se vendió, permite volver a
    imprimir cualquier comprobante y, al dueño, anular una venta mal cargada.
-7. **Al cerrar el turno** se cuenta el efectivo. Si no cuadra, hay que explicar
+8. **Al cerrar el turno** se cuenta el efectivo. Si no cuadra, hay que explicar
    por qué antes de poder cerrar.
 
 ### Anular una venta
@@ -222,6 +224,50 @@ que quede lo mismo que en el mostrador hay que cobrar `precio ÷ (1 − c)`. Con
 una comisión del 6,29%, el recargo es 6,71%, no 6,29%. La pantalla de Precios
 tiene la calculadora: se pone la comisión del panel de Mercado Pago y devuelve
 el recargo exacto.
+
+---
+
+## Clientes y fiado
+
+El fiado vive hoy en una libreta de papel y, en el POS viejo, cargado como si
+fuera un producto: es la mitad del 58% de facturación sin producto real (D24).
+Acá pasa a ser lo que es, **un saldo por cliente con su historia**.
+
+En **Fiado** (`F5`) se ve quién debe, cuánto y desde cuándo, y se recibe un pago;
+la plata entra a la caja del turno igual que una venta, así que el arqueo sigue
+cerrando. En la ficha de cada cliente están sus movimientos —lo que se le fió y
+lo que pagó, junto— y las dos cosas que solo el dueño toca: el tope de fiado y
+la carga de la ficha de papel.
+
+Las reglas están en la transacción, no en la pantalla:
+
+- **Fiar es del dueño.** `fiado.crear` no está entre los permisos del vendedor:
+  dar crédito no es una decisión de mostrador. **Cobrar sí** lo puede hacer el
+  vendedor: que venga alguien a pagar y no se le pueda recibir la plata sería
+  peor que cualquier control.
+- **No se fía sin cliente.** El botón está apagado hasta elegir uno.
+- **El tope se comprueba contra la deuda de ese instante**, no contra la que
+  había cuando se abrió la pantalla. La pantalla avisa antes de confirmar; el
+  servidor lo frena igual si se intenta.
+- **El saldo nunca queda negativo.** Cobrar de más se rechaza: si el cliente
+  pagó de más eso es un vuelto, no un saldo a favor.
+- **Anular una venta fiada le saca la deuda al cliente**, y como mucho lo que
+  todavía debe.
+- **Los cobros son inmutables y llevan clave de idempotencia**: reintentar el
+  formulario no cobra dos veces.
+
+### La libreta de papel
+
+Cada cliente puede recibir una vez el saldo que dice la libreta, sin venta
+detrás, y queda marcado como «de la libreta» para poder distinguirlo después de
+lo que nació en el sistema. Se ofrece solo mientras el cliente no tenga
+movimientos: sumar dos veces la misma deuda es el error que hay que evitar, y el
+dominio también lo rechaza.
+
+El modelo es una **cuenta corriente de saldo**, no un plan de cuotas: el cliente
+debe una cifra, se le fía y sube, paga y baja. Es como funciona la libreta. Las
+tablas de planes y cuotas están en el esquema para cuando haya que financiar una
+compra grande en cuotas fijas.
 
 ---
 
@@ -371,6 +417,16 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor no llega a las pantallas del dueño ni por URL | `e2e/calidad.spec.ts` |
+| Fiar deja la deuda registrada y no mueve plata | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| El tope de fiado frena la venta antes de que entre | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| Cobrar el fiado baja la deuda y entra a la caja del turno | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| No se puede cobrar más de lo que se debe, ni a quien no debe | `src/fiado/cuenta.test.ts` |
+| Reintentar el mismo cobro no cobra dos veces | `src/fiado/cuenta.test.ts` |
+| Anular una venta fiada le saca la deuda al cliente | `src/fiado/cuenta.test.ts` |
+| La ficha de papel entra una sola vez por cliente | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| El vendedor no puede fiar, pero sí recibir un pago | `e2e/fiado.spec.ts` |
+| Un teléfono argentino se normaliza como lo escriban | `src/clientes/clientes.test.ts` |
+| El mismo teléfono no se puede cargar en dos clientes | `src/clientes/clientes.test.ts`, `e2e/fiado.spec.ts` |
 | Una variación se cobra a su precio y no al del producto padre | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | Una variación de otro producto se rechaza | `src/ventas/confirmar.test.ts` |
 | Dos pagos en efectivo descuentan el vuelto una sola vez | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
@@ -460,8 +516,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 3.5 | Auditoría del sistema completo: variaciones, permisos en el servidor, ventas del turno y anulación | **Hecha** |
 | 3.6 | Precio de mostrador y precio de tienda, con el recargo de Mercado Pago | **Hecha** |
 | 3.7 | Lo que faltaba para producción: cola destrabable y programada, montos inmutables, el webhook deja de pisar el stock | **Hecha** |
-| 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | Siguiente |
-| 5 | WhatsApp: comprobantes y recordatorios | |
+| 4 | Clientes y fiado, con la migración de las fichas de papel | **Hecha** |
+| 5 | WhatsApp: comprobantes y recordatorios | Siguiente |
 | 6 | Gastos y cuentas monetarias | |
 | 7 | Caja completa: arqueo y cierre | |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | |
