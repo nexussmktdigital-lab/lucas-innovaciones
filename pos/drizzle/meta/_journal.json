@@ -36,6 +36,13 @@
       "when": 1789230652622,
       "tag": "0004_precio_de_mostrador",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789233851863,
+      "tag": "0005_montos_inmutables",
+      "breakpoints": true
     }
   ]
 }

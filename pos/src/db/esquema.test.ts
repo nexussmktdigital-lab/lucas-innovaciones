@@ -15,6 +15,8 @@ import {
   legacySales,
   monetaryAccounts,
   products,
+  saleItems,
+  salePayments,
   sales,
   stockMovements,
   users,
@@ -170,6 +172,56 @@ describe('nada se borra jamas', () => {
     );
     await rechazaCon(
       db.delete(stockMovements).where(eq(stockMovements.id, m!.id)),
+      /solo agregado/i,
+    );
+  });
+
+  it('los montos de una venta cerrada no se pueden reescribir', async () => {
+    // Se podia: `UPDATE sales SET total_centavos = 1` pasaba sin ruido.
+    await rechazaCon(
+      db.update(sales).set({ totalCentavos: 1 }).where(eq(sales.id, ventaId)),
+      /ya esta cerrada/i,
+    );
+    await rechazaCon(
+      db.update(sales).set({ idempotencyKey: 'otra' }).where(eq(sales.id, ventaId)),
+      /ya esta cerrada/i,
+    );
+    await rechazaCon(
+      db.update(sales).set({ vendedorId: null as unknown as string }).where(eq(sales.id, ventaId)),
+      /ya esta cerrada/i,
+    );
+  });
+
+  it('pero anular una venta sí puede cambiarle el estado y el motivo', async () => {
+    await db
+      .update(sales)
+      .set({ estado: 'cancelled', motivoAnulacion: 'prueba', syncedToWoo: true, nota: 'x' })
+      .where(eq(sales.id, ventaId));
+
+    const [v] = await db.select().from(sales).where(eq(sales.id, ventaId));
+    expect(v!.estado).toBe('cancelled');
+    expect(v!.totalCentavos).toBe(500_000); // el importe no se movió
+
+    // Se deja como estaba para los tests que vengan después.
+    await db.update(sales).set({ estado: 'completed', motivoAnulacion: null }).where(eq(sales.id, ventaId));
+  });
+
+  it('una línea de venta y un pago no cambian nunca', async () => {
+    const [linea] = await db.select().from(saleItems).where(eq(saleItems.saleId, ventaId));
+    if (linea) {
+      await rechazaCon(
+        db.update(saleItems).set({ precioUnitarioCentavos: 1 }).where(eq(saleItems.id, linea.id)),
+        /solo agregado/i,
+      );
+    }
+
+    const [pago] = await db
+      .insert(salePayments)
+      .values({ saleId: ventaId, medio: 'efectivo', montoCentavos: 100_000 })
+      .returning();
+
+    await rechazaCon(
+      db.update(salePayments).set({ montoCentavos: 1 }).where(eq(salePayments.id, pago!.id)),
       /solo agregado/i,
     );
   });
