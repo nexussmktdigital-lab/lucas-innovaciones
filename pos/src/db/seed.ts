@@ -59,6 +59,16 @@ const CATALOGO: ProductoSemilla[] = [
   { wooId: 7002, sku: 'IP13-128', nombre: 'iPhone 13 128GB', categoria: 'Smartphones nuevos', marca: 'Apple', precio: 0, stock: 2, usd: 520 },
   { wooId: 7003, sku: 'IP11-64', nombre: 'iPhone 11 64GB', categoria: 'Smartphones nuevos', marca: 'Apple', precio: 0, stock: 1, usd: 195 },
 
+  /**
+   * El error de agosto, a propósito.
+   *
+   * Nueve iPhones se cargaron a US$ 6.300 y se publicaron a $6.300. La ficha se
+   * ve perfectamente normal: es un iPhone con precio y stock. Está acá para que
+   * la guarda de cordura se pueda ver funcionando, en «Calidad del catálogo» y
+   * al intentar venderlo.
+   */
+  { wooId: 7099, sku: 'IP15PM-1T', nombre: 'iPhone 15 Pro Max 1TB', categoria: 'Smartphones nuevos', marca: 'Apple', precio: 6300, stock: 9 },
+
   // Servicios y chips catalogados (D24). Reemplazan al ítem genérico.
   { wooId: 9001, sku: 'SERV-VIRUS', nombre: 'Servicio técnico · Limpieza de virus', categoria: 'Servicio técnico', marca: null, precio: 7050, stock: 0, servicio: true },
   { wooId: 9002, sku: 'SERV-SOFT', nombre: 'Servicio técnico · Instalación de software', categoria: 'Servicio técnico', marca: null, precio: 8375, stock: 0, servicio: true },
@@ -67,6 +77,22 @@ const CATALOGO: ProductoSemilla[] = [
   { wooId: 9010, sku: 'CHIP-CLARO', nombre: 'Chip Claro prepago', categoria: 'Telefonía', marca: 'Claro', precio: 2205, stock: 0, servicio: true },
   { wooId: 9011, sku: 'CHIP-PERSONAL', nombre: 'Chip Personal prepago', categoria: 'Telefonía', marca: 'Personal', precio: 2205, stock: 0, servicio: true },
   { wooId: 9012, sku: 'CHIP-MOVISTAR', nombre: 'Chip Movistar prepago', categoria: 'Telefonía', marca: 'Movistar', precio: 2205, stock: 0, servicio: true },
+];
+
+/**
+ * Muestra del histórico del POS anterior, para que el marcador de facturación
+ * con producto real tenga con qué contrastar.
+ *
+ * Los porcentajes salen de la auditoría del 2026-08-03: la facturación cargada
+ * bajo ítem genérico venía en 70%, 67% y 61% en los últimos tres meses, sobre
+ * $167.415.950 en doce meses. Son datos agregados reales, redondeados a un mes
+ * de facturación típico; no son los pedidos uno por uno, que se importan en la
+ * fase 10 con el CSV del POS viejo.
+ */
+const HISTORICO: { mes: string; totalCentavos: number; sinProductoPorc: number }[] = [
+  { mes: '2026-05', totalCentavos: 1_380_000_000, sinProductoPorc: 70 },
+  { mes: '2026-06', totalCentavos: 1_420_000_000, sinProductoPorc: 67 },
+  { mes: '2026-07', totalCentavos: 1_510_000_000, sinProductoPorc: 61 },
 ];
 
 const CATEGORIAS_GASTO = [
@@ -221,6 +247,35 @@ export async function sembrar(
     )
     .onConflictDoNothing();
   }
+
+  // Histórico de referencia. Va aparte de las ventas del sistema nuevo: se
+  // consulta en reportes pero no toca stock ni caja.
+  await db
+    .insert(schema.legacySales)
+    .values(
+      HISTORICO.flatMap((m) => {
+        const sinProducto = Math.round((m.totalCentavos * m.sinProductoPorc) / 100);
+        return [
+          {
+            origen: 'yith',
+            referenciaExterna: `resumen-${m.mes}-sin-producto`,
+            fecha: new Date(`${m.mes}-15T15:00:00Z`),
+            totalCentavos: sinProducto,
+            sinProducto: true,
+            detalle: { nota: 'Agregado mensual de la auditoría, no pedidos individuales' },
+          },
+          {
+            origen: 'yith',
+            referenciaExterna: `resumen-${m.mes}-con-producto`,
+            fecha: new Date(`${m.mes}-15T15:00:00Z`),
+            totalCentavos: m.totalCentavos - sinProducto,
+            sinProducto: false,
+            detalle: { nota: 'Agregado mensual de la auditoría, no pedidos individuales' },
+          },
+        ];
+      }),
+    )
+    .onConflictDoNothing();
 
   await db
     .insert(schema.customers)
