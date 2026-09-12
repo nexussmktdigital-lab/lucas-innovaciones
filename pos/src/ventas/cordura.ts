@@ -138,6 +138,42 @@ export function revisarLinea(
   };
 }
 
+/**
+ * Cuánto puede bajar un precio escrito a mano respecto del de referencia.
+ *
+ * Los servicios técnicos y los chips se cobran escribiendo el precio en el
+ * momento: cada reparación es distinta. Pero el precio del catálogo sirve de
+ * referencia, y un servicio de $7.050 cobrado a $1 no es un presupuesto, es un
+ * error de tipeo o algo peor.
+ */
+export const PISO_DEL_PRECIO_ESCRITO = 0.5;
+
+/**
+ * Revisa un precio escrito a mano contra el de referencia del catálogo.
+ *
+ * Devuelve null si el producto no tiene precio de referencia: «Reparación (a
+ * presupuestar)» vale lo que diga el técnico y no hay contra qué compararlo.
+ */
+export function revisarPrecioEscrito(
+  descripcion: string,
+  precioEscritoCentavos: number,
+  precioReferenciaCentavos: number,
+): Sospecha | null {
+  if (precioReferenciaCentavos <= 0) return null;
+
+  const piso = Math.round(precioReferenciaCentavos * PISO_DEL_PRECIO_ESCRITO);
+  if (precioEscritoCentavos >= piso) return null;
+
+  return {
+    descripcion,
+    precioCentavos: precioEscritoCentavos,
+    pisoCentavos: piso,
+    motivo:
+      `En el catálogo figura a $${(precioReferenciaCentavos / 100).toLocaleString('es-AR')}. ` +
+      'Si es un precio acordado está bien, pero lo tiene que confirmar el dueño.',
+  };
+}
+
 /** Revisa todas las líneas de una venta. */
 export function revisarVenta(
   lineas: readonly { producto: ProductoAValidar; precioCentavos: number }[],

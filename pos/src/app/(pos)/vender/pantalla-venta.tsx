@@ -119,14 +119,12 @@ export default function PantallaVenta({
             descuentoCentavos: 0,
             stockDisponible: disponible,
             gestionaStock: r.gestionaStock,
-            // Escribir el precio es atribución del dueño. El servidor lo
-            // rechaza igual; esto evita que el vendedor lo intente.
-            precioEditable: r.precioEditable && esDuenio,
+            precioEditable: r.precioEditable,
           },
         ];
       });
     },
-    [tcCentavos, esDuenio],
+    [tcCentavos],
   );
 
   const cambiarCantidad = useCallback((clave: string, cantidad: number) => {

@@ -3,6 +3,7 @@ import {
   explicarSospechas,
   pisoPara,
   revisarLinea,
+  revisarPrecioEscrito,
   revisarVenta,
   type ProductoAValidar,
 } from './cordura';
@@ -174,5 +175,38 @@ describe('falsos positivos', () => {
         2_205_00,
       ),
     ).toBeNull();
+  });
+});
+
+describe('revisarPrecioEscrito', () => {
+  /**
+   * Los servicios técnicos y los chips se cobran escribiendo el precio: cada
+   * reparación es distinta. Pedirle permiso al dueño por cada una frenaría el
+   * mostrador, así que la guarda no es el permiso sino la distancia contra el
+   * precio de referencia del catálogo.
+   */
+  it('deja pasar un precio acordado, aunque no sea el del catálogo', () => {
+    // Servicio de $7.050 cobrado a $6.000: se negoció, y está bien.
+    expect(revisarPrecioEscrito('Limpieza de virus', 6_000_00, 7_050_00)).toBeNull();
+    // Y más caro nunca es sospechoso.
+    expect(revisarPrecioEscrito('Limpieza de virus', 20_000_00, 7_050_00)).toBeNull();
+  });
+
+  it('frena el precio muy por debajo del de referencia', () => {
+    const s = revisarPrecioEscrito('Limpieza de virus', 100, 7_050_00);
+    expect(s).not.toBeNull();
+    expect(s!.pisoCentavos).toBe(3_525_00);
+    expect(s!.motivo).toMatch(/7\.050/);
+    expect(s!.motivo).toMatch(/confirmar el dueño/);
+  });
+
+  it('justo en la mitad no salta', () => {
+    expect(revisarPrecioEscrito('Chip Claro', 1_102_50, 2_205_00)).toBeNull();
+    expect(revisarPrecioEscrito('Chip Claro', 1_102_49, 2_205_00)).not.toBeNull();
+  });
+
+  it('sin precio de referencia no hay nada contra qué comparar', () => {
+    // «Reparación (a presupuestar)» vale lo que diga el técnico.
+    expect(revisarPrecioEscrito('Reparación', 35_000_00, 0)).toBeNull();
   });
 });

@@ -292,7 +292,7 @@ test('el dueño anula una venta del turno y todo vuelve atrás', async ({ page }
   ).toBeVisible();
 });
 
-test('el vendedor no puede anular ni escribir el precio de un servicio', async ({ page }) => {
+test('el vendedor no puede anular, pero sí escribe el precio de un servicio', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
@@ -304,9 +304,42 @@ test('el vendedor no puede anular ni escribir el precio de un servicio', async (
   await page.goto('/ventas');
   await expect(page.getByRole('button', { name: 'Anular' })).toHaveCount(0);
 
+  // El precio del servicio sí lo escribe: cada reparación es distinta. Lo que
+  // no puede es alejarlo del de referencia sin que lo confirme el dueño.
   await page.goto('/vender');
   await agregar(page, 'Limpieza de virus', /Limpieza de virus/);
   const carrito = page.getByRole('complementary', { name: 'Carrito' });
-  await expect(carrito).toContainText('7.050');
-  await expect(carrito.getByLabel(/^Precio de/)).toHaveCount(0);
+  await expect(carrito.getByLabel(/^Precio de/)).toHaveValue('7050');
+
+  await carrito.getByLabel(/^Precio de/).fill('6000');
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await expect(cobro).toContainText('6.000,00');
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+});
+
+test('el vendedor no puede regalar un servicio, y el dueño sí a sabiendas', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/ingresar');
+  await page.getByLabel('PIN').fill(process.env.SEED_PIN_VENDEDOR ?? '4827');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
+
+  await page.goto('/vender');
+  await agregar(page, 'Limpieza de virus', /Limpieza de virus/);
+  const carrito = page.getByRole('complementary', { name: 'Carrito' });
+  await carrito.getByLabel(/^Precio de/).fill('1');
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+
+  // Al vendedor se le avisa y no se le ofrece salida.
+  await expect(cobro.getByText(/En el catálogo figura a/)).toBeVisible();
+  await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toHaveCount(0);
 });

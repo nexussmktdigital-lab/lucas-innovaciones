@@ -754,3 +754,131 @@ describe('dos pagos del mismo medio', () => {
     expect(efectivo!.saldoCentavos).toBe(600_000);
   });
 });
+
+describe('precio escrito en el mostrador', () => {
+  /**
+   * Los servicios se cobran escribiendo el precio: cada reparación es distinta.
+   * Pedirle el permiso al dueño en cada una frenaría la venta, así que la
+   * guarda es la distancia contra el precio de referencia del catálogo.
+   */
+  it('un vendedor puede escribir el precio de un servicio', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: servicioId, cantidad: 1, precioManualCentavos: 3_500_000 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 3_500_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(3_500_000);
+    const [linea] = await db.select().from(saleItems);
+    expect(linea!.precioUnitarioCentavos).toBe(3_500_000);
+  });
+
+  it('queda en la bitácora qué precio se escribió y cuál era el de catálogo', async () => {
+    const [p] = await db
+      .insert(products)
+      .values({
+        wooId: 9002,
+        nombre: 'Servicio técnico · Limpieza de virus',
+        precioCentavos: 705_000,
+        stock: 0,
+        gestionaStock: false,
+        esServicio: true,
+        precioEditable: true,
+      })
+      .returning();
+
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: p!.id, cantidad: 1, precioManualCentavos: 600_000 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 600_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    const [bitacora] = await db.select().from(auditLog);
+    expect((bitacora!.valorNuevo as { preciosEscritos: unknown[] }).preciosEscritos).toEqual([
+      {
+        descripcion: 'Servicio técnico · Limpieza de virus',
+        centavos: 600_000,
+        referenciaCentavos: 705_000,
+      },
+    ]);
+  });
+
+  it('frena el que está muy por debajo del de referencia', async () => {
+    const [p] = await db
+      .insert(products)
+      .values({
+        wooId: 9003,
+        nombre: 'Servicio técnico · Limpieza de virus',
+        precioCentavos: 705_000,
+        stock: 0,
+        gestionaStock: false,
+        esServicio: true,
+        precioEditable: true,
+      })
+      .returning();
+
+    // El caso de la auditoría: un servicio de $7.050 vendido a $1.
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: p!.id, cantidad: 1, precioManualCentavos: 100 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toMatchObject({ motivo: 'precio_sospechoso' });
+  });
+
+  it('el dueño lo puede confirmar a sabiendas', async () => {
+    const [p] = await db
+      .insert(products)
+      .values({
+        wooId: 9004,
+        nombre: 'Servicio técnico · Limpieza de virus',
+        precioCentavos: 705_000,
+        stock: 0,
+        gestionaStock: false,
+        esServicio: true,
+        precioEditable: true,
+      })
+      .returning();
+
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: p!.id, cantidad: 1, precioManualCentavos: 100 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
+        confirmarPreciosSospechosos: true,
+      }),
+    );
+    expect(r.totalCentavos).toBe(100);
+  });
+
+  it('un precio escrito en cero es haberse olvidado del renglón', async () => {
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: servicioId, cantidad: 1, precioManualCentavos: 0 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toThrow(/Escribí el precio/);
+  });
+
+  it('sigue sin aceptarse en un producto que no es de precio escrito', async () => {
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 100 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toThrow(/No se puede cambiar el precio/);
+  });
+});

@@ -46,7 +46,12 @@ import {
   type ProductoVendible,
   type VarianteVendible,
 } from './carrito';
-import { explicarSospechas, revisarVenta, type Sospecha } from './cordura';
+import {
+  explicarSospechas,
+  revisarPrecioEscrito,
+  revisarVenta,
+  type Sospecha,
+} from './cordura';
 
 export class ErrorVenta extends Error {
   constructor(
@@ -297,6 +302,16 @@ export async function confirmarVenta(
         precioManualCentavos: solicitada.precioManualCentavos ?? null,
         variante,
       });
+
+      // Un producto de precio escrito se cobra a lo que se escriba, pero algo
+      // hay que escribir: dejarlo en cero es haberse olvidado del renglón.
+      if (solicitada.precioManualCentavos != null && linea.precioUnitarioCentavos === 0) {
+        throw new ErrorVenta(
+          `Escribí el precio de "${linea.descripcion}" antes de cobrar.`,
+          'datos_invalidos',
+        );
+      }
+
       linea.descuentoCentavos = Math.max(0, Math.round(solicitada.descuentoCentavos ?? 0));
       lineas.push(linea);
 
@@ -310,26 +325,42 @@ export async function confirmarVenta(
       }
     }
 
-    // 6. Cordura de precios. Un producto que debería estar en dólares y quedó
-    //    cargado en pesos con la cifra del dólar pasa todas las demás
-    //    validaciones: para el sistema es un iPhone barato. Esto lo frena y
-    //    pide que el dueño lo confirme a sabiendas.
+    // 6. Cordura de precios, por dos caminos.
+    //
+    //    Uno: un producto que debería estar en dólares y quedó cargado en pesos
+    //    con la cifra del dólar pasa todas las demás validaciones —para el
+    //    sistema es un iPhone barato—, y lo atrapa el piso por categoría.
+    //
+    //    Dos: un precio escrito a mano muy por debajo del de referencia. Los
+    //    servicios se cobran escribiendo el precio, así que no se puede pedir
+    //    permiso para escribirlo; lo que sí se puede es frenar el $1.
+    //
+    //    En los dos casos no se bloquea de forma definitiva: se avisa y lo
+    //    confirma el dueño, que es el único que puede saltear la guarda.
     if (!solicitud.confirmarPreciosSospechosos) {
-      const sospechas = revisarVenta(
-        lineas.map((l) => {
+      const sospechas = [
+        ...revisarVenta(
+          lineas.map((l) => {
+            const p = catalogo.get(l.productId)!;
+            return {
+              producto: {
+                nombre: l.descripcion,
+                categoria: p.categoria,
+                marca: p.marca,
+                moneda: p.moneda,
+                precioUsdCentavos: p.precioUsdCentavos,
+              },
+              precioCentavos: l.precioUnitarioCentavos,
+            };
+          }),
+        ),
+        ...lineas.flatMap((l, i) => {
+          if (solicitud.lineas[i]?.precioManualCentavos == null) return [];
           const p = catalogo.get(l.productId)!;
-          return {
-            producto: {
-              nombre: l.descripcion,
-              categoria: p.categoria,
-              marca: p.marca,
-              moneda: p.moneda,
-              precioUsdCentavos: p.precioUsdCentavos,
-            },
-            precioCentavos: l.precioUnitarioCentavos,
-          };
+          const s = revisarPrecioEscrito(l.descripcion, l.precioUnitarioCentavos, p.precioCentavos);
+          return s ? [s] : [];
         }),
-      );
+      ];
 
       if (sospechas.length > 0) {
         throw new ErrorVenta(explicarSospechas(sospechas), 'precio_sospechoso', sospechas);
@@ -571,6 +602,15 @@ export async function confirmarVenta(
         medios: solicitud.pagos.map((p) => p.medio),
         autorizadaPor: solicitud.autorizadaPorId ?? null,
         preciosSospechososConfirmados: solicitud.confirmarPreciosSospechosos ?? false,
+        // Qué precios escribió a mano quien vendió, contra los del catálogo.
+        preciosEscritos: lineas
+          .map((l, i) => ({ l, solicitada: solicitud.lineas[i]! }))
+          .filter(({ solicitada }) => solicitada.precioManualCentavos != null)
+          .map(({ l }) => ({
+            descripcion: l.descripcion,
+            centavos: l.precioUnitarioCentavos,
+            referenciaCentavos: catalogo.get(l.productId)?.precioCentavos ?? 0,
+          })),
       },
       ip: solicitud.ip ?? null,
     });

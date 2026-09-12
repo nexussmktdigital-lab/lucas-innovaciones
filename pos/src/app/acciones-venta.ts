@@ -109,17 +109,12 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
     return { ok: false, error: 'Los descuentos los tiene que autorizar el dueño.' };
   }
 
-  // Escribir el precio de un servicio es lo mismo que descontar: hay que poder
-  // hacerlo, pero no sin que quede claro quién lo autorizó. La pantalla ya no
-  // le muestra el campo al vendedor; esto es lo que lo hace cumplir de verdad.
-  const hayPrecioEscrito = validado.data.lineas.some((l) => l.precioManualCentavos != null);
-
-  if (hayPrecioEscrito && !puede(sesion.user.rol, 'venta.editar_precio')) {
-    return {
-      ok: false,
-      error: 'Escribir el precio de un producto lo tiene que autorizar el dueño.',
-    };
-  }
+  // El precio de un servicio se escribe en el mostrador: cada reparación es
+  // distinta y pedir permiso para cada una frenaría la venta. Lo que sí se
+  // controla es cuánto puede alejarse del precio de referencia del catálogo,
+  // y eso lo hace la guarda de cordura, que solo el dueño puede saltear. Que
+  // el producto admita precio escrito lo comprueba el dominio contra el
+  // catálogo, no contra lo que diga el navegador.
 
   // Saltear la guarda de precios es decisión del dueño. Si no lo es, se ignora
   // la bandera y la venta vuelve a pasar por el control: la pantalla no es la
@@ -151,7 +146,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       terminal,
       idempotencyKey: validado.data.idempotencyKey,
       nota: validado.data.nota ?? null,
-      autorizadaPorId: hayDescuento || hayPrecioEscrito ? sesion.user.id : null,
+      autorizadaPorId: hayDescuento ? sesion.user.id : null,
       confirmarPreciosSospechosos: salteaGuardaDePrecios,
     });
 
