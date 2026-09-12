@@ -43,6 +43,13 @@
       "when": 1789233851863,
       "tag": "0005_montos_inmutables",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789234891017,
+      "tag": "0006_limite_de_credito",
+      "breakpoints": true
     }
   ]
 }

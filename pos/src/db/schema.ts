@@ -478,7 +478,14 @@ export const creditAccounts = pgTable(
     customerId: uuid()
       .notNull()
       .references(() => customers.id),
+    /** Cuanto debe hoy. Positivo es deuda; nunca baja de cero. */
     saldoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Hasta cuanto se le puede fiar. `null` es sin tope, que es lo que hay hoy
+     * en la libreta de papel; ponerle un numero es la forma de que el sistema
+     * frene antes de que la deuda se vuelva incobrable.
+     */
+    limiteCentavos: bigint({ mode: 'number' }),
     estado: estadoCuentaCorrienteEnum().notNull().default('al_dia'),
     origen: origenCuentaCorrienteEnum().notNull().default('sistema'),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

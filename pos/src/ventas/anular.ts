@@ -23,9 +23,11 @@ import {
   auditLog,
   cashMovements,
   cashSessions,
+  creditAccounts,
   monetaryAccounts,
   productVariants,
   products,
+  salePayments,
   sales,
   stockMovements,
   syncQueue,
@@ -61,6 +63,8 @@ export interface VentaAnulada {
   /** Cuánta plata salió de la caja al revertir. */
   revertidoCentavos: number;
   unidadesRepuestas: number;
+  /** Cuánta deuda de cuenta corriente se le sacó al cliente. */
+  deudaBorradaCentavos: number;
 }
 
 const MOTIVO_MINIMO = 4;
@@ -86,9 +90,10 @@ export async function anularVenta(
       estado: string;
       total_centavos: string | number;
       cash_session_id: string | null;
+      cliente_id: string | null;
     }>(
       await tx.execute(sql`
-        SELECT id, numero, estado, total_centavos, cash_session_id
+        SELECT id, numero, estado, total_centavos, cash_session_id, cliente_id
           FROM sales WHERE id = ${datos.ventaId} FOR UPDATE
       `),
     );
@@ -250,6 +255,28 @@ export async function anularVenta(
         .where(eq(monetaryAccounts.id, m.monetaryAccountId));
     }
 
+    // 2 bis. Si la venta era fiada, la deuda se va con ella.
+    const [fiado] = await tx
+      .select({ montoCentavos: salePayments.montoCentavos })
+      .from(salePayments)
+      .where(
+        and(
+          eq(salePayments.saleId, datos.ventaId),
+          eq(salePayments.medio, 'cuenta_corriente'),
+        ),
+      );
+
+    let deudaBorradaCentavos = 0;
+
+    if (fiado && venta.cliente_id) {
+      deudaBorradaCentavos = await descontarDeuda(tx, {
+        customerId: venta.cliente_id,
+        montoCentavos: fiado.montoCentavos,
+        usuarioId: datos.usuarioId,
+        motivo: `Anulación de la venta ${venta.numero}: ${motivo}`,
+      });
+    }
+
     // 3. La venta queda anulada, con el motivo a la vista.
     await tx
       .update(sales)
@@ -275,6 +302,7 @@ export async function anularVenta(
         motivo,
         revertidoCentavos,
         unidadesRepuestas,
+        deudaBorradaCentavos,
       },
     });
 
@@ -284,8 +312,48 @@ export async function anularVenta(
       totalCentavos: Number(venta.total_centavos),
       revertidoCentavos,
       unidadesRepuestas,
+      deudaBorradaCentavos,
     };
   });
+}
+
+/**
+ * Le saca al cliente la deuda que dejo una venta anulada.
+ *
+ * Se descuenta como mucho lo que debe: si en el medio pago parte de esa deuda,
+ * el saldo no puede quedar negativo. Devuelve cuanto se descuento de verdad.
+ */
+async function descontarDeuda(
+  tx: BaseDatos,
+  datos: { customerId: string; montoCentavos: number; usuarioId: string; motivo: string },
+): Promise<number> {
+  const [cuenta] = filasDe<{ id: string; saldo_centavos: string | number }>(
+    await tx.execute(sql`
+      SELECT id, saldo_centavos FROM credit_accounts
+       WHERE customer_id = ${datos.customerId} FOR UPDATE
+    `),
+  );
+  if (!cuenta) return 0;
+
+  const saldoAnterior = Number(cuenta.saldo_centavos);
+  const descontado = Math.min(datos.montoCentavos, saldoAnterior);
+  if (descontado <= 0) return 0;
+
+  await tx
+    .update(creditAccounts)
+    .set({ saldoCentavos: saldoAnterior - descontado, updatedAt: new Date() })
+    .where(eq(creditAccounts.id, String(cuenta.id)));
+
+  await tx.insert(auditLog).values({
+    usuarioId: datos.usuarioId,
+    accion: 'fiado.anular',
+    entidad: 'credit_accounts',
+    entidadId: String(cuenta.id),
+    valorAnterior: { saldoCentavos: saldoAnterior },
+    valorNuevo: { saldoCentavos: saldoAnterior - descontado, motivo: datos.motivo },
+  });
+
+  return descontado;
 }
 
 /**

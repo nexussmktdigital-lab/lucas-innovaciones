@@ -1,0 +1,1 @@
+ALTER TABLE "credit_accounts" ADD COLUMN "limite_centavos" bigint;

@@ -46,6 +46,7 @@ import {
   type ProductoVendible,
   type VarianteVendible,
 } from './carrito';
+import { anotarDeuda } from '@/fiado/cuenta';
 import { recargoDeTienda } from '@/precios/config';
 import { precioDeMostrador } from '@/precios/mostrador';
 import { explicarSospechas, revisarPrecioEscrito, revisarVenta, type Sospecha } from './cordura';
@@ -481,6 +482,29 @@ export async function confirmarVenta(
         ultimos4: p.ultimos4 ?? null,
       })),
     );
+
+    // 12 bis. Cuenta corriente: lo que se fía queda como deuda del cliente,
+    //         en la misma transacción que la venta. Si la venta no entra, la
+    //         deuda tampoco. Acá se comprueba el límite de crédito.
+    const fiadoCentavos = solicitud.pagos
+      .filter((p) => p.medio === 'cuenta_corriente')
+      .reduce((suma, p) => suma + p.montoCentavos, 0);
+
+    if (fiadoCentavos > 0) {
+      if (!solicitud.clienteId) {
+        throw new ErrorVenta(
+          'Para fiar hace falta elegir un cliente.',
+          'datos_invalidos',
+        );
+      }
+      await anotarDeuda(tx, {
+        customerId: solicitud.clienteId,
+        montoCentavos: fiadoCentavos,
+        saleId: ventaId,
+        numero,
+        usuarioId: solicitud.vendedorId,
+      });
+    }
 
     // 13. Stock: se descuenta donde de verdad se lleva y queda el asiento.
     for (const [productId, pedido] of pedidoPorProducto) {
