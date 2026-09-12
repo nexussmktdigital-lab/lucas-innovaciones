@@ -8,7 +8,7 @@
  * `catalogo-prioridad-fotos.csv`), mas los servicios y chips que hoy se cargan
  * como item generico y con D24 pasan a ser productos de verdad.
  */
-import { count, isNotNull, sql } from 'drizzle-orm';
+import { count, inArray, isNotNull, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import type { BaseDatos } from './tipos';
 import { hashearPassword, hashearPin } from '@/auth/pin';
@@ -30,7 +30,30 @@ interface ProductoSemilla {
   stock: number;
   usd?: number;
   servicio?: boolean;
+  /** True si el precio y el stock los ponen sus variaciones, no la ficha. */
+  variable?: boolean;
 }
+
+/**
+ * Variaciones del seed.
+ *
+ * En WooCommerce hay 600, y el A17 es el caso que importa: cada capacidad vale
+ * distinto y lleva su propio stock. Sin esto, el sistema no se puede probar sin
+ * Woo conectado —y la promesa era que se pudiera.
+ */
+interface VariacionSemilla {
+  wooIdPadre: number;
+  wooId: number;
+  sku: string;
+  nombre: string;
+  precio: number;
+  stock: number;
+}
+
+const VARIACIONES: VariacionSemilla[] = [
+  { wooIdPadre: 7100, wooId: 71001, sku: 'A17-128', nombre: '128GB', precio: 410000, stock: 2 },
+  { wooIdPadre: 7100, wooId: 71002, sku: 'A17-256', nombre: '256GB', precio: 550000, stock: 1 },
+];
 
 /** Muestra real del catálogo: los de mayor rotación de los últimos 12 meses. */
 const CATALOGO: ProductoSemilla[] = [
@@ -51,7 +74,7 @@ const CATALOGO: ProductoSemilla[] = [
   { wooId: 6951, sku: 'CAB-GEN-TRV', nombre: 'Cable TRV tipo C a tipo C 65w', categoria: 'Cables de carga', marca: null, precio: 12000, stock: 6 },
 
   // Teléfonos en pesos.
-  { wooId: 7100, sku: 'SAM-A17-128', nombre: 'Samsung Galaxy A17 128GB', categoria: 'Smartphones nuevos', marca: 'Samsung', precio: 410000, stock: 2 },
+  { wooId: 7100, sku: 'SAM-A17-128', nombre: 'Samsung Galaxy A17 128GB', categoria: 'Smartphones nuevos', marca: 'Samsung', precio: 410000, stock: 2, variable: true },
   { wooId: 7101, sku: 'MOT-G86-256', nombre: 'Motorola G86 256GB', categoria: 'Smartphones nuevos', marca: 'Motorola', precio: 382000, stock: 1 },
 
   // iPhones en dólares (D22): el USD manda, los pesos los calcula el sistema.
@@ -233,6 +256,7 @@ export async function sembrar(
         precioUsdCentavos: p.usd ? Math.round(p.usd * 100) : null,
         // En un producto en dólares el precio en pesos NO se tipea: se calcula.
         precioCentavos: p.usd ? usdAPesos(Math.round(p.usd * 100), TC_CENTAVOS) : p.precio * 100,
+        tipo: (p.variable ? 'variable' : 'simple') as 'simple' | 'variable',
         stock: p.stock,
         gestionaStock: !p.servicio,
         esServicio: Boolean(p.servicio),
@@ -249,6 +273,39 @@ export async function sembrar(
       })),
     )
     .onConflictDoNothing();
+
+    // Las variaciones cuelgan del padre, así que se buscan sus ids después de
+    // insertarlo.
+    const padres = await db
+      .select({ id: schema.products.id, wooId: schema.products.wooId })
+      .from(schema.products)
+      .where(inArray(schema.products.wooId, [...new Set(VARIACIONES.map((v) => v.wooIdPadre))]));
+
+    const porWooId = new Map(padres.map((p) => [p.wooId, p.id]));
+
+    const filas = VARIACIONES.flatMap((v) => {
+      const productId = porWooId.get(v.wooIdPadre);
+      if (!productId) return [];
+      return [
+        {
+          productId,
+          wooId: v.wooId,
+          sku: v.sku,
+          nombre: v.nombre,
+          atributos: { pa_capacidad: v.nombre },
+          precioCentavos: v.precio * 100,
+          stock: v.stock,
+          // Cada capacidad lleva su propio stock: no es el del padre.
+          gestionaStock: true,
+          activo: true,
+          lastSyncedAt: new Date(),
+        },
+      ];
+    });
+
+    if (filas.length > 0) {
+      await db.insert(schema.productVariants).values(filas).onConflictDoNothing();
+    }
   }
 
   // Histórico de referencia. Va aparte de las ventas del sistema nuevo: se
