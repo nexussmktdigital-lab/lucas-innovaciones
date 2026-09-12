@@ -59,9 +59,14 @@ export async function buscarProductos(
 
   const limite = opciones.limite ?? TOPE_RESULTADOS;
   const patron = `%${limpio}%`;
+  // El stock de una variación con `gestiona_stock` propio es el suyo; el resto
+  // —vidrios y fundas, que en Woo heredan del padre— cuentan contra el producto.
+  const gestionaStock = sql`(CASE WHEN v.id IS NOT NULL AND v.gestiona_stock THEN true ELSE p.gestiona_stock END)`;
+  const disponible = sql`(CASE WHEN v.id IS NOT NULL AND v.gestiona_stock THEN v.stock ELSE p.stock - p.stock_comprometido END)`;
+
   const filtroStock = opciones.incluirSinStock
     ? sql``
-    : sql`AND (NOT p.gestiona_stock OR (p.stock - p.stock_comprometido) > 0)`;
+    : sql`AND (NOT ${gestionaStock} OR ${disponible} > 0)`;
 
   const crudas = filasDe<{
     id: string;
@@ -95,9 +100,10 @@ export async function buscarProductos(
            ELSE v.precio_centavos END                 AS precio_centavos,
       p.moneda,
       p.precio_usd_centavos,
-      CASE WHEN v.id IS NULL THEN p.stock ELSE v.stock END AS stock,
-      p.stock_comprometido,
-      p.gestiona_stock,
+      CASE WHEN v.id IS NOT NULL AND v.gestiona_stock THEN v.stock ELSE p.stock END AS stock,
+      CASE WHEN v.id IS NOT NULL AND v.gestiona_stock THEN 0 ELSE p.stock_comprometido END
+                                                      AS stock_comprometido,
+      ${gestionaStock}                                AS gestiona_stock,
       p.precio_editable,
       p.es_servicio,
       p.imagen_url,

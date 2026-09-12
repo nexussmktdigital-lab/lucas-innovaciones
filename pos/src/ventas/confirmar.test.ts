@@ -14,6 +14,7 @@ import {
   customers,
   exchangeRates,
   monetaryAccounts,
+  productVariants,
   products,
   saleItems,
   salePayments,
@@ -508,5 +509,248 @@ describe('validación de cordura de precios', () => {
       }),
     );
     expect(r.totalCentavos).toBe(213_900_000);
+  });
+});
+
+describe('variaciones', () => {
+  /**
+   * Media tienda son variaciones. Hasta la fase 3.5 la venta las cobraba al
+   * precio del producto padre: la pantalla decia $550.000 y quedaba una venta
+   * de $410.000, con $140.000 de vuelto que nadie dio.
+   */
+  let variantePropiaId: string;
+  let varianteHeredaId: string;
+
+  beforeEach(async () => {
+    const vs = await db
+      .insert(productVariants)
+      .values([
+        {
+          productId: vidrioId,
+          wooId: 6486,
+          nombre: '6.7 pulgadas',
+          precioCentavos: 800_000,
+          stock: 3,
+          gestionaStock: true,
+        },
+        {
+          productId: vidrioId,
+          wooId: 6487,
+          nombre: '5.5 pulgadas',
+          precioCentavos: 600_000,
+          stock: 0,
+          gestionaStock: false,
+        },
+      ])
+      .returning();
+    variantePropiaId = vs[0]!.id;
+    varianteHeredaId = vs[1]!.id;
+  });
+
+  it('cobra el precio de la variación, no el del producto padre', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, variantId: variantePropiaId, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 800_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(800_000);
+    const [linea] = await db.select().from(saleItems);
+    expect(linea!.precioUnitarioCentavos).toBe(800_000);
+    expect(linea!.variantId).toBe(variantePropiaId);
+    // El ticket tiene que decir cuál se llevó.
+    expect(linea!.descripcion).toBe('Vidrio templado 9D — 6.7 pulgadas');
+  });
+
+  it('descuenta el stock de la variación y no toca el del padre', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, variantId: variantePropiaId, cantidad: 2 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 1_600_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    const [v] = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.id, variantePropiaId));
+    const [p] = await db.select().from(products).where(eq(products.id, vidrioId));
+
+    expect(v!.stock).toBe(1);
+    expect(p!.stock).toBe(40); // intacto: contarlo dos veces era el error
+
+    const [mov] = await db.select().from(stockMovements);
+    expect(mov!.variantId).toBe(variantePropiaId);
+    expect(mov!.cantidad).toBe(-2);
+    expect(mov!.stockResultante).toBe(1);
+  });
+
+  it('no vende más unidades de las que tiene la variación', async () => {
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: vidrioId, variantId: variantePropiaId, cantidad: 4 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 3_200_000, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toThrow(/quedan 3/);
+  });
+
+  it('una variación sin stock propio descuenta del producto padre', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, variantId: varianteHeredaId, cantidad: 2 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 1_200_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    const [p] = await db.select().from(products).where(eq(products.id, vidrioId));
+    const [v] = await db
+      .select()
+      .from(productVariants)
+      .where(eq(productVariants.id, varianteHeredaId));
+
+    expect(p!.stock).toBe(38);
+    expect(v!.stock).toBe(0);
+  });
+
+  it('rechaza una variación que es de otro producto', async () => {
+    // Un navegador manipulado descontaba stock del articulo equivocado.
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: iphoneId, variantId: variantePropiaId, cantidad: 1 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 213_900_000, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toMatchObject({ motivo: 'variacion_invalida' });
+  });
+
+  it('la cola le manda a Woo la variación, no el producto', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, variantId: variantePropiaId, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 800_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    const [enCola] = await db.select().from(syncQueue);
+    const items = (enCola!.payload as { items: Record<string, unknown>[] }).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      wooId: 6485,
+      variantWooId: 6486,
+      cantidad: 1,
+      stockResultante: 2,
+    });
+  });
+
+  it('en un producto en dólares el precio lo sigue calculando el sistema', async () => {
+    // La guarda de agosto no se saltea por elegir una medida distinta.
+    const [v] = await db
+      .insert(productVariants)
+      .values({
+        productId: iphoneId,
+        wooId: 7002,
+        nombre: '256GB',
+        precioCentavos: 6_300_00,
+        stock: 5,
+        gestionaStock: true,
+      })
+      .returning();
+
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: iphoneId, variantId: v!.id, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 213_900_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(213_900_000);
+  });
+});
+
+describe('dos pagos del mismo medio', () => {
+  /**
+   * El cliente paga con dos billetes y el cajero los carga por separado. El
+   * vuelto se restaba a cada uno: una venta de $5.000 dejaba la caja $3.000
+   * abajo.
+   */
+  it('el vuelto se descuenta una sola vez', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        // Vidrio $5.000 × 2 = $10.000, pagado con $3.000 + $20.000.
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [
+          { medio: 'efectivo', montoCentavos: 300_000, monetaryAccountId: cajaId },
+          { medio: 'efectivo', montoCentavos: 2_000_000, monetaryAccountId: cajaId },
+        ],
+      }),
+    );
+
+    const movimientos = await db
+      .select()
+      .from(cashMovements)
+      .where(eq(cashMovements.tipo, 'venta'));
+
+    const total = movimientos.reduce((s, m) => s + m.montoCentavos, 0);
+    expect(total).toBe(1_000_000);
+    // Y ningún asiento negativo: en un libro de caja eso no existe.
+    expect(movimientos.every((m) => m.montoCentavos > 0)).toBe(true);
+  });
+
+  it('el saldo de la cuenta queda igual que con un solo pago', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [
+          { medio: 'efectivo', montoCentavos: 300_000, monetaryAccountId: cajaId },
+          { medio: 'efectivo', montoCentavos: 2_000_000, monetaryAccountId: cajaId },
+        ],
+      }),
+    );
+
+    const [cuenta] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+
+    expect(cuenta!.saldoCentavos).toBe(1_000_000);
+  });
+
+  it('mezclando efectivo y transferencia, el vuelto sale solo del efectivo', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [
+          { medio: 'transferencia', montoCentavos: 400_000, monetaryAccountId: bancoId },
+          { medio: 'efectivo', montoCentavos: 1_000_000, monetaryAccountId: cajaId },
+        ],
+      }),
+    );
+
+    const [efectivo] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+    const [banco] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, bancoId));
+
+    // Total $10.000: $4.000 por transferencia y $10.000 en efectivo, $4.000 de vuelto.
+    expect(banco!.saldoCentavos).toBe(400_000);
+    expect(efectivo!.saldoCentavos).toBe(600_000);
   });
 });

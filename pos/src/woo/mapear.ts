@@ -160,6 +160,8 @@ export interface FilaVariante {
   atributos: Record<string, string>;
   precioCentavos: number;
   stock: number;
+  /** True solo si la variacion lleva su propio stock; si no, manda el padre. */
+  gestionaStock: boolean;
   codigoBarras: string | null;
   activo: boolean;
 }
@@ -176,7 +178,10 @@ export function mapearVariante(v: WooVariacion): FilaVariante {
     nombre,
     atributos,
     precioCentavos: precioACentavos(v.price ?? v.regular_price),
+    // `manage_stock: "parent"` es lo habitual en las variaciones de vidrios y
+    // fundas: el stock lo lleva el producto, no cada medida.
     stock: v.stock_quantity ?? 0,
+    gestionaStock: v.manage_stock === true,
     codigoBarras: limpiar(v.global_unique_id),
     activo: v.status === 'publish',
   };

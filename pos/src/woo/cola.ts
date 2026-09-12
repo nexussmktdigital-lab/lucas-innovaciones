@@ -20,7 +20,7 @@
  */
 import { z } from 'zod';
 import { and, eq, lte, sql } from 'drizzle-orm';
-import { products, sales, syncConflicts, syncQueue } from '@/db/schema';
+import { productVariants, products, sales, syncConflicts, syncQueue } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
 import { ClienteWoo, ErrorWoo } from './cliente';
 
@@ -34,7 +34,11 @@ export function esperaTrasIntento(intentos: number): number {
 
 const itemDeVenta = z.object({
   productId: z.string(),
+  /** Id de Woo del producto. En una variación, el del padre. */
   wooId: z.number(),
+  /** Presentes solo cuando el stock lo lleva la variación y no el producto. */
+  variantId: z.string().nullish(),
+  variantWooId: z.number().nullish(),
   cantidad: z.number(),
   stockResultante: z.number(),
 });
@@ -133,15 +137,33 @@ async function sincronizarStockDeVenta(
     // El valor que se escribe es el que el POS tiene AHORA, no el que tenía
     // cuando se hizo la venta: si hubo más ventas en el medio, esto las lleva
     // todas de una y el resultado sigue siendo correcto.
-    const [local] = await db
-      .select({ stock: products.stock, nombre: products.nombre })
-      .from(products)
-      .where(eq(products.id, item.productId))
-      .limit(1);
+    //
+    // Una variación se lee y se escribe en su propio recurso de Woo: el stock
+    // del producto padre no la representa.
+    const esVariacion = Boolean(item.variantId && item.variantWooId);
+    const recurso = esVariacion
+      ? `products/${item.wooId}/variations/${item.variantWooId}`
+      : `products/${item.wooId}`;
+
+    const local = esVariacion
+      ? (
+          await db
+            .select({ stock: productVariants.stock, nombre: productVariants.nombre })
+            .from(productVariants)
+            .where(eq(productVariants.id, item.variantId!))
+            .limit(1)
+        )[0]
+      : (
+          await db
+            .select({ stock: products.stock, nombre: products.nombre })
+            .from(products)
+            .where(eq(products.id, item.productId))
+            .limit(1)
+        )[0];
 
     if (!local) continue;
 
-    const enWoo = await cliente.obtener(`products/${item.wooId}`, productoWoo);
+    const enWoo = await cliente.obtener(recurso, productoWoo);
     const stockEnWoo = enWoo.stock_quantity ?? 0;
 
     if (stockEnWoo !== item.stockResultante && stockEnWoo !== local.stock) {
@@ -161,7 +183,7 @@ async function sincronizarStockDeVenta(
     }
 
     if (stockEnWoo !== local.stock) {
-      await cliente.enviar('PUT', `products/${item.wooId}`, { stock_quantity: local.stock }, productoWoo);
+      await cliente.enviar('PUT', recurso, { stock_quantity: local.stock }, productoWoo);
     }
   }
 

@@ -199,3 +199,36 @@ describe('mapearVariante', () => {
     expect(v.precioCentavos).toBe(500_000);
   });
 });
+
+describe('mapearVariante y el stock', () => {
+  /**
+   * En Woo, una variación puede traer `manage_stock: "parent"`. Tomar eso como
+   * stock propio dejaba a los vidrios y las fundas con stock 0 y sin poder
+   * venderse; tomarlo al revés descontaba dos veces la misma unidad.
+   */
+  function variacion(parcial: Record<string, unknown>) {
+    return wooVariacion.parse({
+      id: 8801,
+      price: '5000',
+      status: 'publish',
+      attributes: [{ name: 'Modelo', option: 'iPhone 14' }],
+      ...parcial,
+    });
+  }
+
+  it('lleva stock propio solo con manage_stock en true', () => {
+    expect(mapearVariante(variacion({ manage_stock: true, stock_quantity: 7 })).gestionaStock).toBe(
+      true,
+    );
+  });
+
+  it('«parent» significa que el stock lo lleva el producto padre', () => {
+    const v = mapearVariante(variacion({ manage_stock: 'parent', stock_quantity: null }));
+    expect(v.gestionaStock).toBe(false);
+    expect(v.stock).toBe(0);
+  });
+
+  it('sin el campo, tampoco lleva stock propio', () => {
+    expect(mapearVariante(variacion({})).gestionaStock).toBe(false);
+  });
+});

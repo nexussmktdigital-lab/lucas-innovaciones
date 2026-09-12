@@ -61,6 +61,11 @@ export const wooVariacion = z
     global_unique_id: z.string().nullish(),
     price: z.union([z.string(), z.number()]).nullish(),
     regular_price: z.union([z.string(), z.number()]).nullish(),
+    /**
+     * En una variacion puede venir `true`, `false` o el string `"parent"`, que
+     * significa «lo maneja el producto padre». Solo `true` es stock propio.
+     */
+    manage_stock: z.union([z.boolean(), z.string()]).default(false),
     stock_quantity: z.number().nullish(),
     status: z.string().default('publish'),
     attributes: z

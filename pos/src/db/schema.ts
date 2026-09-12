@@ -225,6 +225,12 @@ export const productVariants = pgTable(
     atributos: jsonb().notNull().default({}),
     precioCentavos: bigint({ mode: 'number' }).notNull().default(0),
     stock: integer().notNull().default(0),
+    /**
+     * True solo si la variacion lleva stock propio en WooCommerce. Cuando es
+     * false —el caso de los vidrios y las fundas, que en Woo vienen con
+     * `manage_stock: "parent"`— el stock que manda es el del producto padre.
+     */
+    gestionaStock: boolean().notNull().default(false),
     codigoBarras: text(),
     activo: boolean().notNull().default(true),
     lastSyncedAt: timestamp({ withTimezone: true }),

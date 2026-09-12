@@ -30,6 +30,23 @@ export interface ProductoVendible {
   stockComprometido: number;
 }
 
+/**
+ * Una variacion tal como la necesita el carrito.
+ *
+ * En WooCommerce una variacion tiene precio propio y puede tener stock propio.
+ * Media tienda son variaciones (vidrios, hidrogeles y fundas, D20), asi que la
+ * linea se arma con estos numeros y no con los del producto padre.
+ */
+export interface VarianteVendible {
+  id: string;
+  nombre: string;
+  precioCentavos: number;
+  /** True solo si lleva stock propio; si no, el que manda es el del padre. */
+  gestionaStock: boolean;
+  stock: number;
+  activo: boolean;
+}
+
 export interface LineaCarrito {
   productId: string;
   variantId?: string | null;
@@ -62,9 +79,16 @@ export interface TotalesCarrito {
 }
 
 /** Cuánto stock hay realmente disponible para vender en el mostrador. */
-export function stockDisponible(p: ProductoVendible): number {
+export function stockDisponible(p: ProductoVendible, v?: VarianteVendible | null): number {
+  // La variación solo manda si lleva stock propio; si no, cuenta el del padre.
+  if (v?.gestionaStock) return v.stock;
   if (!p.gestionaStock) return Number.POSITIVE_INFINITY;
   return p.stock - p.stockComprometido;
+}
+
+/** Nombre que va al ticket. En una variación, producto y medida juntos. */
+export function descripcionDeLinea(p: ProductoVendible, v?: VarianteVendible | null): string {
+  return v ? `${p.nombre} — ${v.nombre}` : p.nombre;
 }
 
 /**
@@ -72,6 +96,7 @@ export function stockDisponible(p: ProductoVendible): number {
  *
  * @param tcCentavos Cotización vigente, obligatoria si el producto está en USD.
  * @param precioManualCentavos Solo se acepta en productos con `precioEditable`.
+ * @param variante Variación elegida, con su propio precio y su propio nombre.
  */
 export function armarLinea(
   p: ProductoVendible,
@@ -79,42 +104,52 @@ export function armarLinea(
   opciones: {
     tcCentavos?: number | null;
     precioManualCentavos?: number | null;
-    variantId?: string | null;
+    variante?: VarianteVendible | null;
   } = {},
 ): LineaCarrito {
   if (!Number.isInteger(cantidad) || cantidad <= 0) {
     throw new ErrorCarrito(`Cantidad inválida: ${cantidad}`);
   }
 
+  const v = opciones.variante ?? null;
+  const descripcion = descripcionDeLinea(p, v);
+
+  if (v && !v.activo) {
+    throw new ErrorCarrito(`"${descripcion}" ya no está disponible.`);
+  }
+
   let precioUnitarioCentavos: number;
 
   if (p.moneda === 'USD') {
+    // En dólares el precio en pesos lo calcula el sistema a partir del precio
+    // en dólares del producto, tenga variación o no: es la guarda que hace
+    // imposible el error de agosto, y no se saltea por una medida distinta.
     if (!p.precioUsdCentavos) {
-      throw new ErrorCarrito(`"${p.nombre}" está marcado en dólares pero no tiene precio en dólares.`);
+      throw new ErrorCarrito(`"${descripcion}" está marcado en dólares pero no tiene precio en dólares.`);
     }
     if (!opciones.tcCentavos) {
       throw new ErrorCarrito(
-        `No hay cotización cargada y "${p.nombre}" se vende en dólares. Cargá el tipo de cambio antes de vender.`,
+        `No hay cotización cargada y "${descripcion}" se vende en dólares. Cargá el tipo de cambio antes de vender.`,
       );
     }
-    // El precio en pesos lo calcula el sistema. Nunca se tipea.
     precioUnitarioCentavos = usdAPesos(p.precioUsdCentavos, opciones.tcCentavos);
   } else if (opciones.precioManualCentavos != null) {
     if (!p.precioEditable) {
-      throw new ErrorCarrito(`No se puede cambiar el precio de "${p.nombre}" desde la venta.`);
+      throw new ErrorCarrito(`No se puede cambiar el precio de "${descripcion}" desde la venta.`);
     }
     if (opciones.precioManualCentavos < 0) {
       throw new ErrorCarrito('El precio no puede ser negativo.');
     }
     precioUnitarioCentavos = opciones.precioManualCentavos;
   } else {
-    precioUnitarioCentavos = p.precioCentavos;
+    // Una variación tiene su propio precio: cobrar el del padre es cobrar mal.
+    precioUnitarioCentavos = v ? v.precioCentavos : p.precioCentavos;
   }
 
   return {
     productId: p.id,
-    variantId: opciones.variantId ?? null,
-    descripcion: p.nombre,
+    variantId: v?.id ?? null,
+    descripcion,
     cantidad,
     precioUnitarioCentavos,
     monedaOriginal: p.moneda,

@@ -9,6 +9,7 @@ import {
   stockDisponible,
   type LineaCarrito,
   type ProductoVendible,
+  type VarianteVendible,
 } from './carrito';
 
 const TC = 156_100; // $1.561,00 — la cotización que devolvió el plugin
@@ -263,5 +264,95 @@ describe('problemasDelCobro', () => {
         { medio: 'credito', montoCentavos: 7_000_000, cuotas: 3, marcaTarjeta: 'Visa' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('armarLinea con variación', () => {
+  const vidrio: ProductoVendible = {
+    id: 'p1',
+    nombre: 'Vidrio templado 9D',
+    precioCentavos: 500_000,
+    moneda: 'ARS',
+    precioUsdCentavos: null,
+    precioEditable: false,
+    gestionaStock: true,
+    stock: 40,
+    stockComprometido: 0,
+  };
+
+  const medida: VarianteVendible = {
+    id: 'v1',
+    nombre: '6.7 pulgadas',
+    precioCentavos: 800_000,
+    gestionaStock: true,
+    stock: 3,
+    activo: true,
+  };
+
+  it('usa el precio de la variación y no el del padre', () => {
+    const l = armarLinea(vidrio, 1, { variante: medida });
+    expect(l.precioUnitarioCentavos).toBe(800_000);
+    expect(l.variantId).toBe('v1');
+  });
+
+  it('el ticket dice qué medida se llevó', () => {
+    expect(armarLinea(vidrio, 1, { variante: medida }).descripcion).toBe(
+      'Vidrio templado 9D — 6.7 pulgadas',
+    );
+  });
+
+  it('no arma una línea con una variación dada de baja', () => {
+    expect(() => armarLinea(vidrio, 1, { variante: { ...medida, activo: false } })).toThrow(
+      ErrorCarrito,
+    );
+  });
+
+  it('en dólares el precio lo sigue calculando el sistema', () => {
+    const iphone: ProductoVendible = {
+      ...vidrio,
+      moneda: 'USD',
+      precioUsdCentavos: 137_000,
+      precioCentavos: 0,
+    };
+    // La variación dice $6.300; el sistema cobra USD 1.370 al cambio.
+    const l = armarLinea(iphone, 1, {
+      tcCentavos: 157_100,
+      variante: { ...medida, precioCentavos: 6_300_00 },
+    });
+    expect(l.precioUnitarioCentavos).toBe(215_200_000);
+  });
+});
+
+describe('stockDisponible con variación', () => {
+  const p: ProductoVendible = {
+    id: 'p1',
+    nombre: 'Vidrio',
+    precioCentavos: 500_000,
+    moneda: 'ARS',
+    precioUsdCentavos: null,
+    precioEditable: false,
+    gestionaStock: true,
+    stock: 40,
+    stockComprometido: 5,
+  };
+  const v: VarianteVendible = {
+    id: 'v1',
+    nombre: '6.7',
+    precioCentavos: 800_000,
+    gestionaStock: true,
+    stock: 3,
+    activo: true,
+  };
+
+  it('manda el de la variación cuando lleva stock propio', () => {
+    expect(stockDisponible(p, v)).toBe(3);
+  });
+
+  it('manda el del padre cuando la variación hereda', () => {
+    expect(stockDisponible(p, { ...v, gestionaStock: false })).toBe(35);
+  });
+
+  it('sin variación, el del producto', () => {
+    expect(stockDisponible(p)).toBe(35);
   });
 });

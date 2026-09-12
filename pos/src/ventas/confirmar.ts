@@ -38,11 +38,13 @@ import {
   calcularCobro,
   calcularTotales,
   problemasDelCobro,
+  stockDisponible,
   type Descuento,
   type LineaCarrito,
   type MedioPago,
   type Pago,
   type ProductoVendible,
+  type VarianteVendible,
 } from './carrito';
 import { explicarSospechas, revisarVenta, type Sospecha } from './cordura';
 
@@ -56,6 +58,7 @@ export class ErrorVenta extends Error {
       | 'carrito_vacio'
       | 'sin_caja'
       | 'precio_sospechoso'
+      | 'variacion_invalida'
       | 'datos_invalidos',
     /** Detalle estructurado, para que la pantalla pueda ofrecer confirmar. */
     readonly sospechas?: readonly Sospecha[],
@@ -224,9 +227,47 @@ export async function confirmarVenta(
       });
     }
 
+    //    Y las variaciones, con su propio candado. Media tienda son variaciones
+    //    (vidrios, hidrogeles y fundas): tienen precio propio y a veces stock
+    //    propio, y cobrar el del padre es cobrar mal.
+    const idsVariante = [
+      ...new Set(solicitud.lineas.map((l) => l.variantId).filter((x): x is string => Boolean(x))),
+    ].sort();
+
+    const variantes = new Map<string, VarianteVendible & { productId: string; wooId: number | null }>();
+    if (idsVariante.length > 0) {
+      const filasVariante = filasDe<Record<string, unknown>>(
+        await tx.execute(sql`
+          SELECT id, product_id, nombre, precio_centavos, stock, gestiona_stock, activo, woo_id
+            FROM product_variants
+           WHERE id IN (${sql.join(
+             idsVariante.map((id) => sql`${id}`),
+             sql`, `,
+           )})
+           ORDER BY id
+             FOR UPDATE
+        `),
+      );
+      for (const f of filasVariante) {
+        variantes.set(String(f.id), {
+          id: String(f.id),
+          productId: String(f.product_id),
+          nombre: String(f.nombre),
+          precioCentavos: Number(f.precio_centavos),
+          stock: Number(f.stock),
+          gestionaStock: Boolean(f.gestiona_stock),
+          activo: Boolean(f.activo),
+          wooId: f.woo_id === null ? null : Number(f.woo_id),
+        });
+      }
+    }
+
     // 5. Reconstruir las líneas desde el catálogo. El precio lo pone el servidor.
+    //    El stock se acumula por donde de verdad se lleva: en la variación si
+    //    tiene el suyo, y si no en el producto.
     const lineas: LineaCarrito[] = [];
     const pedidoPorProducto = new Map<string, number>();
+    const pedidoPorVariante = new Map<string, number>();
 
     for (const solicitada of solicitud.lineas) {
       const p = catalogo.get(solicitada.productId);
@@ -237,18 +278,36 @@ export async function confirmarVenta(
         );
       }
 
+      let variante: VarianteVendible | null = null;
+      if (solicitada.variantId) {
+        const v = variantes.get(solicitada.variantId);
+        // Que la variación sea de este producto se comprueba acá: si no, un
+        // navegador manipulado descontaria stock de otro articulo.
+        if (!v || v.productId !== p.id) {
+          throw new ErrorVenta(
+            `La variación elegida de "${p.nombre}" ya no existe. Quitala del carrito y volvé a buscarla.`,
+            'variacion_invalida',
+          );
+        }
+        variante = v;
+      }
+
       const linea = armarLinea(p, solicitada.cantidad, {
         tcCentavos,
         precioManualCentavos: solicitada.precioManualCentavos ?? null,
-        variantId: solicitada.variantId ?? null,
+        variante,
       });
       linea.descuentoCentavos = Math.max(0, Math.round(solicitada.descuentoCentavos ?? 0));
       lineas.push(linea);
 
-      pedidoPorProducto.set(
-        p.id,
-        (pedidoPorProducto.get(p.id) ?? 0) + (p.gestionaStock ? solicitada.cantidad : 0),
-      );
+      if (variante?.gestionaStock) {
+        pedidoPorVariante.set(
+          variante.id,
+          (pedidoPorVariante.get(variante.id) ?? 0) + solicitada.cantidad,
+        );
+      } else if (p.gestionaStock) {
+        pedidoPorProducto.set(p.id, (pedidoPorProducto.get(p.id) ?? 0) + solicitada.cantidad);
+      }
     }
 
     // 6. Cordura de precios. Un producto que debería estar en dólares y quedó
@@ -261,7 +320,7 @@ export async function confirmarVenta(
           const p = catalogo.get(l.productId)!;
           return {
             producto: {
-              nombre: p.nombre,
+              nombre: l.descripcion,
               categoria: p.categoria,
               marca: p.marca,
               moneda: p.moneda,
@@ -277,15 +336,27 @@ export async function confirmarVenta(
       }
     }
 
-    // 7. Stock. Se valida el total pedido por producto, no línea por línea:
-    //    el mismo producto puede estar en dos renglones del carrito.
+    // 7. Stock. Se valida el total pedido por producto y por variación, no
+    //    línea por línea: el mismo artículo puede estar en dos renglones.
     for (const [productId, pedido] of pedidoPorProducto) {
       if (pedido === 0) continue;
       const p = catalogo.get(productId)!;
-      const disponible = p.stock - p.stockComprometido;
+      const disponible = stockDisponible(p);
       if (pedido > disponible) {
         throw new ErrorVenta(
           `No hay stock de "${p.nombre}": quedan ${Math.max(0, disponible)} y se piden ${pedido}.`,
+          'sin_stock',
+        );
+      }
+    }
+
+    for (const [variantId, pedido] of pedidoPorVariante) {
+      if (pedido === 0) continue;
+      const v = variantes.get(variantId)!;
+      const p = catalogo.get(v.productId)!;
+      if (pedido > v.stock) {
+        throw new ErrorVenta(
+          `No hay stock de "${p.nombre} — ${v.nombre}": quedan ${Math.max(0, v.stock)} y se piden ${pedido}.`,
           'sin_stock',
         );
       }
@@ -366,7 +437,7 @@ export async function confirmarVenta(
       })),
     );
 
-    // 13. Stock: se descuenta y queda el asiento.
+    // 13. Stock: se descuenta donde de verdad se lleva y queda el asiento.
     for (const [productId, pedido] of pedidoPorProducto) {
       if (pedido === 0) continue;
       const p = catalogo.get(productId)!;
@@ -386,16 +457,36 @@ export async function confirmarVenta(
       });
     }
 
-    // Variaciones: llevan su propio stock.
-    for (const l of lineas) {
-      if (!l.variantId) continue;
+    // Variaciones con stock propio. El producto padre no se toca: descontar de
+    // los dos contaria la misma unidad dos veces.
+    for (const [variantId, pedido] of pedidoPorVariante) {
+      if (pedido === 0) continue;
+      const v = variantes.get(variantId)!;
+      const resultante = v.stock - pedido;
+
       await tx
         .update(productVariants)
-        .set({ stock: sql`${productVariants.stock} - ${l.cantidad}` })
-        .where(eq(productVariants.id, l.variantId));
+        .set({ stock: resultante })
+        .where(eq(productVariants.id, variantId));
+
+      await tx.insert(stockMovements).values({
+        productId: v.productId,
+        variantId,
+        tipo: 'venta',
+        cantidad: -pedido,
+        stockResultante: resultante,
+        motivo: `Venta ${numero}`,
+        usuarioId: solicitud.vendedorId,
+        referenciaTipo: 'sale',
+        referenciaId: ventaId,
+      });
     }
 
     // 14. Caja. El vuelto sale del efectivo, así que a la caja entra el neto.
+    //     Se descuenta UNA sola vez aunque el cliente pague con dos billetes
+    //     cargados por separado: restárselo a cada pago dejaba la caja en rojo.
+    let vueltoPorDescontar = cobro.vueltoCentavos;
+
     for (const pago of solicitud.pagos) {
       const tipoCuenta = tipoDeCuentaPara(pago.medio);
       if (!tipoCuenta) continue; // cuenta corriente: no entra plata
@@ -404,7 +495,12 @@ export async function confirmarVenta(
       if (!cuentaId) continue;
 
       const esEfectivo = pago.medio === 'efectivo';
-      const monto = esEfectivo ? pago.montoCentavos - cobro.vueltoCentavos : pago.montoCentavos;
+      const vueltoDeEstePago = esEfectivo
+        ? Math.min(vueltoPorDescontar, pago.montoCentavos)
+        : 0;
+      vueltoPorDescontar -= vueltoDeEstePago;
+
+      const monto = pago.montoCentavos - vueltoDeEstePago;
       if (monto === 0) continue;
 
       await tx.insert(cashMovements).values({
@@ -415,7 +511,7 @@ export async function confirmarVenta(
         referenciaTipo: 'sale',
         referenciaId: ventaId,
         usuarioId: solicitud.vendedorId,
-        descripcion: `Venta ${numero}${esEfectivo && cobro.vueltoCentavos > 0 ? ' (neto de vuelto)' : ''}`,
+        descripcion: `Venta ${numero}${vueltoDeEstePago > 0 ? ' (neto de vuelto)' : ''}`,
       });
 
       await tx
@@ -424,16 +520,35 @@ export async function confirmarVenta(
         .where(eq(monetaryAccounts.id, cuentaId));
     }
 
-    // 15. Cola de sincronización con WooCommerce.
-    const aDescontar = [...pedidoPorProducto.entries()]
-      .filter(([, pedido]) => pedido > 0)
-      .map(([productId, pedido]) => ({
-        productId,
-        wooId: catalogo.get(productId)?.wooId ?? null,
-        cantidad: pedido,
-        stockResultante: (catalogo.get(productId)?.stock ?? 0) - pedido,
-      }))
-      .filter((x) => x.wooId !== null);
+    // 15. Cola de sincronización con WooCommerce. Cada renglón apunta a donde
+    //     vive el stock: al producto, o a la variación con su id de Woo.
+    const aDescontar = [
+      ...[...pedidoPorProducto.entries()]
+        .filter(([, pedido]) => pedido > 0)
+        .map(([productId, pedido]) => ({
+          productId,
+          wooId: catalogo.get(productId)?.wooId ?? null,
+          variantId: null as string | null,
+          variantWooId: null as number | null,
+          cantidad: pedido,
+          stockResultante: (catalogo.get(productId)?.stock ?? 0) - pedido,
+        })),
+      ...[...pedidoPorVariante.entries()]
+        .filter(([, pedido]) => pedido > 0)
+        .map(([variantId, pedido]) => {
+          const v = variantes.get(variantId)!;
+          return {
+            productId: v.productId,
+            wooId: catalogo.get(v.productId)?.wooId ?? null,
+            variantId,
+            variantWooId: v.wooId,
+            cantidad: pedido,
+            stockResultante: v.stock - pedido,
+          };
+        })
+        // Una variación sin id de Woo no se puede escribir allá.
+        .filter((x) => x.variantWooId !== null),
+    ].filter((x) => x.wooId !== null);
 
     if (aDescontar.length > 0) {
       await tx.insert(syncQueue).values({
