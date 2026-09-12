@@ -4,8 +4,11 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { clientePorId } from '@/clientes/clientes';
 import { cuentaDe, movimientosDe } from '@/fiado/cuenta';
+import { ajustesDeWhatsApp } from '@/whatsapp/config';
+import { armarRecordatorio, mensajesDe, ultimoRecordatorio } from '@/whatsapp/mensajes';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
+import BotonWhatsApp from '../../boton-whatsapp';
 import FormularioCliente from '../formulario-cliente';
 import FormularioLimite from './formulario-limite';
 import FormularioFicha from './formulario-ficha';
@@ -23,6 +26,11 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
 
   const cuenta = await cuentaDe(db, id);
   const movimientos = await movimientosDe(db, id);
+
+  const ajustes = await ajustesDeWhatsApp(db);
+  const recordatorio = await armarRecordatorio(db, id, ajustes);
+  const aviso = await ultimoRecordatorio(db, id, ajustes.diasEntreRecordatorios);
+  const escritos = await mensajesDe(db, id);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -76,6 +84,27 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           ) : null}
         </div>
 
+        {recordatorio.listo ? (
+          <div className="mt-3">
+            <BotonWhatsApp
+              tipo="recordatorio_fiado"
+              referenciaId={cliente.id}
+              enlace={recordatorio.mensaje.enlace}
+              etiqueta="Recordarle por WhatsApp"
+              aviso={
+                aviso?.reciente
+                  ? `Ya se le recordó ${aviso.hace <= 0 ? 'hoy' : aviso.hace === 1 ? 'ayer' : `hace ${aviso.hace} días`}.`
+                  : null
+              }
+              destacado
+            />
+          </div>
+        ) : recordatorio.codigo === 'sin_telefono' ? (
+          <p className="mt-3 text-sm text-(--color-tinta-suave)">
+            Sin teléfono no se le puede avisar por WhatsApp. Cargalo acá arriba.
+          </p>
+        ) : null}
+
         {esDuenio ? (
           <div className="mt-4 space-y-3 border-t border-(--color-borde) pt-3">
             <FormularioLimite clienteId={cliente.id} limiteCentavos={cliente.limiteCentavos} />
@@ -85,6 +114,36 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           </div>
         ) : null}
       </section>
+
+      {escritos.length > 0 ? (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-(--color-tinta-suave)">
+            Mensajes preparados
+          </h2>
+          <ul className="flex flex-col gap-1.5">
+            {escritos.map((m, i) => (
+              <li
+                key={`${m.preparadoEn.toISOString()}-${i}`}
+                className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-2.5 text-sm"
+              >
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium">
+                    {m.tipo === 'comprobante' ? 'Comprobante' : 'Recordatorio de deuda'}
+                  </span>
+                  <span className="text-xs text-(--color-tinta-suave)">
+                    {formatearFechaHora(m.preparadoEn)}
+                  </span>
+                </div>
+                <p className="mt-1 whitespace-pre-line text-(--color-tinta-media)">{m.texto}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs text-(--color-tinta-suave)">
+            «Preparado» quiere decir que el chat se abrió con el mensaje escrito. Quien aprieta
+            enviar es la persona, así que el sistema no puede jurar que llegó.
+          </p>
+        </section>
+      ) : null}
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-(--color-tinta-suave)">

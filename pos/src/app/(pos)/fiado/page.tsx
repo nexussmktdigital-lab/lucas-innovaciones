@@ -6,6 +6,8 @@ import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import { sesionAbierta } from '@/caja/sesion';
 import { deudores, totalFiado } from '@/fiado/cuenta';
+import { ajustesDeWhatsApp } from '@/whatsapp/config';
+import { recordatorioDe, ultimosRecordatorios } from '@/whatsapp/mensajes';
 import FilaDeudor from './fila-deudor';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +26,15 @@ export default async function PaginaFiado() {
   const lista = await deudores(db);
   const total = await totalFiado(db);
   const caja = await sesionAbierta(db, config().POS_TERMINAL);
+
+  // Los recordatorios se arman acá, con los datos que la lista ya trajo, y no
+  // uno por fila: una consulta más para saber a quién ya se le avisó.
+  const ajustes = await ajustesDeWhatsApp(db);
+  const avisos = await ultimosRecordatorios(
+    db,
+    lista.map((d) => d.customerId),
+    ajustes.diasEntreRecordatorios,
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -66,7 +77,14 @@ export default async function PaginaFiado() {
       ) : (
         <ul className="flex flex-col gap-2">
           {lista.map((d) => (
-            <FilaDeudor key={d.customerId} deudor={d} hayCaja={Boolean(caja)} esDuenio={esDuenio} />
+            <FilaDeudor
+              key={d.customerId}
+              deudor={d}
+              hayCaja={Boolean(caja)}
+              esDuenio={esDuenio}
+              recordatorio={recordatorioDe(d, ajustes)}
+              ultimoAviso={avisos.get(d.customerId) ?? null}
+            />
           ))}
         </ul>
       )}

@@ -6,6 +6,8 @@ import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import type { DeudorEnLista } from '@/fiado/cuenta';
+import type { Preparacion, UltimoAviso } from '@/whatsapp/mensajes';
+import BotonWhatsApp from '../boton-whatsapp';
 
 const INICIAL: EstadoFiado = {};
 
@@ -17,6 +19,13 @@ const MEDIOS = [
   { valor: 'credito', etiqueta: 'Crédito' },
 ] as const;
 
+/** «hoy», «ayer», «hace 5 días»: como se cuenta el tiempo en el mostrador. */
+function textoDeHace(dias: number): string {
+  if (dias <= 0) return 'hoy';
+  if (dias === 1) return 'ayer';
+  return `hace ${dias} días`;
+}
+
 /** Clave de idempotencia: una por formulario abierto. Reintentar no cobra dos veces. */
 function nuevaClave(): string {
   return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random()}`;
@@ -26,10 +35,14 @@ export default function FilaDeudor({
   deudor,
   hayCaja,
   esDuenio,
+  recordatorio,
+  ultimoAviso,
 }: {
   deudor: DeudorEnLista;
   hayCaja: boolean;
   esDuenio: boolean;
+  recordatorio: Preparacion;
+  ultimoAviso: UltimoAviso | null;
 }) {
   const [estado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
@@ -89,6 +102,35 @@ export default function FilaDeudor({
           {estado.ok}
         </p>
       ) : null}
+
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {recordatorio.listo ? (
+          <BotonWhatsApp
+            tipo="recordatorio_fiado"
+            referenciaId={deudor.customerId}
+            enlace={recordatorio.mensaje.enlace}
+            etiqueta="Recordarle por WhatsApp"
+            aviso={
+              ultimoAviso?.reciente
+                ? `Ya se le recordó ${textoDeHace(ultimoAviso.hace)}.`
+                : null
+            }
+          />
+        ) : recordatorio.codigo === 'sin_telefono' ? (
+          <Link
+            href={`/clientes/${deudor.customerId}`}
+            className="text-sm text-(--color-tinta-suave) underline underline-offset-2"
+          >
+            Sin teléfono: cargale el número para poder avisarle
+          </Link>
+        ) : null}
+
+        {ultimoAviso && !ultimoAviso.reciente ? (
+          <span className="text-xs text-(--color-tinta-suave)">
+            Último aviso {textoDeHace(ultimoAviso.hace)}
+          </span>
+        ) : null}
+      </div>
 
       {!abierto ? (
         <button

@@ -7,7 +7,9 @@ import { ventasDelTurno } from '@/ventas/anular';
 import { nombreDelMedio } from '@/ventas/ticket';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
+import { armarComprobantes } from '@/whatsapp/mensajes';
 import type { MedioPago } from '@/ventas/carrito';
+import BotonWhatsApp from '../boton-whatsapp';
 import FormularioAnulacion from './formulario-anulacion';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +44,10 @@ export default async function PaginaVentas() {
   const ventas = await ventasDelTurno(db, caja.id);
   const vigentes = ventas.filter((v) => v.estado === 'completed');
   const facturado = vigentes.reduce((suma, v) => suma + v.totalCentavos, 0);
+  const comprobantes = await armarComprobantes(
+    db,
+    vigentes.map((v) => v.id),
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -65,6 +71,7 @@ export default async function PaginaVentas() {
         <ul className="flex flex-col gap-2">
           {ventas.map((v) => {
             const anulada = v.estado === 'cancelled';
+            const comprobante = comprobantes.get(v.id);
             return (
               <li
                 key={v.id}
@@ -120,6 +127,27 @@ export default async function PaginaVentas() {
                   >
                     Ver e imprimir el comprobante
                   </a>
+
+                  {/* Sin cliente cargado no se dice nada: la mayoría de las
+                      ventas del mostrador son así y avisarlo en cada fila sería
+                      ruido. Que falte el teléfono sí se avisa: eso se arregla. */}
+                  {comprobante?.listo ? (
+                    <BotonWhatsApp
+                      tipo="comprobante"
+                      referenciaId={v.id}
+                      enlace={comprobante.mensaje.enlace}
+                      etiqueta={`Mandarlo por WhatsApp a ${comprobante.mensaje.nombre}`}
+                    />
+                  ) : comprobante?.codigo === 'sin_telefono' ? (
+                    <BotonWhatsApp
+                      tipo="comprobante"
+                      referenciaId={v.id}
+                      enlace=""
+                      etiqueta="WhatsApp"
+                      motivo={comprobante.motivo}
+                    />
+                  ) : null}
+
                   {esDuenio && !anulada ? (
                     <FormularioAnulacion ventaId={v.id} numero={v.numero} />
                   ) : null}
