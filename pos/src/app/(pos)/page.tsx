@@ -64,10 +64,25 @@ export default async function PaginaInicio() {
       ) : null}
 
       {cola.pendientes + cola.fallidas > 0 ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <p
+          className={`rounded-(--radius-caja) border p-3 text-sm ${
+            cola.fallidas > 0
+              ? 'border-(--color-error) bg-(--color-error)/10'
+              : 'border-(--color-alerta) bg-(--color-alerta)/10'
+          }`}
+        >
           Hay <strong>{cola.pendientes + cola.fallidas}</strong> ajuste
           {cola.pendientes + cola.fallidas === 1 ? '' : 's'} de stock esperando llegar a
-          WooCommerce. Las ventas están registradas.
+          WooCommerce
+          {cola.fallidas > 0
+            ? `, ${cola.fallidas} de ellos ya sin reintentos`
+            : ''}
+          . Las ventas están registradas.{' '}
+          {esDuenio ? (
+            <Link href="/sincronizacion" className="font-semibold underline underline-offset-2">
+              Ver la cola
+            </Link>
+          ) : null}
         </p>
       ) : null}
 

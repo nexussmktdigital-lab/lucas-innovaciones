@@ -62,8 +62,8 @@ export interface InformeDeDrenaje {
 /**
  * Procesa las operaciones pendientes cuyo momento de reintento ya llegó.
  *
- * Se llama después de confirmar una venta y, en producción, desde una tarea
- * programada que la vuelve a pasar por si alguna quedó trabada.
+ * Se llama después de confirmar una venta y, en producción, desde la tarea
+ * programada que pega en `/api/cron/sincronizar` por si alguna quedó trabada.
  */
 export async function drenarCola(
   db: BaseDatos,
@@ -229,4 +229,69 @@ export async function drenarEnSegundoPlano(db: BaseDatos): Promise<void> {
     }
     console.error('[cola] Fallo drenando la cola:', error);
   }
+}
+
+/**
+ * Vuelve a poner en cola las operaciones que agotaron los reintentos.
+ *
+ * Sin esto, una operacion que fallo seis veces quedaba muerta: el cajero veia
+ * el contador «N sin sincronizar» crecer y no habia forma de hacer nada con ese
+ * numero. Se usa despues de arreglar lo que fallaba —Woo caido, una clave
+ * vencida— para que el proximo drenaje las levante.
+ */
+export async function reintentarFallidas(db: BaseDatos, ahora = new Date()): Promise<number> {
+  const revividas = await db
+    .update(syncQueue)
+    // El error viejo se limpia: la operacion arranca de cero y si vuelve a
+    // fallar, el mensaje que se vea va a ser el de ahora y no el de ayer.
+    .set({
+      estado: 'pendiente',
+      intentos: 0,
+      proximoIntento: ahora,
+      ultimoError: null,
+      updatedAt: ahora,
+    })
+    .where(eq(syncQueue.estado, 'fallido'))
+    .returning({ id: syncQueue.id });
+
+  return revividas.length;
+}
+
+export interface OperacionEnCola {
+  id: string;
+  operacion: string;
+  estado: 'pendiente' | 'procesando' | 'ok' | 'fallido';
+  intentos: number;
+  proximoIntento: Date | null;
+  ultimoError: string | null;
+  createdAt: Date;
+  /** Numero de venta al que corresponde, si el payload lo trae. */
+  numero: string | null;
+}
+
+/** Lo que espera o fallo, de lo mas viejo a lo mas nuevo. */
+export async function operacionesEnCola(
+  db: BaseDatos,
+  limite = 50,
+): Promise<OperacionEnCola[]> {
+  const filas = await db
+    .select()
+    .from(syncQueue)
+    .where(sql`${syncQueue.estado} IN ('pendiente', 'procesando', 'fallido')`)
+    .orderBy(syncQueue.createdAt)
+    .limit(limite);
+
+  return filas.map((f) => ({
+    id: f.id,
+    operacion: f.operacion,
+    estado: f.estado,
+    intentos: f.intentos,
+    proximoIntento: f.proximoIntento,
+    ultimoError: f.ultimoError,
+    createdAt: f.createdAt,
+    numero:
+      typeof (f.payload as { numero?: unknown })?.numero === 'string'
+        ? String((f.payload as { numero: string }).numero)
+        : null,
+  }));
 }

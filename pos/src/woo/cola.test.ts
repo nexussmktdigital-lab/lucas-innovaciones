@@ -13,7 +13,14 @@ import {
 } from '@/db/schema';
 import { confirmarVenta } from '@/ventas/confirmar';
 import { ClienteWoo } from './cliente';
-import { drenarCola, esperaTrasIntento, pendientesDeSincronizar } from './cola';
+import {
+  drenarCola,
+  esperaTrasIntento,
+  MAXIMO_DE_INTENTOS,
+  operacionesEnCola,
+  pendientesDeSincronizar,
+  reintentarFallidas,
+} from './cola';
 
 let db: TestDb;
 let usuarioId: string;
@@ -217,5 +224,91 @@ describe('esperaTrasIntento', () => {
     expect(esperaTrasIntento(1)).toBe(2 * 60_000);
     expect(esperaTrasIntento(3)).toBe(8 * 60_000);
     expect(esperaTrasIntento(9)).toBe(32 * 60_000);
+  });
+});
+
+describe('reintentarFallidas', () => {
+  /**
+   * Una operación que agotaba los seis intentos quedaba muerta: el cajero veía
+   * el contador crecer y no había forma de hacer nada con ese número.
+   */
+  async function dejarUnaFallida() {
+    await venderDos();
+    const roto = wooSimulado({ 6485: 40 }, true);
+
+    // Seis corridas con Woo caído la dan por fallida.
+    for (let i = 0; i < MAXIMO_DE_INTENTOS; i += 1) {
+      await drenarCola(db, roto.cliente, { ahora: new Date(Date.now() + i * 60 * 60_000) });
+    }
+
+    const [enCola] = await db.select().from(syncQueue);
+    expect(enCola!.estado).toBe('fallido');
+  }
+
+  it('las devuelve a la cola con los intentos en cero', async () => {
+    await dejarUnaFallida();
+
+    const revividas = await reintentarFallidas(db);
+
+    expect(revividas).toBe(1);
+    const [enCola] = await db.select().from(syncQueue);
+    expect(enCola!.estado).toBe('pendiente');
+    expect(enCola!.intentos).toBe(0);
+  });
+
+  it('y con Woo de vuelta, el siguiente drenaje las pasa', async () => {
+    await dejarUnaFallida();
+    await reintentarFallidas(db);
+
+    const woo = wooSimulado({ 6485: 40 });
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(woo.stock[6485]).toBe(38);
+
+    const [venta] = await db.select().from(sales);
+    expect(venta!.syncedToWoo).toBe(true);
+  });
+
+  it('reintentar dos veces no descuenta de más: se escribe el absoluto', async () => {
+    await venderDos();
+    const woo = wooSimulado({ 6485: 40 });
+
+    await drenarCola(db, woo.cliente);
+    await reintentarFallidas(db);
+    await drenarCola(db, woo.cliente);
+
+    expect(woo.stock[6485]).toBe(38);
+  });
+
+  it('sin fallidas no toca nada', async () => {
+    await venderDos();
+    expect(await reintentarFallidas(db)).toBe(0);
+
+    const [enCola] = await db.select().from(syncQueue);
+    expect(enCola!.estado).toBe('pendiente');
+  });
+});
+
+describe('operacionesEnCola', () => {
+  it('dice qué espera, por qué falló y de qué venta es', async () => {
+    const venta = await venderDos();
+    const roto = wooSimulado({ 6485: 40 }, true);
+    await drenarCola(db, roto.cliente);
+
+    const [op] = await operacionesEnCola(db);
+
+    expect(op!.numero).toBe(venta.numero);
+    expect(op!.estado).toBe('pendiente');
+    expect(op!.intentos).toBe(1);
+    expect(op!.ultimoError).toMatch(/503|WooCommerce|boom/i);
+  });
+
+  it('no lista lo que ya se sincronizó', async () => {
+    await venderDos();
+    const woo = wooSimulado({ 6485: 40 });
+    await drenarCola(db, woo.cliente);
+
+    expect(await operacionesEnCola(db)).toHaveLength(0);
   });
 });

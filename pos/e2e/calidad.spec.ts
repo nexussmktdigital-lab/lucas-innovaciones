@@ -133,6 +133,32 @@ test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
   await expect(navegacion.getByText('Dólar')).toHaveCount(0);
 
   // Y si entra por la URL, lo saca.
-  await page.goto('/catalogo');
-  await expect(page).toHaveURL(/\/$/);
+  for (const ruta of ['/catalogo', '/precios', '/sincronizacion']) {
+    await page.goto(ruta);
+    await expect(page).toHaveURL(/\/$/);
+  }
+});
+
+test('la cola de WooCommerce se puede ver y destrabar', async ({ page }) => {
+  // El contador «N sin sincronizar» no servía de nada si no había forma de
+  // hacer algo con ese número.
+  await entrarComoDuenio(page);
+  await page.goto('/sincronizacion');
+
+  await expect(page.getByRole('heading', { name: /Sincronización con la tienda/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sincronizar ahora' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Sincronizar ahora' }).click();
+  // Sin credenciales de Woo en los tests, tiene que decirlo en vez de callarse.
+  await expect(page.getByText(/WooCommerce no responde|No había nada esperando/)).toBeVisible();
+});
+
+test('la ruta del cron no se abre sin el secreto', async ({ request }) => {
+  const sin = await request.get('/api/cron/sincronizar');
+  expect([401, 503]).toContain(sin.status());
+
+  const conUnoInventado = await request.get('/api/cron/sincronizar', {
+    headers: { authorization: 'Bearer no-es-este' },
+  });
+  expect([401, 503]).toContain(conUnoInventado.status());
 });

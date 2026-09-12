@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { cashSessions, monetaryAccounts, users } from '@/db/schema';
@@ -43,7 +44,10 @@ export default async function PaginaCaja() {
           WooCommerce. Las ventas están registradas: lo que falta es que la tienda online se entere.
           {cola.fallidas > 0
             ? ` ${cola.fallidas} agotaron los reintentos y necesitan que se revise la conexión.`
-            : ''}
+            : ''}{' '}
+          <Link href="/sincronizacion" className="font-semibold underline underline-offset-2">
+            Ver la cola
+          </Link>
         </p>
       ) : null}
 

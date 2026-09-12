@@ -8,6 +8,7 @@
  * nunca un precio.
  */
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/auth';
 import { db } from '@/db';
@@ -151,7 +152,9 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
-    void drenarEnSegundoPlano(db);
+    // Va en `after` y no suelto: en un entorno serverless una promesa huérfana
+    // se corta cuando la respuesta sale, y el drenaje quedaba a medio hacer.
+    after(() => drenarEnSegundoPlano(db));
 
     revalidatePath('/caja');
 
@@ -216,7 +219,7 @@ export async function anularVentaAccion(
     const r = await anularVenta(db, { ventaId, usuarioId: sesion.user.id, motivo });
 
     // El stock repuesto también tiene que llegar a la tienda online.
-    void drenarEnSegundoPlano(db);
+    after(() => drenarEnSegundoPlano(db));
 
     revalidatePath('/ventas');
     revalidatePath('/caja');

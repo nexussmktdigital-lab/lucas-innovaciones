@@ -7,7 +7,13 @@
 import type { NextAuthConfig } from 'next-auth';
 import type { Rol } from './permisos';
 
-export const RUTAS_PUBLICAS = ['/ingresar', '/api/auth', '/api/webhooks'];
+/**
+ * Rutas que no piden sesion de usuario.
+ *
+ * Las tres se autentican por su cuenta: `/api/webhooks` con la firma HMAC de
+ * WooCommerce y `/api/cron` con `CRON_SECRET`. No hay ninguna que quede abierta.
+ */
+export const RUTAS_PUBLICAS = ['/ingresar', '/api/auth', '/api/webhooks', '/api/cron'];
 
 export const configBase = {
   session: { strategy: 'jwt', maxAge: 60 * 60 * 12 },
