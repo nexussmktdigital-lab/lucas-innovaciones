@@ -11,6 +11,8 @@ interface Props {
   puedeDescontar: boolean;
   clientes: Cliente[];
   clienteId: string | null;
+  /** Solo el dueño puede fiar, así que solo a él le sirve ver la deuda. */
+  puedeFiar: boolean;
   tcCentavos: number | null;
   onCantidad: (clave: string, cantidad: number) => void;
   onPrecio: (clave: string, centavos: number) => void;
@@ -32,6 +34,7 @@ export default function Carrito({
   puedeDescontar,
   clientes,
   clienteId,
+  puedeFiar,
   tcCentavos,
   onCantidad,
   onPrecio,
@@ -43,6 +46,7 @@ export default function Carrito({
   onCobrar,
 }: Props) {
   const vacio = lineas.length === 0;
+  const elegido = clientes.find((c) => c.id === clienteId) ?? null;
 
   return (
     <div className="flex flex-col gap-3 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-3">
@@ -158,9 +162,19 @@ export default function Carrito({
       {!vacio ? (
         <>
           <div className="border-t border-(--color-borde) pt-3">
-            <label htmlFor="cliente" className="mb-1 block text-xs text-(--color-tinta-suave)">
-              Cliente (opcional en contado, obligatorio para fiar)
-            </label>
+            <div className="mb-1 flex items-baseline justify-between">
+              <label htmlFor="cliente" className="text-xs text-(--color-tinta-suave)">
+                Cliente (opcional en contado, obligatorio para fiar)
+              </label>
+              <a
+                href="/clientes"
+                target="_blank"
+                rel="noopener"
+                className="text-xs underline underline-offset-2"
+              >
+                + Nuevo
+              </a>
+            </div>
             <select
               id="cliente"
               value={clienteId ?? ''}
@@ -171,9 +185,22 @@ export default function Carrito({
               {clientes.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nombre}
+                  {c.saldoCentavos > 0 ? ` — debe ${formatearARS(c.saldoCentavos)}` : ''}
                 </option>
               ))}
             </select>
+
+            {puedeFiar && elegido && elegido.saldoCentavos > 0 ? (
+              <p className="mt-1 text-xs text-(--color-alerta)">
+                Ya debe{' '}
+                <span className="tabular font-semibold">
+                  {formatearARS(elegido.saldoCentavos)}
+                </span>
+                {elegido.limiteCentavos !== null
+                  ? `, y su tope es ${formatearARS(elegido.limiteCentavos)}.`
+                  : '.'}
+              </p>
+            ) : null}
           </div>
 
           {puedeDescontar ? (

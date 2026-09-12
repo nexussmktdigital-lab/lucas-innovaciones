@@ -152,9 +152,8 @@ test('no se puede confirmar sin cubrir el total', async ({ page }) => {
   await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
 });
 
-test('no se puede fiar hasta que exista el módulo de fiado', async ({ page }) => {
-  // El dominio soporta la cuenta corriente, pero la deuda del cliente recién
-  // se guarda en la fase 5. Ofrecerla antes era fiar y no acordarse de nadie.
+test('fiar necesita un cliente elegido', async ({ page }) => {
+  // El botón está, pero apagado: fiar sin saber a quién es la libreta sin nombres.
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
   await page.goto('/vender');
@@ -163,8 +162,7 @@ test('no se puede fiar hasta que exista el módulo de fiado', async ({ page }) =
   await page.getByRole('button', { name: /^Cobrar/ }).click();
 
   const cobro = page.getByRole('dialog', { name: 'Cobrar' });
-  await expect(cobro.getByRole('button', { name: '+ Efectivo' })).toBeVisible();
-  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toHaveCount(0);
+  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toBeDisabled();
 });
 
 test('la caja refleja las ventas del turno', async ({ page }) => {

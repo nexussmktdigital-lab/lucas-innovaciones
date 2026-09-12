@@ -21,7 +21,7 @@ const SECCIONES = [
   { href: '/vender', etiqueta: 'Vender', tecla: 'F2', fase: 2 },
   { href: '/caja', etiqueta: 'Caja', tecla: 'F3', fase: 2 },
   { href: '/ventas', etiqueta: 'Ventas', tecla: 'F4', fase: 3 },
-  { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5', fase: 5 },
+  { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5', fase: 4 },
   { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', fase: 7 },
   { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', fase: 3, soloDuenio: true },
   { href: '/precios', etiqueta: 'Precios', tecla: 'F8', fase: 3, soloDuenio: true },
@@ -29,7 +29,7 @@ const SECCIONES = [
   { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 10, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 3;
+const FASE_ACTUAL = 4;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();

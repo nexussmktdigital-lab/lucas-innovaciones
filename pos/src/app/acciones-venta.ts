@@ -17,6 +17,7 @@ import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
+import { ErrorFiado } from '@/fiado/cuenta';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 
 const medioPago = z.enum([
@@ -117,6 +118,17 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
   // el producto admita precio escrito lo comprueba el dominio contra el
   // catálogo, no contra lo que diga el navegador.
 
+  // Fiar es dar crédito, y eso lo decide el dueño: `fiado.crear` no está entre
+  // los permisos del vendedor. Se comprueba acá y de nuevo en la transacción.
+  const hayFiado = validado.data.pagos.some((p) => p.medio === 'cuenta_corriente');
+
+  if (hayFiado && !puede(sesion.user.rol, 'fiado.crear')) {
+    return { ok: false, error: 'Fiar lo tiene que autorizar el dueño.' };
+  }
+  if (hayFiado && !validado.data.clienteId) {
+    return { ok: false, error: 'Para fiar hace falta elegir un cliente.' };
+  }
+
   // Saltear la guarda de precios es decisión del dueño. Si no lo es, se ignora
   // la bandera y la venta vuelve a pasar por el control: la pantalla no es la
   // que decide esto.
@@ -174,6 +186,11 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
         // Saltear la guarda de precios es decisión del dueño, no del vendedor.
         puedeConfirmar: error.motivo === 'precio_sospechoso' && sesion.user.rol === 'owner',
       };
+    }
+    // El límite de crédito lo frena el dominio: su mensaje explica qué pasó y
+    // qué hacer, así que se pasa tal cual en vez de tragarlo.
+    if (error instanceof ErrorFiado) {
+      return { ok: false, error: error.message, motivo: error.motivo };
     }
     console.error('[venta] Falló la confirmación:', error);
     return {

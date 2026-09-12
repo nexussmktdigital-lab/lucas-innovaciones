@@ -29,6 +29,9 @@ export interface Cliente {
   id: string;
   nombre: string;
   telefono: string | null;
+  /** Lo que ya debe. Se muestra al elegirlo: fiarle es sumarle a esto. */
+  saldoCentavos: number;
+  limiteCentavos: number | null;
 }
 
 /** Una línea del carrito más lo que hace falta para mostrarla y editarla. */
@@ -225,6 +228,7 @@ export default function PantallaVenta({
           puedeDescontar={esDuenio}
           clientes={clientes}
           clienteId={clienteId}
+          puedeFiar={esDuenio}
           tcCentavos={tcCentavos}
           onCantidad={cambiarCantidad}
           onPrecio={cambiarPrecio}
@@ -296,6 +300,8 @@ export default function PantallaVenta({
           lineas={lineas}
           descuentoGlobal={descuentoGlobal}
           clienteId={clienteId}
+          cliente={clientes.find((c) => c.id === clienteId) ?? null}
+          puedeFiar={esDuenio}
           cuentas={cuentas}
           onCerrar={() => setCobrando(false)}
           onConfirmar={confirmar}

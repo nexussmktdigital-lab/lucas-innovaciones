@@ -12,13 +12,17 @@ import {
 } from '@/ventas/carrito';
 import { nombreDelMedio } from '@/ventas/ticket';
 import type { registrarVenta } from '@/app/acciones-venta';
-import type { Cuenta, LineaEnPantalla } from './pantalla-venta';
+import type { Cliente, Cuenta, LineaEnPantalla } from './pantalla-venta';
 
 interface Props {
   totales: TotalesCarrito;
   lineas: LineaEnPantalla[];
   descuentoGlobal: Descuento | null;
   clienteId: string | null;
+  /** El cliente elegido, con su deuda. Null si la venta es a consumidor final. */
+  cliente: Cliente | null;
+  /** Solo el dueño puede fiar: `fiado.crear` no es del vendedor. */
+  puedeFiar: boolean;
   cuentas: Cuenta[];
   onCerrar: () => void;
   onConfirmar: (
@@ -27,11 +31,10 @@ interface Props {
 }
 
 /**
- * Medios que se pueden cobrar hoy.
+ * Medios que se pueden cobrar.
  *
- * «Cuenta corriente» no está: el dominio la soporta, pero la deuda del cliente
- * recién existe en la fase 5. Ofrecerla antes es dejar que se fíe un teléfono y
- * que el sistema no se acuerde de nadie.
+ * «Cuenta corriente» solo aparece para el dueño y con un cliente elegido: fiar
+ * es dar crédito, y el sistema tiene que saber a quién se lo está dando.
  */
 const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'efectivo', tipoCuenta: 'efectivo' },
@@ -41,6 +44,11 @@ const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'mercadopago', tipoCuenta: 'mercadopago' },
   { medio: 'cheque', tipoCuenta: 'banco' },
 ];
+
+const CUENTA_CORRIENTE = {
+  medio: 'cuenta_corriente' as MedioPago,
+  tipoCuenta: null,
+};
 
 const MARCAS = ['Visa', 'Mastercard', 'Amex', 'Naranja', 'Cabal', 'Otra'];
 
@@ -67,6 +75,8 @@ export default function Cobro({
   lineas,
   descuentoGlobal,
   clienteId,
+  cliente,
+  puedeFiar,
   cuentas,
   onCerrar,
   onConfirmar,
@@ -95,6 +105,11 @@ export default function Cobro({
   useEffect(() => {
     primerCampo.current?.focus();
   }, []);
+
+  const fiadoCentavos = pagos
+    .filter((p) => p.medio === 'cuenta_corriente')
+    .reduce((suma, p) => suma + p.montoCentavos, 0);
+  const hayFiado = fiadoCentavos > 0;
 
   function cuentaPara(tipo: Cuenta['tipo'] | null): string | null {
     if (!tipo) return null;
@@ -190,12 +205,18 @@ export default function Cobro({
         <p className="tabular mt-2 text-3xl font-bold">{formatearARS(totales.totalCentavos)}</p>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
-          {MEDIOS.map(({ medio, tipoCuenta }) => (
+          {(puedeFiar ? [...MEDIOS, CUENTA_CORRIENTE] : MEDIOS).map(({ medio, tipoCuenta }) => (
             <button
               key={medio}
               type="button"
               onClick={() => agregarMedio(medio, tipoCuenta)}
-              className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 text-sm font-medium hover:border-(--color-marca)"
+              disabled={medio === 'cuenta_corriente' && !cliente}
+              title={
+                medio === 'cuenta_corriente' && !cliente
+                  ? 'Elegí un cliente en el carrito para poder fiar'
+                  : undefined
+              }
+              className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 text-sm font-medium hover:border-(--color-marca) disabled:cursor-not-allowed disabled:opacity-40"
             >
               + {nombreDelMedio(medio)}
             </button>
@@ -272,6 +293,36 @@ export default function Cobro({
             ))}
           </ul>
         )}
+
+        {hayFiado && cliente ? (
+          <p className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+            Le vas a fiar{' '}
+            <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
+            <strong>{cliente.nombre}</strong>.{' '}
+            {cliente.saldoCentavos > 0 ? (
+              <>
+                Ya debe <span className="tabular">{formatearARS(cliente.saldoCentavos)}</span>, así
+                que va a quedar en{' '}
+                <span className="tabular font-semibold">
+                  {formatearARS(cliente.saldoCentavos + fiadoCentavos)}
+                </span>
+                .
+              </>
+            ) : (
+              'Es la primera vez que le fiás.'
+            )}
+            {cliente.limiteCentavos !== null &&
+            cliente.saldoCentavos + fiadoCentavos > cliente.limiteCentavos ? (
+              <>
+                {' '}
+                <strong className="text-(--color-error)">
+                  Se pasa del tope de {formatearARS(cliente.limiteCentavos)}: el sistema no lo va a
+                  dejar.
+                </strong>
+              </>
+            ) : null}
+          </p>
+        ) : null}
 
         {cobro && pagos.length > 0 ? (
           <dl className="mt-4 flex flex-col gap-1 border-t border-(--color-borde) pt-3 text-sm">
