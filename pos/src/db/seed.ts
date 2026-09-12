@@ -236,6 +236,9 @@ export async function sembrar(
         stock: p.stock,
         gestionaStock: !p.servicio,
         esServicio: Boolean(p.servicio),
+        // Un servicio no se publica en la tienda, asi que su precio ya es el de
+        // mostrador y no lleva el recargo de la web (D31).
+        soloMostrador: Boolean(p.servicio),
         precioEditable: Boolean(p.servicio),
         // Mismo criterio que el mapeo de WooCommerce: sin SKU o sin precio real,
         // la ficha esta incompleta. Ninguna del seed tiene imagen, igual que el

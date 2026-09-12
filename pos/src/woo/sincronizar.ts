@@ -85,10 +85,12 @@ export async function sincronizarCatalogo(
           imagenUrl: sql`excluded.imagen_url`,
           activo: sql`excluded.activo`,
           esServicio: sql`excluded.es_servicio`,
+          soloMostrador: sql`excluded.solo_mostrador`,
           fichaIncompleta: sql`excluded.ficha_incompleta`,
           lastSyncedAt: sql`excluded.last_synced_at`,
           updatedAt: sql`excluded.updated_at`,
-          // costoCentavos, precioEditable y stockComprometido son del POS: no se pisan.
+          // costoCentavos, precioEditable, precioLocalCentavos y stockComprometido
+          // son del POS: no se pisan.
         },
       })
       .returning({

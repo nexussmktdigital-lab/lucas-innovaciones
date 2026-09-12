@@ -14,6 +14,7 @@
 import { sql } from 'drizzle-orm';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import { normalizar } from '@/lib/texto';
+import { precioDeMostrador } from '@/precios/mostrador';
 
 /** Cuántos resultados se muestran. Más que esto no entra en pantalla ni sirve. */
 export const TOPE_RESULTADOS = 20;
@@ -26,7 +27,10 @@ export interface ResultadoBusqueda {
   marca: string | null;
   categoria: string | null;
   codigoBarras: string | null;
+  /** Precio de mostrador: el de la tienda ya con el recargo descontado (D31). */
   precioCentavos: number;
+  /** Lo que cobra la tienda online, para poder comparar en pantalla. */
+  precioTiendaCentavos: number;
   moneda: 'ARS' | 'USD';
   precioUsdCentavos: number | null;
   stock: number;
@@ -52,7 +56,7 @@ const SIN_ACENTOS = (columna: unknown) =>
 export async function buscarProductos(
   db: BaseDatos,
   termino: string,
-  opciones: { limite?: number; incluirSinStock?: boolean } = {},
+  opciones: { limite?: number; incluirSinStock?: boolean; recargoTiendaBp?: number } = {},
 ): Promise<ResultadoBusqueda[]> {
   const limpio = normalizar(termino);
   if (limpio.length === 0) return [];
@@ -84,9 +88,12 @@ export async function buscarProductos(
     gestiona_stock: boolean;
     precio_editable: boolean;
     es_servicio: boolean;
+    solo_mostrador: boolean;
+    precio_local_centavos: string | number | null;
     imagen_url: string | null;
     exacto: boolean;
-  }>(await db.execute(sql`
+  }>(
+    await db.execute(sql`
     SELECT
       p.id,
       v.id                                            AS variant_id,
@@ -106,6 +113,8 @@ export async function buscarProductos(
       ${gestionaStock}                                AS gestiona_stock,
       p.precio_editable,
       p.es_servicio,
+      p.solo_mostrador,
+      p.precio_local_centavos,
       p.imagen_url,
       (
         lower(COALESCE(v.codigo_barras, p.codigo_barras, '')) = ${limpio}
@@ -126,27 +135,47 @@ export async function buscarProductos(
       )
     ORDER BY exacto DESC, length(p.nombre), p.nombre
     LIMIT ${limite}
-  `));
+  `),
+  );
 
-  return (crudas as unknown as Record<string, unknown>[]).map((f) => ({
-    id: String(f.id),
-    variantId: f.variant_id === null ? null : String(f.variant_id),
-    nombre: String(f.nombre),
-    sku: f.sku === null ? null : String(f.sku),
-    marca: f.marca === null ? null : String(f.marca),
-    categoria: f.categoria === null ? null : String(f.categoria),
-    codigoBarras: f.codigo_barras === null ? null : String(f.codigo_barras),
-    precioCentavos: Number(f.precio_centavos),
-    moneda: f.moneda as 'ARS' | 'USD',
-    precioUsdCentavos: f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
-    stock: Number(f.stock),
-    stockComprometido: Number(f.stock_comprometido),
-    gestionaStock: Boolean(f.gestiona_stock),
-    precioEditable: Boolean(f.precio_editable),
-    esServicio: Boolean(f.es_servicio),
-    imagenUrl: f.imagen_url === null ? null : String(f.imagen_url),
-    exacto: Boolean(f.exacto),
-  }));
+  const recargoBp = opciones.recargoTiendaBp ?? 0;
+
+  return (crudas as unknown as Record<string, unknown>[]).map((f) => {
+    const precioTiendaCentavos = Number(f.precio_centavos);
+    // Una variacion no lleva precio de mostrador propio: solo el recargo.
+    const precioLocalCentavos =
+      f.variant_id !== null || f.precio_local_centavos === null
+        ? null
+        : Number(f.precio_local_centavos);
+
+    return {
+      id: String(f.id),
+      variantId: f.variant_id === null ? null : String(f.variant_id),
+      nombre: String(f.nombre),
+      sku: f.sku === null ? null : String(f.sku),
+      marca: f.marca === null ? null : String(f.marca),
+      categoria: f.categoria === null ? null : String(f.categoria),
+      codigoBarras: f.codigo_barras === null ? null : String(f.codigo_barras),
+      precioCentavos: precioDeMostrador(
+        {
+          precioCentavos: precioTiendaCentavos,
+          precioLocalCentavos,
+          soloMostrador: Boolean(f.solo_mostrador),
+        },
+        recargoBp,
+      ),
+      precioTiendaCentavos,
+      moneda: f.moneda as 'ARS' | 'USD',
+      precioUsdCentavos: f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
+      stock: Number(f.stock),
+      stockComprometido: Number(f.stock_comprometido),
+      gestionaStock: Boolean(f.gestiona_stock),
+      precioEditable: Boolean(f.precio_editable),
+      esServicio: Boolean(f.es_servicio),
+      imagenUrl: f.imagen_url === null ? null : String(f.imagen_url),
+      exacto: Boolean(f.exacto),
+    };
+  });
 }
 
 /**
@@ -156,10 +185,7 @@ export async function buscarProductos(
  * termina con Enter. Lo que lo distingue de una persona es la velocidad, no el
  * contenido: nadie tipea doce digitos en menos de cien milisegundos.
  */
-export function pareceLectorDeCodigo(
-  texto: string,
-  msDesdeLaPrimeraTecla: number,
-): boolean {
+export function pareceLectorDeCodigo(texto: string, msDesdeLaPrimeraTecla: number): boolean {
   if (texto.length < 6) return false;
   if (!/^[A-Za-z0-9\-_.]+$/.test(texto)) return false;
   const msPorCaracter = msDesdeLaPrimeraTecla / texto.length;

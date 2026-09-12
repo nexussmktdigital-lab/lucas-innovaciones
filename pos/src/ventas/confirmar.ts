@@ -46,12 +46,9 @@ import {
   type ProductoVendible,
   type VarianteVendible,
 } from './carrito';
-import {
-  explicarSospechas,
-  revisarPrecioEscrito,
-  revisarVenta,
-  type Sospecha,
-} from './cordura';
+import { recargoDeTienda } from '@/precios/config';
+import { precioDeMostrador } from '@/precios/mostrador';
+import { explicarSospechas, revisarPrecioEscrito, revisarVenta, type Sospecha } from './cordura';
 
 export class ErrorVenta extends Error {
   constructor(
@@ -173,7 +170,9 @@ export async function confirmarVenta(
     const [sesion] = await tx
       .select()
       .from(cashSessions)
-      .where(and(eq(cashSessions.id, solicitud.cashSessionId), sql`${cashSessions.cerradaEn} IS NULL`))
+      .where(
+        and(eq(cashSessions.id, solicitud.cashSessionId), sql`${cashSessions.cerradaEn} IS NULL`),
+      )
       .limit(1);
 
     if (!sesion) {
@@ -188,13 +187,19 @@ export async function confirmarVenta(
     );
     const tcCentavos = cotizacion ? Number(cotizacion.valor_centavos) : null;
 
+    //    Y el recargo de la tienda online, que es lo que separa el precio de la
+    //    web del de mostrador (D31). Se lee acá adentro para que toda la venta
+    //    use el mismo valor aunque alguien lo cambie en el medio.
+    const recargoTiendaBp = await recargoDeTienda(tx);
+
     // 4. Candado sobre los productos del carrito. Se toma en orden de id para
     //    que dos ventas simultáneas no se traben entre sí esperándose.
     const idsProducto = [...new Set(solicitud.lineas.map((l) => l.productId))].sort();
     const filasProducto = filasDe<Record<string, unknown>>(
       await tx.execute(sql`
         SELECT id, nombre, categoria, marca, precio_centavos, moneda, precio_usd_centavos,
-               precio_editable, gestiona_stock, stock, stock_comprometido, woo_id, costo_centavos
+               precio_editable, gestiona_stock, stock, stock_comprometido, woo_id, costo_centavos,
+               solo_mostrador, precio_local_centavos
           FROM products
          WHERE id IN (${sql.join(
            idsProducto.map((id) => sql`${id}`),
@@ -227,6 +232,9 @@ export async function confirmarVenta(
         gestionaStock: Boolean(f.gestiona_stock),
         stock: Number(f.stock),
         stockComprometido: Number(f.stock_comprometido),
+        soloMostrador: Boolean(f.solo_mostrador),
+        precioLocalCentavos:
+          f.precio_local_centavos === null ? null : Number(f.precio_local_centavos),
         wooId: f.woo_id === null ? null : Number(f.woo_id),
         costoCentavos: f.costo_centavos === null ? null : Number(f.costo_centavos),
       });
@@ -239,7 +247,10 @@ export async function confirmarVenta(
       ...new Set(solicitud.lineas.map((l) => l.variantId).filter((x): x is string => Boolean(x))),
     ].sort();
 
-    const variantes = new Map<string, VarianteVendible & { productId: string; wooId: number | null }>();
+    const variantes = new Map<
+      string,
+      VarianteVendible & { productId: string; wooId: number | null }
+    >();
     if (idsVariante.length > 0) {
       const filasVariante = filasDe<Record<string, unknown>>(
         await tx.execute(sql`
@@ -301,6 +312,7 @@ export async function confirmarVenta(
         tcCentavos,
         precioManualCentavos: solicitada.precioManualCentavos ?? null,
         variante,
+        recargoTiendaBp,
       });
 
       // Un producto de precio escrito se cobra a lo que se escriba, pero algo
@@ -357,7 +369,9 @@ export async function confirmarVenta(
         ...lineas.flatMap((l, i) => {
           if (solicitud.lineas[i]?.precioManualCentavos == null) return [];
           const p = catalogo.get(l.productId)!;
-          const s = revisarPrecioEscrito(l.descripcion, l.precioUnitarioCentavos, p.precioCentavos);
+          // La referencia es el precio de mostrador, no el de la tienda.
+          const referencia = precioDeMostrador(p, recargoTiendaBp);
+          const s = revisarPrecioEscrito(l.descripcion, l.precioUnitarioCentavos, referencia);
           return s ? [s] : [];
         }),
       ];
@@ -474,7 +488,10 @@ export async function confirmarVenta(
       const p = catalogo.get(productId)!;
       const resultante = p.stock - pedido;
 
-      await tx.update(products).set({ stock: resultante, updatedAt: new Date() }).where(eq(products.id, productId));
+      await tx
+        .update(products)
+        .set({ stock: resultante, updatedAt: new Date() })
+        .where(eq(products.id, productId));
 
       await tx.insert(stockMovements).values({
         productId,
@@ -526,9 +543,7 @@ export async function confirmarVenta(
       if (!cuentaId) continue;
 
       const esEfectivo = pago.medio === 'efectivo';
-      const vueltoDeEstePago = esEfectivo
-        ? Math.min(vueltoPorDescontar, pago.montoCentavos)
-        : 0;
+      const vueltoDeEstePago = esEfectivo ? Math.min(vueltoPorDescontar, pago.montoCentavos) : 0;
       vueltoPorDescontar -= vueltoDeEstePago;
 
       const monto = pago.montoCentavos - vueltoDeEstePago;
@@ -609,7 +624,10 @@ export async function confirmarVenta(
           .map(({ l }) => ({
             descripcion: l.descripcion,
             centavos: l.precioUnitarioCentavos,
-            referenciaCentavos: catalogo.get(l.productId)?.precioCentavos ?? 0,
+            referenciaCentavos: (() => {
+              const p = catalogo.get(l.productId);
+              return p ? precioDeMostrador(p, recargoTiendaBp) : 0;
+            })(),
           })),
       },
       ip: solicitud.ip ?? null,

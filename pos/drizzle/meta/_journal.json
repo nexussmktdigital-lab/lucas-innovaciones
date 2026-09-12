@@ -29,6 +29,13 @@
       "when": 1789227690716,
       "tag": "0003_stock_por_variacion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789230652622,
+      "tag": "0004_precio_de_mostrador",
+      "breakpoints": true
     }
   ]
 }

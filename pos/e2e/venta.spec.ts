@@ -52,6 +52,11 @@ async function efectivoEsperado(page: Page): Promise<number> {
   return aCentavosDeTexto(await bloque.innerText());
 }
 
+/** Centavos a «$ 50.000,00», como lo muestra la pantalla. */
+function formatearPesos(centavos: number): string {
+  return `$ ${(centavos / 100).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`;
+}
+
 async function precioDelCarrito(page: Page): Promise<number> {
   const totales = page.getByRole('complementary', { name: 'Carrito' }).locator('dl');
   return aCentavosDeTexto((await totales.innerText()).split('Total')[1] ?? '');
@@ -342,4 +347,52 @@ test('el vendedor no puede regalar un servicio, y el dueño sí a sabiendas', as
   // Al vendedor se le avisa y no se le ofrece salida.
   await expect(cobro.getByText(/En el catálogo figura a/)).toBeVisible();
   await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toHaveCount(0);
+});
+
+test('el mostrador cobra menos que la tienda, con el recargo puesto', async ({ page }) => {
+  // En la web cobra Mercado Pago y esa comisión no la paga el local: WooCommerce
+  // guarda el precio de la tienda y el POS le descuenta el recargo (D31).
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/precios');
+  await page.getByLabel('Recargo de la tienda online').fill('12');
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/Recargo guardado en 12%/)).toBeVisible();
+
+  try {
+    await page.goto('/precios?q=airpods');
+    const fila = page.getByRole('listitem').first();
+    await expect(fila).toContainText('menos 12%');
+
+    // Un servicio no se publica: cobra lo mismo en los dos lados.
+    await page.goto('/precios?q=virus');
+    await expect(page.getByRole('listitem').first()).toContainText('Solo mostrador');
+    await expect(page.getByRole('listitem').first()).toContainText('no lleva recargo');
+
+    // Y el cajero ve, y cobra, el precio de mostrador.
+    await page.goto('/vender');
+    await agregar(page, 'AirPods', /AirPods/);
+    const carrito = page.getByRole('complementary', { name: 'Carrito' });
+    const mostrador = await precioDelCarrito(page);
+
+    await page.getByRole('button', { name: /^Cobrar/ }).click();
+    const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+    await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+    await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+    await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+    await page.goto('/ventas');
+    await expect(page.getByRole('listitem').first()).toContainText('AirPods');
+    await expect(page.getByRole('listitem').first()).toContainText(
+      formatearPesos(mostrador),
+    );
+    expect(carrito).toBeTruthy();
+  } finally {
+    // El recargo es estado global: se deja como estaba para los demás tests.
+    await page.goto('/precios');
+    await page.getByLabel('Recargo de la tienda online').fill('0');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.getByText(/Sin recargo/)).toBeVisible();
+  }
 });

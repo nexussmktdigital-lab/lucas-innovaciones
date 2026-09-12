@@ -191,6 +191,18 @@ export const products = pgTable(
      * escribir el precio en la venta. Reemplazan al item generico.
      */
     esServicio: boolean().notNull().default(false),
+    /**
+     * True si el producto no se publica en la tienda: servicios, chips y todo
+     * lo que este en «Solo mostrador» (D19). Su precio de Woo YA es el de
+     * mostrador, asi que el recargo de la tienda no se le descuenta.
+     */
+    soloMostrador: boolean().notNull().default(false),
+    /**
+     * Precio de mostrador propio, en centavos, cuando el recargo global no
+     * aplica a este producto. Si es null se calcula: precio de la tienda
+     * dividido por el recargo (D31).
+     */
+    precioLocalCentavos: bigint({ mode: 'number' }),
     precioEditable: boolean().notNull().default(false),
     /** Producto creado por el alta rapida, con la ficha a completar. */
     fichaIncompleta: boolean().notNull().default(false),

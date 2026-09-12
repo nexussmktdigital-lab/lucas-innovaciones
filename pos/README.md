@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 3.5 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 3.5 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 La fase 3.5 salió de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, diez ya corregidos.
 
@@ -22,6 +22,7 @@ mandan sobre este código:
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
+| **D31** | **El mostrador y la tienda cobran distinto, y el número que se guarda es el de la tienda.** En la web cobra Mercado Pago y esa comisión no la paga el local. WooCommerce guarda el precio de la tienda —que es el que la web cobra de verdad— y el POS le descuenta un recargo global para llegar al de mostrador. Un producto por producto queda con un precio de mostrador escrito a mano cuando el porcentaje no aplica. |
 
 ### Reglas que no se negocian
 
@@ -183,6 +184,40 @@ solo. Si Woo tiene un valor que no esperábamos, queda registrado en
 
 ---
 
+## Mostrador y tienda: dos precios, un solo número
+
+En la tienda online cobra Mercado Pago y esa comisión no la paga el mostrador,
+así que el mismo producto vale distinto en cada lado: unos auriculares de
+$50.000 en el local salen $56.000 en la web.
+
+Para no tener dos números que mantener sincronizados por producto, **el que se
+guarda es el de la tienda**. WooCommerce sigue siendo el único lugar donde se
+carga un precio, la web cobra exactamente lo que dice esa ficha, y el POS le
+descuenta el recargo para llegar al de mostrador. En **Precios** (`F8`) se ve la
+diferencia producto por producto y se decide el porcentaje.
+
+Tres cosas que el cálculo respeta:
+
+- **Lo que no se publica no lleva recargo.** Servicios, chips y todo lo que esté
+  en «Solo mostrador» (D19) o esté oculto en Woo no se vende por la web: su
+  precio de ficha ya es el de mostrador y se usa tal cual.
+- **Se puede escribir un precio de mostrador propio** cuando el porcentaje no
+  aplica: una promo del local, un producto que hay que igualar a la competencia.
+  Vaciar el campo lo devuelve al cálculo.
+- **Se redondea a los cien pesos.** Dividir da números como $11.607,14 y en el
+  mostrador nadie cobra eso.
+
+### La cuenta de la comisión
+
+Si el medio de pago se queda con un `c%`, el recargo que hace falta **no es
+`c%`**: la comisión se la lleva del total cobrado, no del precio de lista. Para
+que quede lo mismo que en el mostrador hay que cobrar `precio ÷ (1 − c)`. Con
+una comisión del 6,29%, el recargo es 6,71%, no 6,29%. La pantalla de Precios
+tiene la calculadora: se pone la comisión del panel de Mercado Pago y devuelve
+el recargo exacto.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -338,6 +373,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una venta anulada no cuenta en el arqueo, y no se anula dos veces | `src/ventas/anular.test.ts` |
 | Una venta de un turno cerrado no se puede anular | `src/ventas/anular.test.ts` |
 | «1500.50» con punto decimal son mil quinientos, no ciento cincuenta mil | `src/lib/dinero.test.ts` |
+| El mostrador cobra el precio de la tienda menos el recargo | `src/precios/mostrador.test.ts`, `e2e/venta.spec.ts` |
+| Un servicio no lleva recargo: no se vende por la web | `src/precios/mostrador.test.ts` |
+| Un precio de mostrador escrito a mano manda sobre el cálculo | `src/precios/mostrador.test.ts` |
+| El recargo que cubre una comisión del 6% es 6,38%, no 6% | `src/precios/mostrador.test.ts` |
+| El vendedor escribe el precio de un servicio, pero no lo puede regalar | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |
@@ -405,6 +445,7 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 2 | Venta contado: buscador, carrito, pago mixto, ticket, stock, caja básica | **Hecha** |
 | 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | **Hecha** |
 | 3.5 | Auditoría del sistema completo: variaciones, permisos en el servidor, ventas del turno y anulación | **Hecha** |
+| 3.6 | Precio de mostrador y precio de tienda, con el recargo de Mercado Pago | **Hecha** |
 | 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | Siguiente |
 | 5 | WhatsApp: comprobantes y recordatorios | |
 | 6 | Gastos y cuentas monetarias | |

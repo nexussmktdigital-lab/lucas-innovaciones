@@ -11,6 +11,7 @@
  *  - El vuelto sale del efectivo. Si no entregaron efectivo, no hay vuelto.
  */
 import { descuentoPorcentual, usdAPesos } from '@/lib/dinero';
+import { precioDeMostrador } from '@/precios/mostrador';
 
 export class ErrorCarrito extends Error {}
 
@@ -20,6 +21,7 @@ export type Moneda = 'ARS' | 'USD';
 export interface ProductoVendible {
   id: string;
   nombre: string;
+  /** Lo que cobra la tienda online. El de mostrador se calcula (D31). */
   precioCentavos: number;
   moneda: Moneda;
   precioUsdCentavos: number | null;
@@ -28,6 +30,10 @@ export interface ProductoVendible {
   gestionaStock: boolean;
   stock: number;
   stockComprometido: number;
+  /** Precio de mostrador escrito a mano. Si esta, manda sobre el calculo. */
+  precioLocalCentavos: number | null;
+  /** True si no se publica en la web: su precio ya es el de mostrador. */
+  soloMostrador: boolean;
 }
 
 /**
@@ -105,6 +111,8 @@ export function armarLinea(
     tcCentavos?: number | null;
     precioManualCentavos?: number | null;
     variante?: VarianteVendible | null;
+    /** Recargo de la tienda online en puntos basicos. 12% -> 1200. */
+    recargoTiendaBp?: number;
   } = {},
 ): LineaCarrito {
   if (!Number.isInteger(cantidad) || cantidad <= 0) {
@@ -125,14 +133,22 @@ export function armarLinea(
     // en dólares del producto, tenga variación o no: es la guarda que hace
     // imposible el error de agosto, y no se saltea por una medida distinta.
     if (!p.precioUsdCentavos) {
-      throw new ErrorCarrito(`"${descripcion}" está marcado en dólares pero no tiene precio en dólares.`);
+      throw new ErrorCarrito(
+        `"${descripcion}" está marcado en dólares pero no tiene precio en dólares.`,
+      );
     }
     if (!opciones.tcCentavos) {
       throw new ErrorCarrito(
         `No hay cotización cargada y "${descripcion}" se vende en dólares. Cargá el tipo de cambio antes de vender.`,
       );
     }
-    precioUnitarioCentavos = usdAPesos(p.precioUsdCentavos, opciones.tcCentavos);
+    // El precio en USD por el dolar da el de la tienda; el de mostrador sale
+    // de descontarle el recargo, igual que en un producto en pesos.
+    precioUnitarioCentavos = aMostrador(
+      p,
+      usdAPesos(p.precioUsdCentavos, opciones.tcCentavos),
+      opciones.recargoTiendaBp ?? 0,
+    );
   } else if (opciones.precioManualCentavos != null) {
     if (!p.precioEditable) {
       throw new ErrorCarrito(`No se puede cambiar el precio de "${descripcion}" desde la venta.`);
@@ -143,7 +159,18 @@ export function armarLinea(
     precioUnitarioCentavos = opciones.precioManualCentavos;
   } else {
     // Una variación tiene su propio precio: cobrar el del padre es cobrar mal.
-    precioUnitarioCentavos = v ? v.precioCentavos : p.precioCentavos;
+    // El precio propio de mostrador es del producto, así que en una variación
+    // solo corre el recargo global.
+    precioUnitarioCentavos = v
+      ? precioDeMostrador(
+          {
+            precioCentavos: v.precioCentavos,
+            precioLocalCentavos: null,
+            soloMostrador: p.soloMostrador,
+          },
+          opciones.recargoTiendaBp ?? 0,
+        )
+      : aMostrador(p, p.precioCentavos, opciones.recargoTiendaBp ?? 0);
   }
 
   return {
@@ -156,6 +183,18 @@ export function armarLinea(
     precioUsdCentavos: p.moneda === 'USD' ? p.precioUsdCentavos : null,
     descuentoCentavos: 0,
   };
+}
+
+/** Aplica el recargo de la tienda a un precio de este producto. */
+function aMostrador(p: ProductoVendible, precioCentavos: number, recargoBp: number): number {
+  return precioDeMostrador(
+    {
+      precioCentavos,
+      precioLocalCentavos: p.precioLocalCentavos,
+      soloMostrador: p.soloMostrador,
+    },
+    recargoBp,
+  );
 }
 
 /** Bruto de una línea, sin su descuento. */

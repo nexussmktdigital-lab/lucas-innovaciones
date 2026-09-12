@@ -15,6 +15,15 @@ export const META_COTIZACION_APLICADA = '_li_cotizacion_aplicada';
 /** Categorias cuyos productos son servicios, no mercaderia (D24). */
 export const CATEGORIAS_SERVICIO = ['servicio tecnico', 'servicios', 'telefonia'];
 
+/**
+ * Categoria de lo que se vende solo en el local y no se publica (D19).
+ *
+ * Importa para el precio: un producto de solo mostrador no paga la comision de
+ * Mercado Pago, asi que su precio de Woo YA es el de mostrador y no hay que
+ * descontarle el recargo de la tienda (D31).
+ */
+export const CATEGORIA_SOLO_MOSTRADOR = 'solo mostrador';
+
 /** Precio por debajo del cual asumimos "precio sin cargar", no precio real. */
 export const PISO_PRECIO_PLAUSIBLE_CENTAVOS = 100_00; // $100
 
@@ -50,6 +59,7 @@ export interface FilaProducto {
   imagenUrl: string | null;
   activo: boolean;
   esServicio: boolean;
+  soloMostrador: boolean;
   precioEditable: boolean;
   fichaIncompleta: boolean;
 }
@@ -128,6 +138,13 @@ export function mapearProducto(p: WooProducto, tcCentavos: number | null): Resul
 
   const esServicio = categoria !== null && CATEGORIAS_SERVICIO.includes(normalizar(categoria));
 
+  // Lo que no llega a la vidriera de la web no lleva recargo de tienda: los
+  // servicios, lo que este en «Solo mostrador» y lo que Woo tenga oculto.
+  const soloMostrador =
+    esServicio ||
+    (categoria !== null && normalizar(categoria) === CATEGORIA_SOLO_MOSTRADOR) ||
+    p.catalog_visibility !== 'visible';
+
   return {
     fila: {
       wooId: p.id,
@@ -145,6 +162,7 @@ export function mapearProducto(p: WooProducto, tcCentavos: number | null): Resul
       imagenUrl,
       activo: p.status === 'publish',
       esServicio,
+      soloMostrador,
       // Un servicio no lleva stock y su precio lo pone el cajero en la venta.
       precioEditable: esServicio,
       fichaIncompleta: !sku || !imagenUrl || precioCentavos < PISO_PRECIO_PLAUSIBLE_CENTAVOS,

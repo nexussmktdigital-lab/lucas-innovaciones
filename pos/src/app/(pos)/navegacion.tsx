@@ -24,8 +24,9 @@ const SECCIONES = [
   { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5', fase: 5 },
   { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', fase: 7 },
   { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', fase: 3, soloDuenio: true },
-  { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F8', fase: 3, soloDuenio: true },
-  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F9', fase: 10, soloDuenio: true },
+  { href: '/precios', etiqueta: 'Precios', tecla: 'F8', fase: 3, soloDuenio: true },
+  { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', fase: 3, soloDuenio: true },
+  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 10, soloDuenio: true },
 ] as const;
 
 const FASE_ACTUAL = 3;

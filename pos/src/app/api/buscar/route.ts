@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { db } from '@/db';
 import { buscarProductos, TOPE_RESULTADOS } from '@/ventas/buscar';
+import { recargoDeTienda } from '@/precios/config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,8 @@ export async function GET(request: Request) {
     const resultados = await buscarProductos(db, termino, {
       limite: TOPE_RESULTADOS,
       incluirSinStock,
+      // El cajero tiene que ver el precio del mostrador, no el de la web.
+      recargoTiendaBp: await recargoDeTienda(db),
     });
     return NextResponse.json({ resultados });
   } catch (error) {

@@ -2,7 +2,7 @@
 
 **Sitio:** lucasinnovaciones.com.ar
 **Fecha:** 2026-08-03
-**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3.5 terminadas)** — ver [`pos/README.md`](pos/README.md) y la auditoría en [`pos/AUDITORIA.md`](pos/AUDITORIA.md)
+**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3.6 terminadas)** — ver [`pos/README.md`](pos/README.md) y la auditoría en [`pos/AUDITORIA.md`](pos/AUDITORIA.md)
 
 ---
 
@@ -152,6 +152,9 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | **D28** | **Los permisos se hacen cumplir en el servidor, no en la pantalla.** Escribir el precio de un servicio y saltear la guarda de precios sospechosos son atribuciones del dueño, y la acción de venta las comprueba aunque el pedido llegue armado a mano. Una guarda que solo vive en la interfaz no es una guarda. |
 | **D29** | **Anular es agregar los asientos contrarios, y solo dentro del turno abierto.** Nada se borra: la venta queda `cancelled` con el motivo, el stock vuelve deshaciendo los movimientos que dejó y la caja recibe el asiento opuesto. Fuera del turno no se anula, porque revertir contra una caja cerrada descuadra dos arqueos: eso es una devolución, y tiene su propia fase. |
 | **D30** | **La cuenta corriente no se ofrece hasta que exista el módulo de fiado (fase 5).** El dominio la soporta desde la fase 2, pero cobrar en cuenta corriente sin lugar donde guardar la deuda es fiar y no acordarse de nadie. |
+| **D31** | **El mostrador y la tienda cobran precios distintos, y el número que se guarda es el de la tienda.** En la web cobra Mercado Pago y esa comisión no la paga el local: unos auriculares de $50.000 en el mostrador salen $56.000 en la web. Para no mantener dos números por producto, WooCommerce guarda el precio de la tienda —el que la web cobra de verdad, sin tocar el plugin ni el sitio— y el POS le descuenta un **recargo global** para llegar al de mostrador, redondeando a los cien pesos. No lleva recargo lo que no se publica: servicios, chips y todo lo de «Solo mostrador» (D19), cuyo precio de ficha ya es el del local. Queda un **precio de mostrador propio** por producto para las excepciones. La cuenta del recargo es `1 / (1 − comisión) − 1`, no la comisión: con 6,29% de comisión hacen falta 6,71% de recargo. |
+| **D32** | **El precio de los servicios lo escribe el mostrador, con una guarda de distancia en vez de un permiso.** Cada reparación se cotiza en el momento, así que pedir autorización del dueño en cada una frena la venta. El precio se escribe libre, pero si queda por debajo de la mitad del de referencia del catálogo salta el mismo cartel que el error de agosto y solo el dueño lo puede saltear. Un precio escrito en cero se rechaza. Todo precio escrito queda en la bitácora contra el de catálogo. |
+| **D33** | **Los precios del catálogo son finales: el local es monotributo y no discrimina IVA.** El POS cobra el número de la ficha y no calcula IVA en ninguna parte. Si algún día cambia la condición fiscal, la regla es guardar siempre el precio final y calcular el neto para los reportes, nunca al revés. |
 
 ---
 

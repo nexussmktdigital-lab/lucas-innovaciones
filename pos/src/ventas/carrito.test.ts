@@ -25,6 +25,8 @@ function producto(p: Partial<ProductoVendible> = {}): ProductoVendible {
     gestionaStock: true,
     stock: 40,
     stockComprometido: 0,
+    precioLocalCentavos: null,
+    soloMostrador: false,
     ...p,
   };
 }
@@ -278,6 +280,8 @@ describe('armarLinea con variación', () => {
     gestionaStock: true,
     stock: 40,
     stockComprometido: 0,
+    precioLocalCentavos: null,
+    soloMostrador: false,
   };
 
   const medida: VarianteVendible = {
@@ -334,6 +338,8 @@ describe('stockDisponible con variación', () => {
     gestionaStock: true,
     stock: 40,
     stockComprometido: 5,
+    precioLocalCentavos: null,
+    soloMostrador: false,
   };
   const v: VarianteVendible = {
     id: 'v1',
