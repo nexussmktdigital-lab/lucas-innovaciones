@@ -17,10 +17,12 @@ const SECCIONES = [
   { href: '/caja', etiqueta: 'Caja', tecla: 'F3', fase: 2 },
   { href: '/fiado', etiqueta: 'Fiado', tecla: 'F4', fase: 5 },
   { href: '/gastos', etiqueta: 'Gastos', tecla: 'F5', fase: 7 },
-  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F6', fase: 10, soloDuenio: true },
+  { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F6', fase: 3, soloDuenio: true },
+  { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F7', fase: 3, soloDuenio: true },
+  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F8', fase: 10, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 2;
+const FASE_ACTUAL = 3;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();
