@@ -2,7 +2,7 @@
 
 **Sitio:** lucasinnovaciones.com.ar
 **Fecha:** 2026-08-03
-**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3.6 terminadas)** — ver [`pos/README.md`](pos/README.md) y la auditoría en [`pos/AUDITORIA.md`](pos/AUDITORIA.md)
+**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3.7 terminadas)** — ver [`pos/README.md`](pos/README.md) y la auditoría en [`pos/AUDITORIA.md`](pos/AUDITORIA.md)
 
 ---
 
@@ -154,6 +154,8 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | **D30** | **La cuenta corriente no se ofrece hasta que exista el módulo de fiado (fase 5).** El dominio la soporta desde la fase 2, pero cobrar en cuenta corriente sin lugar donde guardar la deuda es fiar y no acordarse de nadie. |
 | **D31** | **El mostrador y la tienda cobran precios distintos, y el número que se guarda es el de la tienda.** En la web cobra Mercado Pago y esa comisión no la paga el local: unos auriculares de $50.000 en el mostrador salen $56.000 en la web. Para no mantener dos números por producto, WooCommerce guarda el precio de la tienda —el que la web cobra de verdad, sin tocar el plugin ni el sitio— y el POS le descuenta un **recargo global** para llegar al de mostrador, redondeando a los cien pesos. No lleva recargo lo que no se publica: servicios, chips y todo lo de «Solo mostrador» (D19), cuyo precio de ficha ya es el del local. Queda un **precio de mostrador propio** por producto para las excepciones. La cuenta del recargo es `1 / (1 − comisión) − 1`, no la comisión: con 6,29% de comisión hacen falta 6,71% de recargo. |
 | **D32** | **El precio de los servicios lo escribe el mostrador, con una guarda de distancia en vez de un permiso.** Cada reparación se cotiza en el momento, así que pedir autorización del dueño en cada una frena la venta. El precio se escribe libre, pero si queda por debajo de la mitad del de referencia del catálogo salta el mismo cartel que el error de agosto y solo el dueño lo puede saltear. Un precio escrito en cero se rechaza. Todo precio escrito queda en la bitácora contra el de catálogo. |
+| **D34** | **Los importes de una venta cerrada son de solo lectura, garantizado por la base.** Anular necesita cambiar el estado, así que el UPDATE no se puede bloquear entero en `sales`: se bloquea por columna. Solo pasan `estado`, `motivo_anulacion`, `synced_to_woo`, `woo_order_id` y `nota`; los importes, la fecha, el vendedor, la caja y la clave de idempotencia no. En las líneas y los pagos el UPDATE se bloquea entero: corregir una venta es anularla y volver a hacerla. |
+| **D35** | **El webhook de WooCommerce no le escribe el stock al POS.** Cada venta empuja su stock a Woo y ese PUT hace que Woo devuelva un `product.updated` con la ficha; aceptar ese stock haría que una venta hecha en el medio se pierda, pisada por su propio eco. El webhook refresca todo lo demás de la ficha. El stock que se origina en Woo —una carga a mano, un pedido web— entra por `npm run woo:sync`, que es la reconciliación explícita, y toda divergencia queda en `sync_conflicts` a la vista. |
 | **D33** | **Los precios del catálogo son finales: el local es monotributo y no discrimina IVA.** El POS cobra el número de la ficha y no calcula IVA en ninguna parte. Si algún día cambia la condición fiscal, la regla es guardar siempre el precio final y calcular el neto para los reportes, nunca al revés. |
 
 ---

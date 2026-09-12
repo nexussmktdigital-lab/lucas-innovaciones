@@ -3,9 +3,10 @@
 Fecha: 2026-09-12 · Sobre el código de la rama `claude/vigilant-volta-335wxv`
 (commit `c825d06`, fases 1 a 3 terminadas).
 
-> **Estado: la fase 3.5 corrigió los hallazgos 1 a 8, 12 y 13.** Cada uno tiene
-> abajo una línea «Arreglado» con lo que se hizo. Quedan abiertos el 9, el 10,
-> el 11 y del 14 al 20; están en la lista del final.
+> **Estado: quedan abiertos siete hallazgos, todos menores.** La fase 3.5
+> corrigió del 1 al 8, el 12 y el 13; la 3.7 cerró los tres que faltaban antes
+> de producción: el 9, el 10 y el 11. Cada uno tiene abajo su línea «Arreglado».
+> Lo que sigue pendiente está en la lista del final.
 
 Cómo se hizo: se levantó el sistema completo contra un PostgreSQL 16 real, con
 los datos de prueba, y se lo usó a mano con un navegador —ingreso como dueño y
@@ -194,6 +195,16 @@ El cajero ve «N sin sincronizar» y no puede hacer nada con ese número.
 Además el `void drenarEnSegundoPlano(db)` queda huérfano: en un entorno
 serverless la función puede cortarse antes de que termine.
 
+**Arreglado (fase 3.7).** Tres cosas. La cola ahora se drena también desde una
+tarea programada que pega cada diez minutos en `/api/cron/sincronizar`, una ruta
+que se autentica con `CRON_SECRET` y no con sesión. Hay pantalla
+**Sincronización** para el dueño, enlazada desde el aviso de Inicio y de Caja,
+que muestra qué espera, cuántos intentos lleva y con qué error falló, con dos
+botones: «Sincronizar ahora» y «Reintentar las fallidas» —que devuelve a la cola
+lo que agotó los seis intentos y lo intenta de una. Y el drenaje de después de
+cada venta pasó de una promesa suelta a `after()`, que es lo que garantiza que
+termine aunque la respuesta ya haya salido.
+
 ---
 
 ## Medios
@@ -205,8 +216,11 @@ Los disparadores de inmutabilidad bloquean `DELETE` en `sales`, `sale_items` y
 `estado`). El efecto colateral es que un `UPDATE sales SET total_centavos = 1`
 pasa sin ruido. Comprobado.
 
-Debería bloquearse por columna: permitir `estado`, `synced_to_woo`, `nota` y
-`updated_at`, y frenar todo lo que sea plata o cantidades.
+**Arreglado (fase 3.7).** Un disparador nuevo deja pasar el UPDATE solo en las
+columnas que de verdad cambian después de cobrar —`estado`,
+`motivo_anulacion`, `synced_to_woo`, `woo_order_id` y `nota`— y frena todo lo
+demás: importes, fecha, vendedor, caja, clave de idempotencia. En las líneas y
+los pagos el UPDATE se bloquea entero: corregir es anular y volver a vender.
 
 ### 11. El webhook `product.updated` de WooCommerce pisa el stock local
 
@@ -214,6 +228,13 @@ El POS es la fuente de verdad del stock y le manda a Woo el valor absoluto. Pero
 cuando Woo devuelve un `product.updated`, el webhook escribe `stock` de vuelta
 sobre el espejo local. Entre una venta y su sincronización, eso puede deshacer
 el descuento. El precio sí corresponde que lo mande Woo; el stock no.
+
+**Arreglado (fase 3.7).** El webhook actualiza la ficha entera —nombre, precio,
+categoría, imagen, si está activo— pero **no el stock**. El que viene de Woo
+entra por `npm run woo:sync`, que es la reconciliación explícita; mientras
+tanto, si los números no coinciden queda registrado en `sync_conflicts` y se ve
+en la pantalla de Sincronización. Un producto nuevo sí entra con el stock de
+Woo: ahí no hay nada local que perder. Siete tests nuevos.
 
 ### 12. Un precio tipeado con punto decimal se multiplica por cien
 
@@ -301,13 +322,12 @@ Los cuatro están tapados: la suite pasó de 236 a 269 tests unitarios y de 24 a
 
 ## Lo que queda abierto
 
-La fase 3.5 cerró los hallazgos 1 a 8, el 12 y el 13. Siguen pendientes:
+La fase 3.5 cerró los hallazgos 1 a 8, el 12 y el 13; la 3.7 cerró el 9, el 10
+y el 11, que eran los tres que había que resolver antes de producción. Siguen
+pendientes siete, todos menores:
 
 | # | Qué | Cuándo conviene |
 |---|---|---|
-| 9 | La cola de Woo solo se drena al vender, y lo que falla seis veces queda muerto sin botón de reintento | Antes de salir a producción |
-| 10 | Un `UPDATE` puede reescribir los montos de una venta cerrada | Antes de salir a producción |
-| 11 | El webhook `product.updated` pisa el stock local | Antes de salir a producción |
 | 14 | La justificación del arqueo solo se ve como tooltip | Con la fase de reportes |
 | 15 | El desglose por medio de pago del cierre es bruto de vuelto | Con la fase de reportes |
 | 16 | `npm run lint` no está configurado | Cuando se arme la integración continua |

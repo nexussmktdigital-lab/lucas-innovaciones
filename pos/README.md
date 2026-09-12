@@ -4,9 +4,9 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 3.5 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 3.7 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
-La fase 3.5 salió de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, diez ya corregidos.
+Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
 ---
 
@@ -121,6 +121,7 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 | `WOO_WEBHOOK_SECRET` | Secreto compartido de los webhooks. Sin esto, el endpoint rechaza todo con 503. |
 | `WOO_AUTH_QUERY` | `true` si el hosting descarta la cabecera `Authorization` (pasa con LiteSpeed). Manda la credencial por query string, que también es método oficial de Woo sobre HTTPS. |
 | `POS_TERMINAL` | Prefijo del número de venta, ej. `T1`. Una terminal por despliegue: define de dónde salió cada venta y a qué caja pertenece. Con una sola caja, dejar `T1`. |
+| `CRON_SECRET` | Secreto del drenaje programado de la cola. La tarea de Vercel (ver `vercel.json`) pega en `/api/cron/sincronizar` con `Authorization: Bearer <CRON_SECRET>`. Sin esto la ruta devuelve 503 y la cola solo se mueve al vender o a mano. |
 
 ---
 
@@ -131,10 +132,11 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
    buscador va contra el espejo local, no contra WooCommerce: la red no está en
    el camino. `Enter` agrega el primero, que con el lector de código de barras es
    siempre el correcto. `F2` vuelve al buscador desde donde sea.
-3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio
-   —eso último solo el dueño, y el servidor lo comprueba, no la pantalla. Los
-   descuentos también son del dueño. Una variación se cobra a **su** precio, no
-   al del producto padre, y el ticket dice qué medida se llevó.
+3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio:
+   cada reparación se cotiza en el momento. Lo que sí está controlado es cuánto
+   puede alejarse del precio de referencia —por debajo de la mitad frena y lo
+   confirma el dueño— y los descuentos, que son del dueño. Una variación se cobra
+   a **su** precio, no al del producto padre, y el ticket dice qué medida se llevó.
 4. **El cobro** (`F12`) admite varios medios en la misma venta y calcula el
    vuelto, que solo sale del efectivo entregado.
 5. **Al confirmar**, en una sola transacción: se crea la venta, se descuenta
@@ -181,6 +183,11 @@ El ajuste que se le manda a Woo es el stock **absoluto** que tiene el POS, no la
 resta. Reintentarlo escribe el mismo número, así que es idempotente y se cura
 solo. Si Woo tiene un valor que no esperábamos, queda registrado en
 `sync_conflicts`.
+
+La cola se drena en tres momentos: después de cada venta, cada diez minutos por
+la tarea programada, y cuando el dueño toca «Sincronizar ahora» en la pantalla
+de **Sincronización**. Ahí también se ve qué está esperando, con qué error falló
+y se puede devolver a la cola lo que agotó los seis reintentos.
 
 ---
 
@@ -388,6 +395,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El error de los 9 iPhones se detecta al sincronizar | `src/woo/mapear.test.ts` |
 | Sincronizar dos veces actualiza en vez de duplicar | `src/woo/sincronizar.test.ts` |
 | El webhook rechaza una firma inválida | `src/woo/webhook.test.ts` |
+| El webhook actualiza la ficha pero NO le pisa el stock al POS | `src/woo/espejo.test.ts` |
+| Una divergencia de stock con Woo queda registrada en vez de resolverse sola | `src/woo/espejo.test.ts` |
+| Los montos de una venta cerrada no se pueden reescribir ni por SQL | `src/db/esquema.test.ts` |
+| Una operación que agotó los reintentos se puede devolver a la cola | `src/woo/cola.test.ts` |
+| Reintentar dos veces no descuenta stock de más | `src/woo/cola.test.ts` |
+| La ruta del cron no se abre sin el secreto | `e2e/calidad.spec.ts` |
 | Ingreso por PIN y por contraseña, y los permisos por rol | `e2e/ingreso.spec.ts` |
 
 ---
@@ -446,6 +459,7 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | **Hecha** |
 | 3.5 | Auditoría del sistema completo: variaciones, permisos en el servidor, ventas del turno y anulación | **Hecha** |
 | 3.6 | Precio de mostrador y precio de tienda, con el recargo de Mercado Pago | **Hecha** |
+| 3.7 | Lo que faltaba para producción: cola destrabable y programada, montos inmutables, el webhook deja de pisar el stock | **Hecha** |
 | 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | Siguiente |
 | 5 | WhatsApp: comprobantes y recordatorios | |
 | 6 | Gastos y cuentas monetarias | |
