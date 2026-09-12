@@ -23,13 +23,43 @@ function exigirEntero(valor: number, campo: string): number {
   return valor;
 }
 
-/** Convierte pesos escritos por una persona ("1.234,56" o 1234.56) a centavos. */
+/**
+ * Convierte pesos escritos por una persona ("1.234,56" o 1234.56) a centavos.
+ *
+ * En Argentina el punto separa los miles, asi que "20.000" son veinte mil. Pero
+ * el teclado numerico tiene punto y no coma, y un cajero apurado escribe
+ * "1500.50" queriendo decir mil quinientos con cincuenta. Tomar ese punto como
+ * separador de miles daba $150.050: cien veces de mas.
+ *
+ * La regla que desambigua: si hay coma, manda la coma y los puntos son miles.
+ * Si no hay coma y lo que sigue al ultimo punto no son exactamente tres
+ * digitos, ese punto es decimal —"1.500" son mil quinientos, "1500.50" son mil
+ * quinientos con cincuenta.
+ */
 export function aCentavos(pesos: number | string): number {
   if (typeof pesos === 'number') {
     if (!Number.isFinite(pesos)) throw new ErrorDinero(`Monto invalido: ${pesos}`);
     return Math.round(pesos * CENTAVOS_POR_PESO);
   }
-  const limpio = pesos.trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+
+  const crudo = pesos.trim().replace(/\s/g, '');
+  let limpio: string;
+
+  if (crudo.includes(',')) {
+    limpio = crudo.replace(/\./g, '').replace(',', '.');
+  } else {
+    const ultimoPunto = crudo.lastIndexOf('.');
+    const decimalesTraselPunto = ultimoPunto === -1 ? -1 : crudo.length - ultimoPunto - 1;
+    const esDecimal = decimalesTraselPunto === 1 || decimalesTraselPunto === 2;
+
+    limpio = esDecimal
+      ? `${crudo.slice(0, ultimoPunto).replace(/\./g, '')}.${crudo.slice(ultimoPunto + 1)}`
+      : crudo.replace(/\./g, '');
+  }
+
+  // Un separador colgando al final es alguien a medio escribir: «12,» es 12.
+  if (limpio.endsWith('.')) limpio = limpio.slice(0, -1);
+
   if (limpio === '' || !/^-?\d+(\.\d+)?$/.test(limpio)) {
     throw new ErrorDinero(`Monto invalido: "${pesos}"`);
   }

@@ -103,3 +103,41 @@ describe('aPesos', () => {
     expect(() => aPesos(12.5)).toThrow(ErrorDinero);
   });
 });
+
+describe('aCentavos con punto', () => {
+  /**
+   * El teclado numérico tiene punto y no coma. Tomar «1500.50» como separador
+   * de miles daba $150.050: cien veces de más en el campo del cobro.
+   */
+  it('el punto con tres dígitos atrás sigue siendo separador de miles', () => {
+    expect(aCentavos('20.000')).toBe(20_000_00);
+    expect(aCentavos('1.500')).toBe(1_500_00);
+    expect(aCentavos('12.345.678')).toBe(12_345_678_00);
+  });
+
+  it('el punto con uno o dos dígitos atrás es decimal', () => {
+    expect(aCentavos('1500.50')).toBe(1_500_50);
+    expect(aCentavos('1500.5')).toBe(1_500_50);
+    expect(aCentavos('0.99')).toBe(99);
+    expect(aCentavos('1.234.56')).toBe(1_234_56);
+  });
+
+  it('si hay coma, manda la coma y los puntos son miles', () => {
+    expect(aCentavos('1.234,56')).toBe(1_234_56);
+    expect(aCentavos('20.000,00')).toBe(20_000_00);
+    expect(aCentavos('0,5')).toBe(50);
+  });
+
+  it('sigue rechazando lo que no es un monto', () => {
+    expect(() => aCentavos('')).toThrow(ErrorDinero);
+    expect(() => aCentavos('mil quinientos')).toThrow(ErrorDinero);
+    expect(() => aCentavos('1,2,3')).toThrow(ErrorDinero);
+    expect(() => aCentavos('$ 500')).toThrow(ErrorDinero);
+  });
+
+  it('un separador colgando al final se lee como si no estuviera', () => {
+    // Pasa mientras el cajero escribe: «12.» todavía no dice nada más que 12.
+    expect(aCentavos('12.')).toBe(12_00);
+    expect(aCentavos('12,')).toBe(12_00);
+  });
+});
