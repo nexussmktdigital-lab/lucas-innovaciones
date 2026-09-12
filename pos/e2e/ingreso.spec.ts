@@ -72,9 +72,12 @@ test('el dueño ve el tipo de cambio y la conversión de un iPhone', async ({ pa
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
-  const seccion = page.locator('section', { has: page.getByRole('heading', { name: 'Tipo de cambio' }) });
+  const seccion = page.locator('section', {
+    has: page.getByRole('heading', { name: 'Tipo de cambio' }),
+  });
   await expect(seccion).toContainText('1.571,00');
-  await expect(seccion).toContainText('iPhone 14 Pro 256GB');
+  // El ejemplo de conversión: US$ 1.370 al dólar de hoy.
+  await expect(seccion).toContainText('US$ 1.370,00');
   await expect(seccion).toContainText('2.152.000,00');
 });
 

@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 2 (Venta de contado) terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket y cerrar el turno con arqueo.
+**Estado: Fase 3 (Dólares y calidad de datos) terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket y cerrar el turno con arqueo. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 ---
 
@@ -148,6 +148,59 @@ solo. Si Woo tiene un valor que no esperábamos, queda registrado en
 
 ---
 
+## Dólares y calidad de datos
+
+El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
+US$ 6.300 y se publicaron a $6.300. Unos $9,7 millones de diferencia en un mes.
+Hay dos guardas contra eso, y hacen cosas distintas.
+
+**La primera hace imposible el error de tipeo.** En un producto en dólares el
+precio en pesos no se escribe: lo calcula el sistema con la cotización, en el
+carrito y otra vez en el servidor al confirmar. No hay campo donde equivocarse.
+
+**La segunda atrapa lo que la primera no ve**: un producto que *debería* estar
+en dólares y quedó cargado en pesos con la cifra del dólar. Para el sistema es
+un iPhone que vale $6.300 y no tiene nada de raro. Se detecta con un piso de
+precio plausible por categoría (`src/ventas/cordura.ts`): un smartphone nuevo
+por debajo de $50.000 no existe.
+
+Esa segunda guarda **no bloquea de forma definitiva**: muestra el cartel y
+ofrece dos salidas — volver a revisar, o cobrar igual, que solo puede el dueño y
+queda auditado. Un piso mal puesto que impide vender sería peor que el error que
+evita.
+
+Y por la misma razón hay una lista de categorías sin piso: cables, fundas,
+vidrios, cargadores. Apple vende cables de $13.000, y una alerta que grita por
+eso es una alerta que se ignora.
+
+### El tipo de cambio
+
+Lo produce el plugin `lucas-cotizacion` dos veces por día con el blue de Córdoba
+(D22). El POS lo espeja, lo versiona y lo **congela en cada venta**: cambiar el
+valor nunca recalcula una venta pasada. En `/cotizacion` el dueño ve el
+historial y puede forzar uno a mano, con las mismas guardas que el plugin —
+banda de 100 a 500.000, y un salto mayor al 15% pide confirmación explícita.
+
+Si la cotización tiene más de 20 horas, el sistema avisa: el plugin actualiza a
+las 9 y a las 17, así que pasado ese tiempo algo dejó de funcionar.
+
+### Calidad del catálogo
+
+`/catalogo` evalúa las fichas y las lista **ordenadas por gravedad, no por
+cantidad**. Hay 781 fichas sin foto y una con precio sospechoso; la que hay que
+mirar primero es la última. Separa lo que impide vender bien (precio sospechoso,
+dólar incoherente, precio sin cargar) de lo que solo afea la ficha (sin SKU, sin
+foto), y linkea a editar cada una en WooCommerce.
+
+### El marcador de facturación con producto real
+
+Es la métrica destacada en Inicio. El sistema nuevo da 100% por construcción
+—`sale_items.product_id` es NOT NULL— así que el valor está en el contraste con
+el histórico: el POS anterior venía en 30%, 33% y 39% de facturación con
+producto real, contra una meta del 70%.
+
+---
+
 ## Sincronización con WooCommerce
 
 ```bash
@@ -235,6 +288,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Drenar la cola dos veces no vuelve a descontar en Woo | `src/woo/cola.test.ts` |
 | El ticket escapa el HTML del catálogo y usa la hora de Buenos Aires | `src/ventas/ticket.test.ts` |
 | Venta completa desde el navegador, con vuelto y ticket | `e2e/venta.spec.ts` |
+| El iPhone cargado en pesos con la cifra del dólar frena la venta | `src/ventas/cordura.test.ts`, `e2e/calidad.spec.ts` |
+| Un cable de Apple a $13.000 NO se marca como sospechoso | `src/ventas/cordura.test.ts` |
+| Un salto del dólar mayor al 15% pide confirmación | `src/cotizacion/cotizacion.test.ts` |
+| Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
+| El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
+| El vendedor no llega a las pantallas del dueño ni por URL | `e2e/calidad.spec.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |
@@ -257,11 +316,15 @@ src/
     (pos)/        Shell del POS, detrás de sesión
       vender/     Pantalla de venta: buscador, carrito y cobro
       caja/       Apertura, resumen del turno y arqueo
+      catalogo/   Fichas con problemas, ordenadas por gravedad
+      cotizacion/ Valor del dólar, historial y carga manual
     ingresar/     Pantalla de ingreso
     ticket/       Comprobante imprimible
     api/          Buscador, Auth.js y webhooks de WooCommerce
   auth/           Sesión, PIN, permisos por rol
   caja/           Sesión de caja: abrir, resumir, cerrar
+  catalogo/       Calidad de las fichas y marcador de producto real
+  cotizacion/     Tipo de cambio: historial, guardas y vencimiento
   db/             Esquema Drizzle, migraciones, seed, base de test
   lib/            Dinero en centavos, fechas, texto, auditoría
   ventas/         Carrito, buscador, confirmación de venta y ticket
@@ -296,8 +359,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 |---|---|---|
 | 1 | Base: esquema, migraciones, auth, layout, sincronización, auditoría | **Hecha** |
 | 2 | Venta contado: buscador, carrito, pago mixto, ticket, stock, caja básica | **Hecha** |
-| 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | Siguiente |
-| 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | |
+| 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | **Hecha** |
+| 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | Siguiente |
 | 5 | WhatsApp: comprobantes y recordatorios | |
 | 6 | Gastos y cuentas monetarias | |
 | 7 | Caja completa: arqueo y cierre | |

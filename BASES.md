@@ -2,7 +2,7 @@
 
 **Sitio:** lucasinnovaciones.com.ar
 **Fecha:** 2026-08-03
-**Estado:** bases definidas · **POS en desarrollo (Fase 1 terminada)** — ver [`pos/README.md`](pos/README.md)
+**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3 terminadas)** — ver [`pos/README.md`](pos/README.md)
 
 ---
 
