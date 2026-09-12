@@ -47,9 +47,42 @@ export const PISOS_POR_CATEGORIA: { patron: string; pisoCentavos: number }[] = [
   { patron: 'consolas', pisoCentavos: 50_000_00 },
 ];
 
-/** Marcas cuyos equipos nunca son baratos, aunque la categoría no lo diga. */
+/**
+ * Marcas cuyos equipos nunca son baratos, aunque la categoría no lo diga.
+ *
+ * Sirve para un equipo mal categorizado. No alcanza por sí sola: Apple también
+ * vende cables y cargadores, y por eso las categorías de accesorio de abajo
+ * ganan siempre.
+ */
 export const PISO_POR_MARCA: { marca: string; pisoCentavos: number }[] = [
   { marca: 'apple', pisoCentavos: 20_000_00 },
+];
+
+/**
+ * Categorías donde ningún precio es sospechoso, pase lo que pase.
+ *
+ * Es la mayoría del catálogo: cables, fundas, vidrios, cargadores. Un cable
+ * Lightning de Apple a $13.000 es un precio perfectamente normal, y marcarlo
+ * como sospechoso solo entrena al cajero a ignorar el cartel.
+ */
+export const CATEGORIAS_SIN_PISO = [
+  'cable',
+  'cargador',
+  'funda',
+  'vidrio',
+  'hidrogel',
+  'auricular',
+  'pendrive',
+  'memoria',
+  'almacenamiento',
+  'periferico',
+  'accesorio',
+  'soporte',
+  'adaptador',
+  'servicio',
+  'telefonia',
+  'cocina',
+  'mate',
 ];
 
 /**
@@ -61,6 +94,9 @@ export const PISO_POR_MARCA: { marca: string; pisoCentavos: number }[] = [
 export function pisoPara(p: ProductoAValidar): number | null {
   const categoria = normalizar(p.categoria ?? '');
   const marca = normalizar(p.marca ?? '');
+
+  // Un accesorio no tiene piso ni siquiera si la marca es cara.
+  if (CATEGORIAS_SIN_PISO.some((patron) => categoria.includes(patron))) return null;
 
   const porCategoria = PISOS_POR_CATEGORIA.find((x) => categoria.includes(x.patron));
   const porMarca = PISO_POR_MARCA.find((x) => marca === x.marca);
