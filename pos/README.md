@@ -4,7 +4,9 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 3 (Dólares y calidad de datos) terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket y cerrar el turno con arqueo. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 3.5 terminada.** Se puede abrir caja, vender, cobrar con varios medios, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+
+La fase 3.5 salió de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, diez ya corregidos.
 
 ---
 
@@ -128,22 +130,40 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
    buscador va contra el espejo local, no contra WooCommerce: la red no está en
    el camino. `Enter` agrega el primero, que con el lector de código de barras es
    siempre el correcto. `F2` vuelve al buscador desde donde sea.
-3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio.
-   Los descuentos los ve solo el dueño.
+3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio
+   —eso último solo el dueño, y el servidor lo comprueba, no la pantalla. Los
+   descuentos también son del dueño. Una variación se cobra a **su** precio, no
+   al del producto padre, y el ticket dice qué medida se llevó.
 4. **El cobro** (`F12`) admite varios medios en la misma venta y calcula el
    vuelto, que solo sale del efectivo entregado.
 5. **Al confirmar**, en una sola transacción: se crea la venta, se descuenta
    stock, se impacta la caja, se audita y se encola el ajuste a WooCommerce.
    Después se abre el ticket, que se manda a imprimir solo.
-6. **Al cerrar el turno** se cuenta el efectivo. Si no cuadra, hay que explicar
+6. **Ventas del turno** (`F4`) muestra todo lo que se vendió, permite volver a
+   imprimir cualquier comprobante y, al dueño, anular una venta mal cargada.
+7. **Al cerrar el turno** se cuenta el efectivo. Si no cuadra, hay que explicar
    por qué antes de poder cerrar.
+
+### Anular una venta
+
+Anular no borra: repone el stock deshaciendo exactamente los movimientos que
+dejó la venta —así vuelve a la variación de la que salió—, mete el asiento
+contrario en la caja, marca la venta como anulada con el motivo, que es
+obligatorio, y le avisa a WooCommerce por la misma cola de siempre.
+
+Solo el dueño, y solo dentro del turno abierto: la plata volvió al cajón de ese
+turno, y revertir contra una caja ya cerrada descuadraría dos arqueos. Una venta
+de ayer se resuelve con una devolución, que es otra cosa.
 
 ### Tres decisiones que conviene conocer
 
 **El servidor no le cree al navegador.** El cliente manda qué producto y cuántas
-unidades; el precio lo reconstruye el servidor leyendo el catálogo. Un navegador
-manipulado no puede cambiar un precio, y el precio manual solo se acepta en
-productos marcados como editables.
+unidades; el precio lo reconstruye el servidor leyendo el catálogo o la
+variación. Un navegador manipulado no puede cambiar un precio: el precio escrito
+solo se acepta en productos editables **y** de parte de quien tenga el permiso,
+saltear la guarda de precios sospechosos solo se lo permite al dueño, y una
+variación que no sea de ese producto se rechaza. Nada de eso lo decide la
+pantalla.
 
 **El precio en pesos de un producto en dólares se calcula, no se tipea.** Es la
 guarda estructural contra el error de agosto: nueve iPhones cargados a US$ 6.300
@@ -309,6 +329,15 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor no llega a las pantallas del dueño ni por URL | `e2e/calidad.spec.ts` |
+| Una variación se cobra a su precio y no al del producto padre | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
+| Una variación de otro producto se rechaza | `src/ventas/confirmar.test.ts` |
+| Dos pagos en efectivo descuentan el vuelto una sola vez | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
+| Quitar un renglón de pago no deja la pantalla mostrando otro número | `e2e/venta.spec.ts` |
+| El vendedor no puede escribir el precio de un servicio ni saltear la guarda | `e2e/venta.spec.ts` |
+| Anular repone el stock en la variación de la que salió y revierte la caja | `src/ventas/anular.test.ts` |
+| Una venta anulada no cuenta en el arqueo, y no se anula dos veces | `src/ventas/anular.test.ts` |
+| Una venta de un turno cerrado no se puede anular | `src/ventas/anular.test.ts` |
+| «1500.50» con punto decimal son mil quinientos, no ciento cincuenta mil | `src/lib/dinero.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |
@@ -375,11 +404,12 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 1 | Base: esquema, migraciones, auth, layout, sincronización, auditoría | **Hecha** |
 | 2 | Venta contado: buscador, carrito, pago mixto, ticket, stock, caja básica | **Hecha** |
 | 3 | Dólares y calidad de datos: validaciones de cordura, marcador de producto real | **Hecha** |
+| 3.5 | Auditoría del sistema completo: variaciones, permisos en el servidor, ventas del turno y anulación | **Hecha** |
 | 4 | Clientes y fiado, con la pantalla de migración de fichas de papel | Siguiente |
 | 5 | WhatsApp: comprobantes y recordatorios | |
 | 6 | Gastos y cuentas monetarias | |
 | 7 | Caja completa: arqueo y cierre | |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | |
 | 9 | Reportes y exportación | |
-| 10 | Devoluciones, anulaciones y migración del histórico | |
+| 10 | Devoluciones de turnos cerrados y migración del histórico | |
 | v1.1 | Offline acotado: caché de catálogo y cola de venta | |

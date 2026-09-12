@@ -2,7 +2,7 @@
 
 **Sitio:** lucasinnovaciones.com.ar
 **Fecha:** 2026-08-03
-**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3 terminadas)** — ver [`pos/README.md`](pos/README.md)
+**Estado:** bases definidas · **POS en desarrollo (Fases 1 a 3.5 terminadas)** — ver [`pos/README.md`](pos/README.md) y la auditoría en [`pos/AUDITORIA.md`](pos/AUDITORIA.md)
 
 ---
 
@@ -148,6 +148,10 @@ Los nombres reales de esas líneas revelan cuatro negocios que el catálogo no r
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** *Deroga D12.* La restricción vive en la base (`sale_items.product_id` NOT NULL con clave foránea), no en la aplicación. Para que sea cumplible sin frenar al mostrador, el 58% que hoy se carga como venta libre se resuelve catalogando lo que realmente se vende: **servicios técnicos y chips pasan a ser productos** de la categoría `Solo mostrador` (D19), sin gestión de stock y con precio editable en la venta; y **el fiado sale de las líneas de pedido** al módulo de cuenta corriente. Resuelve P9 y P11 por otra vía. |
 | **D25** | **Sin modo offline en la v1; offline acotado en la v1.1.** *Confirma D1.* La v1.1 suma solo caché del catálogo y cola de la venta confirmada, no resolución elaborada de conflictos. Consecuencia: si WooCommerce está caído, el POS no vende — lo cubre la Regla 0 (rollback a YITH durante la convivencia). El offline era el 30-40% del esfuerzo y el negocio operó 3.764 pedidos sin él. |
 | **D26** | **Cheque y Mercado Pago se suman como medios de pago del mostrador.** No estaban en el alcance original pero sí en la operación real: 1% del histórico es cheque y el gateway de Mercado Pago ya está instalado. |
+| **D27** | **Una variación se vende con su propio precio y su propio stock.** Las 600 variaciones sincronizadas de Woo (vidrios, hidrogeles y fundas, D20) no son etiquetas del producto padre: tienen precio propio y, cuando en Woo llevan `manage_stock: true`, stock propio. El POS descuenta en un solo lugar —la variación si es suyo, el padre si lo hereda— y le escribe a Woo el recurso que corresponde. La única excepción es el precio de un producto en dólares, que lo sigue calculando el sistema desde el precio en USD del padre (D22): la guarda contra el error de agosto no se saltea por elegir una medida. |
+| **D28** | **Los permisos se hacen cumplir en el servidor, no en la pantalla.** Escribir el precio de un servicio y saltear la guarda de precios sospechosos son atribuciones del dueño, y la acción de venta las comprueba aunque el pedido llegue armado a mano. Una guarda que solo vive en la interfaz no es una guarda. |
+| **D29** | **Anular es agregar los asientos contrarios, y solo dentro del turno abierto.** Nada se borra: la venta queda `cancelled` con el motivo, el stock vuelve deshaciendo los movimientos que dejó y la caja recibe el asiento opuesto. Fuera del turno no se anula, porque revertir contra una caja cerrada descuadra dos arqueos: eso es una devolución, y tiene su propia fase. |
+| **D30** | **La cuenta corriente no se ofrece hasta que exista el módulo de fiado (fase 5).** El dominio la soporta desde la fase 2, pero cobrar en cuenta corriente sin lugar donde guardar la deuda es fiar y no acordarse de nadie. |
 
 ---
 

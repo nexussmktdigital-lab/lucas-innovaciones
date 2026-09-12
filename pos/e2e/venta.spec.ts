@@ -40,6 +40,23 @@ async function asegurarCajaAbierta(page: Page) {
   await expect(page.getByText('Turno abierto')).toBeVisible();
 }
 
+/** Lee un importe en pesos de la pantalla y lo devuelve en centavos. */
+function aCentavosDeTexto(texto: string): number {
+  const m = texto.match(/\$\s*([\d.]+),(\d{2})/);
+  if (!m) throw new Error(`No encontré un importe en: ${texto}`);
+  return Number(m[1]!.replace(/\./g, '')) * 100 + Number(m[2]);
+}
+
+async function efectivoEsperado(page: Page): Promise<number> {
+  const bloque = page.getByText('Efectivo esperado').locator('..');
+  return aCentavosDeTexto(await bloque.innerText());
+}
+
+async function precioDelCarrito(page: Page): Promise<number> {
+  const totales = page.getByRole('complementary', { name: 'Carrito' }).locator('dl');
+  return aCentavosDeTexto((await totales.innerText()).split('Total')[1] ?? '');
+}
+
 test('sin caja abierta, la pantalla de venta lo dice y ofrece abrirla', async ({ page }) => {
   await entrarComoDuenio(page);
   await page.goto('/vender');
@@ -130,7 +147,9 @@ test('no se puede confirmar sin cubrir el total', async ({ page }) => {
   await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
 });
 
-test('fiar exige elegir un cliente', async ({ page }) => {
+test('no se puede fiar hasta que exista el módulo de fiado', async ({ page }) => {
+  // El dominio soporta la cuenta corriente, pero la deuda del cliente recién
+  // se guarda en la fase 5. Ofrecerla antes era fiar y no acordarse de nadie.
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
   await page.goto('/vender');
@@ -139,10 +158,8 @@ test('fiar exige elegir un cliente', async ({ page }) => {
   await page.getByRole('button', { name: /^Cobrar/ }).click();
 
   const cobro = page.getByRole('dialog', { name: 'Cobrar' });
-  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
-
-  await expect(cobro.getByText(/hace falta elegir un cliente/)).toBeVisible();
-  await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
+  await expect(cobro.getByRole('button', { name: '+ Efectivo' })).toBeVisible();
+  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toHaveCount(0);
 });
 
 test('la caja refleja las ventas del turno', async ({ page }) => {
@@ -168,4 +185,128 @@ test('el cierre exige justificar la diferencia', async ({ page }) => {
 
   await expect(page.getByText(/Falta\s/)).toBeVisible();
   await expect(page.getByLabel('¿A qué se debe?')).toBeVisible();
+});
+
+test('una variación se cobra a su precio, no al del producto padre', async ({ page }) => {
+  // La pantalla decía $550.000 y quedaba una venta de $410.000, con $140.000
+  // de vuelto que nadie dio.
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+
+  await agregar(page, 'A17-256', /256GB/);
+
+  const carrito = page.getByRole('complementary', { name: 'Carrito' });
+  await expect(carrito).toContainText('Samsung Galaxy A17 128GB — 256GB');
+  await expect(carrito).toContainText('550.000');
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await expect(cobro).toContainText('550.000');
+
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/ventas');
+  const fila = page.getByRole('listitem').filter({ hasText: '256GB' }).first();
+  await expect(fila).toContainText('$ 550.000,00');
+});
+
+test('dos billetes en efectivo no descuadran la caja', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  const antes = await efectivoEsperado(page);
+
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  const total = await precioDelCarrito(page);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').first().fill('3000');
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').nth(1).fill('10000');
+
+  await expect(cobro.getByText('Vuelto')).toBeVisible();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  // Hay que esperar a que la venta entre: irse antes cancela la acción.
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/caja');
+  // La caja sube exactamente lo que se vendió, ni un peso menos.
+  expect(await efectivoEsperado(page)).toBe(antes + total);
+});
+
+test('quitar un pago no deja la pantalla mostrando otro número', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').first().fill('3000');
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').nth(1).fill('10000');
+
+  await cobro.getByLabel('Quitar el pago en Efectivo').first().click();
+
+  await expect(cobro.getByLabel('Monto en Efectivo')).toHaveValue('10000');
+  await expect(cobro).toContainText('$ 10.000,00');
+});
+
+test('el dueño anula una venta del turno y todo vuelve atrás', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/ventas');
+  const primera = page.getByRole('listitem').first();
+  await expect(primera.getByRole('link', { name: /Ver e imprimir/ })).toBeVisible();
+
+  await primera.getByRole('button', { name: 'Anular' }).click();
+  await primera.getByLabel(/Por qué se anula/).fill('Prueba de punta a punta');
+  await primera.getByRole('button', { name: /Anular la venta/ }).click();
+
+  // La lista se refresca sola: la fila pasa a «Anulada» y muestra el motivo.
+  await expect(page.getByRole('listitem').first()).toContainText('Anulada');
+  await expect(page.getByRole('listitem').first()).toContainText('Prueba de punta a punta');
+
+  await page.reload();
+  await expect(page.getByRole('listitem').first()).toContainText('Anulada');
+  // Y el comprobante se sigue pudiendo imprimir: no se borró nada.
+  await expect(
+    page.getByRole('listitem').first().getByRole('link', { name: /Ver e imprimir/ }),
+  ).toBeVisible();
+});
+
+test('el vendedor no puede anular ni escribir el precio de un servicio', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/ingresar');
+  await page.getByLabel('PIN').fill(process.env.SEED_PIN_VENDEDOR ?? '4827');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
+
+  await page.goto('/ventas');
+  await expect(page.getByRole('button', { name: 'Anular' })).toHaveCount(0);
+
+  await page.goto('/vender');
+  await agregar(page, 'Limpieza de virus', /Limpieza de virus/);
+  const carrito = page.getByRole('complementary', { name: 'Carrito' });
+  await expect(carrito).toContainText('7.050');
+  await expect(carrito.getByLabel(/^Precio de/)).toHaveCount(0);
 });
