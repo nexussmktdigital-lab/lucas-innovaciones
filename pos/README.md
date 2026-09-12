@@ -271,6 +271,50 @@ compra grande en cuotas fijas.
 
 ---
 
+## WhatsApp: comprobantes y recordatorios
+
+El POS **arma el mensaje y abre el chat con el texto ya escrito**; quien aprieta
+enviar es la persona. Es un enlace `wa.me` común: no hace falta cuenta de Meta
+Business, ni plantillas aprobadas, ni pagar por conversación, y funciona hoy
+desde la MacBook con WhatsApp Web o de escritorio.
+
+La contrapartida es que el sistema no puede saber si el mensaje llegó, así que
+**todo lo que se guarda dice «preparado» y nunca «enviado»**. Es la palabra
+honesta: lo que el POS sabe es que armó el texto y abrió el chat.
+
+Hay dos mensajes:
+
+- **Comprobante de compra**, en cada venta del turno que tenga cliente con
+  teléfono (`Ventas`, `F4`).
+- **Recordatorio de deuda**, en la lista de fiado y en la ficha del cliente.
+
+Los textos los escribe el dueño en **Mensajes**, no el programador: es la voz
+del local. Se ve el mensaje armado con datos de ejemplo mientras se escribe, y
+un `{campo}` inventado se rechaza al guardar —no al mandar, cuando el cliente ya
+leyó «Hola {clientee}»—.
+
+### Dos cosas que hacen la diferencia
+
+**El recordatorio tiene freno.** A la misma persona se le puede recordar la
+deuda una vez cada tantos días (siete por defecto, configurable). Antes de ese
+plazo el botón pide confirmación en vez de abrir el chat. Quien recibe tres
+mensajes en una semana no paga antes: deja de comprar.
+
+**El enlace es un enlace de verdad**, no un botón que espera al servidor y
+después abre una ventana: así el navegador la abre con el mismo clic de la
+persona y Safari no la bloquea como pop-up. La constancia viaja por separado y
+se arma de nuevo en el servidor, así que lo que queda guardado es el texto que
+el sistema generó.
+
+### El día que tengan que salir solos
+
+La pieza que cambia es una sola: cómo se entrega el texto (`src/whatsapp/enlace.ts`).
+El texto, a quién, cuándo y con qué control de repetición ya está resuelto en
+`src/whatsapp/mensajes.ts`. Recién ahí hará falta la Cloud API de Meta, con su
+cuenta de negocio, sus plantillas aprobadas y su costo por conversación.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -424,6 +468,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Reintentar el mismo cobro no cobra dos veces | `src/fiado/cuenta.test.ts` |
 | Anular una venta fiada le saca la deuda al cliente | `src/fiado/cuenta.test.ts` |
 | La ficha de papel entra una sola vez por cliente | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| Un `{campo}` inventado en una plantilla se rechaza al guardar, no al mandar | `src/whatsapp/plantillas.test.ts`, `e2e/whatsapp.spec.ts` |
+| El texto del mensaje viaja escapado: saltos de línea, acentos, emojis y `&` | `src/whatsapp/plantillas.test.ts` |
+| Un campo sin valor se borra en vez de quedar con la llave puesta | `src/whatsapp/plantillas.test.ts` |
+| Una venta anulada o sin cliente no ofrece comprobante | `src/whatsapp/mensajes.test.ts` |
+| Lo que se guarda es el texto que se armó, no la plantilla | `src/whatsapp/mensajes.test.ts` |
+| Recordarle la deuda dos veces en la semana pide confirmación | `src/whatsapp/mensajes.test.ts`, `e2e/whatsapp.spec.ts` |
 | El vendedor no puede fiar, pero sí recibir un pago | `e2e/fiado.spec.ts` |
 | Un teléfono argentino se normaliza como lo escriban | `src/clientes/clientes.test.ts` |
 | El mismo teléfono no se puede cargar en dos clientes | `src/clientes/clientes.test.ts`, `e2e/fiado.spec.ts` |
@@ -471,6 +521,9 @@ src/
       caja/       Apertura, resumen del turno y arqueo
       catalogo/   Fichas con problemas, ordenadas por gravedad
       cotizacion/ Valor del dólar, historial y carga manual
+      fiado/      Quién debe, cuánto y cobro a cuenta
+      clientes/   Fichero y ficha con movimientos
+      mensajes/   Textos de WhatsApp y lo que ya se preparó
     ingresar/     Pantalla de ingreso
     ticket/       Comprobante imprimible
     api/          Buscador, Auth.js y webhooks de WooCommerce
@@ -481,6 +534,7 @@ src/
   db/             Esquema Drizzle, migraciones, seed, base de test
   lib/            Dinero en centavos, fechas, texto, auditoría
   ventas/         Carrito, buscador, confirmación de venta y ticket
+  whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
   woo/            Cliente REST, mapeo, sincronización, cola, webhooks
   scripts/        Comandos de consola
 drizzle/          Migraciones SQL versionadas
@@ -517,8 +571,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 3.6 | Precio de mostrador y precio de tienda, con el recargo de Mercado Pago | **Hecha** |
 | 3.7 | Lo que faltaba para producción: cola destrabable y programada, montos inmutables, el webhook deja de pisar el stock | **Hecha** |
 | 4 | Clientes y fiado, con la migración de las fichas de papel | **Hecha** |
-| 5 | WhatsApp: comprobantes y recordatorios | Siguiente |
-| 6 | Gastos y cuentas monetarias | |
+| 5 | WhatsApp: comprobantes y recordatorios | **Hecha** |
+| 6 | Gastos y cuentas monetarias | Siguiente |
 | 7 | Caja completa: arqueo y cierre | |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | |
 | 9 | Reportes y exportación | |
