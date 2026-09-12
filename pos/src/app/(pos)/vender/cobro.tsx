@@ -26,6 +26,13 @@ interface Props {
   ) => Promise<Awaited<ReturnType<typeof registrarVenta>>>;
 }
 
+/**
+ * Medios que se pueden cobrar hoy.
+ *
+ * «Cuenta corriente» no está: el dominio la soporta, pero la deuda del cliente
+ * recién existe en la fase 5. Ofrecerla antes es dejar que se fíe un teléfono y
+ * que el sistema no se acuerde de nadie.
+ */
 const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'efectivo', tipoCuenta: 'efectivo' },
   { medio: 'transferencia', tipoCuenta: 'banco' },
@@ -33,7 +40,6 @@ const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'credito', tipoCuenta: 'banco' },
   { medio: 'mercadopago', tipoCuenta: 'mercadopago' },
   { medio: 'cheque', tipoCuenta: 'banco' },
-  { medio: 'cuenta_corriente', tipoCuenta: null },
 ];
 
 const MARCAS = ['Visa', 'Mastercard', 'Amex', 'Naranja', 'Cabal', 'Otra'];
@@ -41,6 +47,19 @@ const MARCAS = ['Visa', 'Mastercard', 'Amex', 'Naranja', 'Cabal', 'Otra'];
 /** Clave de idempotencia: una por intento de cobro, estable entre reintentos. */
 function nuevaClave(): string {
   return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random()}`;
+}
+
+/**
+ * Un pago en pantalla.
+ *
+ * `clave` es propia y no cambia: con la posición como clave de React, borrar un
+ * renglón dejaba el campo del anterior en pantalla mostrando un monto y el
+ * sistema contando otro. `texto` es lo que la persona escribió, tal cual, para
+ * que pueda tipear «12.» sin que el campo se le corrija solo.
+ */
+interface PagoEnPantalla extends Pago {
+  clave: string;
+  texto: string;
 }
 
 export default function Cobro({
@@ -52,7 +71,7 @@ export default function Cobro({
   onCerrar,
   onConfirmar,
 }: Props) {
-  const [pagos, setPagos] = useState<Pago[]>([]);
+  const [pagos, setPagos] = useState<PagoEnPantalla[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Precio sospechoso: el dueño tiene que decidir a sabiendas. */
@@ -83,19 +102,33 @@ export default function Cobro({
   }
 
   function agregarMedio(medio: MedioPago, tipoCuenta: Cuenta['tipo'] | null) {
-    const faltante = cobro?.faltanteCentavos ?? totales.totalCentavos;
+    const faltante = Math.max(0, cobro?.faltanteCentavos ?? totales.totalCentavos);
     setPagos((p) => [
       ...p,
       {
+        clave: nuevaClave(),
         medio,
-        montoCentavos: Math.max(0, faltante),
+        montoCentavos: faltante,
+        texto: faltante === 0 ? '' : String(faltante / 100),
         monetaryAccountId: cuentaPara(tipoCuenta),
       },
     ]);
   }
 
-  function actualizar(i: number, cambios: Partial<Pago>) {
-    setPagos((p) => p.map((pago, j) => (j === i ? { ...pago, ...cambios } : pago)));
+  function actualizar(clave: string, cambios: Partial<PagoEnPantalla>) {
+    setPagos((p) => p.map((pago) => (pago.clave === clave ? { ...pago, ...cambios } : pago)));
+  }
+
+  /** Lo tipeado se guarda tal cual; el monto se actualiza si ya se puede leer. */
+  function escribirMonto(clave: string, crudo: string) {
+    const texto = crudo.trim();
+    let montoCentavos: number | undefined;
+    try {
+      montoCentavos = texto === '' ? 0 : aCentavos(texto);
+    } catch {
+      // A medio escribir («12.» o «-»): se guarda el texto y nada más.
+    }
+    actualizar(clave, montoCentavos === undefined ? { texto } : { texto, montoCentavos });
   }
 
   async function confirmar(saltearGuardaDePrecios = false) {
@@ -177,7 +210,7 @@ export default function Cobro({
           <ul className="mt-4 flex flex-col gap-2">
             {pagos.map((p, i) => (
               <li
-                key={`${p.medio}-${i}`}
+                key={p.clave}
                 className="rounded-(--radius-caja) border border-(--color-borde) p-2.5"
               >
                 <div className="flex items-center gap-2">
@@ -186,21 +219,14 @@ export default function Cobro({
                     ref={i === 0 ? primerCampo : undefined}
                     type="text"
                     inputMode="decimal"
-                    defaultValue={p.montoCentavos === 0 ? '' : String(p.montoCentavos / 100)}
+                    value={p.texto}
                     aria-label={`Monto en ${nombreDelMedio(p.medio)}`}
-                    onChange={(e) => {
-                      const crudo = e.target.value.trim();
-                      try {
-                        actualizar(i, { montoCentavos: crudo === '' ? 0 : aCentavos(crudo) });
-                      } catch {
-                        /* mientras escribe puede quedar a medias */
-                      }
-                    }}
+                    onChange={(e) => escribirMonto(p.clave, e.target.value)}
                     className="tabular min-h-10 w-36 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-right text-lg"
                   />
                   <button
                     type="button"
-                    onClick={() => setPagos((ps) => ps.filter((_, j) => j !== i))}
+                    onClick={() => setPagos((ps) => ps.filter((x) => x.clave !== p.clave))}
                     aria-label={`Quitar el pago en ${nombreDelMedio(p.medio)}`}
                     className="px-1.5 text-(--color-tinta-suave) hover:text-(--color-error)"
                   >
@@ -212,7 +238,7 @@ export default function Cobro({
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <select
                       value={p.marcaTarjeta ?? ''}
-                      onChange={(e) => actualizar(i, { marcaTarjeta: e.target.value || null })}
+                      onChange={(e) => actualizar(p.clave, { marcaTarjeta: e.target.value || null })}
                       aria-label="Marca de la tarjeta"
                       className="min-h-9 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2"
                     >
@@ -231,7 +257,7 @@ export default function Cobro({
                           min={1}
                           max={24}
                           value={p.cuotas ?? 1}
-                          onChange={(e) => actualizar(i, { cuotas: Number(e.target.value) })}
+                          onChange={(e) => actualizar(p.clave, { cuotas: Math.max(1, Number(e.target.value) || 1) })}
                           aria-label="Cantidad de cuotas"
                           className="tabular min-h-9 w-16 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-center"
                         />
