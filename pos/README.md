@@ -72,6 +72,21 @@ npm run demo -- --reset
 Es solo para mirar y para desarrollar: PGlite corre dentro del proceso y no
 sirve para producción.
 
+### Si la demo no levanta
+
+PGlite es PostgreSQL compilado a WASM y no se comporta igual en todas las
+máquinas: en Windows con **Node 24** llega a abortar con
+`RuntimeError: Aborted()`. El comando degrada solo —reintenta con la carpeta de
+datos limpia, después arranca en memoria— pero si aun así falla:
+
+1. Instalar **Node 22 LTS** ([nodejs.org](https://nodejs.org)) y repetir.
+2. O saltearse la demo: si ya hay un `.env` con `DATABASE_URL`, la base de
+   verdad no necesita PGlite para nada.
+
+   ```bash
+   npm run db:migrate && npm run db:seed && npm run dev
+   ```
+
 ---
 
 ## Instalación para desarrollo real

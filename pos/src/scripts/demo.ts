@@ -7,10 +7,18 @@
  *
  * Los datos quedan en `.demo/` y sobreviven a los reinicios.
  * Para empezar de cero: `npm run demo -- --reset`
+ *
+ * PGlite es WASM y no anda igual en todas las maquinas: en Windows con Node 24
+ * llega a abortar al abrir la carpeta de datos. Por eso este script degrada en
+ * vez de morir: si no puede guardar en disco arranca en memoria, y si no puede
+ * ni eso usa la base de `DATABASE_URL` si esta configurada. La demo tiene que
+ * levantar aunque el motor embebido falle.
  */
-import { mkdirSync, rmSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import 'dotenv/config';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -18,9 +26,113 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import * as schema from '@/db/schema';
 import { sembrar, vaciar } from '@/db/seed';
 
-const CARPETA = '.demo';
+/** Absoluta: PGlite monta la carpeta en su filesystem virtual y las rutas relativas la confunden. */
+const CARPETA = resolve('.demo');
+const DATOS = resolve(CARPETA, 'pgdata');
 const PUERTO_BASE = 55433;
 const PUERTO_APP = Number(process.env.PORT ?? 3000);
+
+/** Arranca `next dev` contra la base indicada y devuelve el proceso. */
+function arrancarApp(url: string): ChildProcess {
+  return spawn('npx', ['next', 'dev', '--port', String(PUERTO_APP)], {
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    env: {
+      ...process.env,
+      DATABASE_URL: url,
+      // Clave efímera: la demo no comparte sesión con nada.
+      AUTH_SECRET: process.env.AUTH_SECRET ?? randomBytes(32).toString('base64'),
+      AUTH_TRUST_HOST: 'true',
+      POS_TERMINAL: process.env.POS_TERMINAL ?? 'T1',
+    },
+  });
+}
+
+function porQue(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Abre PGlite con la mayor persistencia que la máquina banque.
+ *
+ * Un aborto de WASM al abrir la carpeta suele ser una carpeta a medio escribir
+ * de una corrida anterior, así que antes de rendirse la borra y reintenta.
+ */
+async function abrirBase(): Promise<{ cliente: PGlite; enMemoria: boolean }> {
+  mkdirSync(CARPETA, { recursive: true });
+
+  try {
+    return { cliente: await conectar(DATOS), enMemoria: false };
+  } catch (error) {
+    console.warn(`\nPGlite no pudo abrir ${DATOS}: ${porQue(error)}`);
+
+    if (existsSync(DATOS)) {
+      console.warn('Puede ser una carpeta de datos incompleta. La borro y reintento…');
+      rmSync(DATOS, { recursive: true, force: true });
+      try {
+        return { cliente: await conectar(DATOS), enMemoria: false };
+      } catch (segundo) {
+        console.warn(`Tampoco anduvo de cero: ${porQue(segundo)}`);
+      }
+    }
+
+    console.warn('Arranco la base en memoria: vas a poder probar todo, pero al cortar se pierde.\n');
+    return { cliente: await conectar(undefined), enMemoria: true };
+  }
+}
+
+/**
+ * Abre una instancia de PGlite. `undefined` como carpeta significa en memoria.
+ *
+ * Cuando el WASM aborta, Emscripten no siempre rechaza la promesa: tira el error
+ * fuera del stack y Node mata el proceso («RuntimeError: Aborted()»). Por eso
+ * durante el arranque escuchamos también las caídas globales, para poder
+ * degradar en lugar de morir. Los oyentes se quitan apenas termina.
+ */
+async function conectar(carpeta: string | undefined): Promise<PGlite> {
+  let caida: (error: unknown) => void = () => {};
+
+  try {
+    return await new Promise<PGlite>((cumplir, fallar) => {
+      caida = (error: unknown) =>
+        fallar(error instanceof Error ? error : new Error(String(error)));
+      process.once('uncaughtException', caida);
+      process.once('unhandledRejection', caida);
+
+      const cliente = carpeta === undefined ? new PGlite() : new PGlite(carpeta);
+      cliente.waitReady.then(() => cumplir(cliente), caida);
+    });
+  } finally {
+    process.off('uncaughtException', caida);
+    process.off('unhandledRejection', caida);
+  }
+}
+
+/**
+ * Salida cuando PGlite no arranca de ninguna forma.
+ *
+ * Si la máquina ya tiene una base de verdad configurada, la demo no tiene por
+ * qué frustrarse: arranca contra esa.
+ */
+function sinPGlite(error: unknown): ChildProcess {
+  const url = process.env.DATABASE_URL;
+
+  console.error(`\nNo se pudo levantar el PostgreSQL embebido: ${porQue(error)}`);
+  console.error(`Node ${process.version} en ${process.platform}. PGlite es WASM y en Windows con`);
+  console.error('Node 24 se lo ha visto abortar; con Node 22 LTS anda.\n');
+
+  if (!url) {
+    console.error('Salidas, de más rápida a menos:');
+    console.error('  1. Instalá Node 22 LTS (nvm install 22) y repetí `npm run demo`.');
+    console.error('  2. Copiá .env.example a .env con una base PostgreSQL de verdad y usá:');
+    console.error('     npm run db:migrate && npm run db:seed && npm run dev');
+    process.exit(1);
+  }
+
+  console.error('Tenés DATABASE_URL configurado, así que arranco el POS contra esa base.');
+  console.error('Ojo: es tu base real, no una demo. Los datos que cargues quedan.\n');
+  return arrancarApp(url);
+}
 
 async function main() {
   const reiniciar = process.argv.includes('--reset');
@@ -28,12 +140,19 @@ async function main() {
     rmSync(CARPETA, { recursive: true, force: true });
     console.log('Datos anteriores borrados.');
   }
-  mkdirSync(CARPETA, { recursive: true });
 
   console.log('Levantando PostgreSQL embebido…');
-  const cliente = new PGlite(`${CARPETA}/pgdata`);
-  await cliente.waitReady;
 
+  let base: { cliente: PGlite; enMemoria: boolean };
+  try {
+    base = await abrirBase();
+  } catch (error) {
+    const app = sinPGlite(error);
+    app.on('exit', (codigo) => process.exit(codigo ?? 0));
+    return;
+  }
+
+  const { cliente, enMemoria } = base;
   const db = drizzle(cliente, { schema, casing: 'snake_case' });
   await migrate(db, { migrationsFolder: './drizzle' });
   console.log('Migraciones aplicadas.');
@@ -54,22 +173,12 @@ async function main() {
   console.log(`  Contraseña: ${semilla.passwordDuenio}`);
   console.log(`  Vendedor:   PIN ${semilla.pinVendedor}`);
   console.log(`  Catálogo:   ${semilla.productos} productos de prueba`);
+  if (enMemoria) console.log('  Datos:      en memoria, se pierden al cortar');
   console.log('');
   console.log('  Cortá con Ctrl+C.');
   console.log('');
 
-  const app = spawn('npx', ['next', 'dev', '--port', String(PUERTO_APP)], {
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-    env: {
-      ...process.env,
-      DATABASE_URL: url,
-      // Clave efímera: la demo no comparte sesión con nada.
-      AUTH_SECRET: process.env.AUTH_SECRET ?? randomBytes(32).toString('base64'),
-      AUTH_TRUST_HOST: 'true',
-      POS_TERMINAL: process.env.POS_TERMINAL ?? 'T1',
-    },
-  });
+  const app = arrancarApp(url);
 
   const cerrar = async () => {
     app.kill('SIGTERM');
