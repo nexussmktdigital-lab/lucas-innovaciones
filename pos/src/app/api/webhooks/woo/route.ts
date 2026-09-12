@@ -11,9 +11,8 @@ import { db } from '@/db';
 import { products } from '@/db/schema';
 import { auditar } from '@/lib/auditoria';
 import { CABECERA_FIRMA, CABECERA_TOPICO, firmaValida } from '@/woo/webhook';
-import { mapearProducto } from '@/woo/mapear';
+import { refrescarFichaDeProducto } from '@/woo/espejo';
 import { cotizacionVigente } from '@/woo/cotizacion';
-import { wooProducto } from '@/woo/tipos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
     switch (topico) {
       case 'product.created':
       case 'product.updated':
-        await refrescarProducto(payload);
+        await refrescarFicha(payload);
         break;
       case 'product.deleted':
         await desactivarProducto(payload);
@@ -71,42 +70,19 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, topico });
 }
 
-async function refrescarProducto(payload: unknown) {
-  const r = wooProducto.safeParse(payload);
-  if (!r.success) {
-    console.warn('[webhook] Ficha ilegible, se ignora:', r.error.issues[0]?.message);
-    return;
-  }
+/** El stock no se toca: lo escribe el POS. Ver `refrescarFichaDeProducto`. */
+async function refrescarFicha(payload: unknown) {
   const tc = await cotizacionVigente(db);
-  const { fila } = mapearProducto(r.data, tc);
-
-  await db
-    .insert(products)
-    .values({ ...fila, lastSyncedAt: new Date(), updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: products.wooId,
-      set: {
-        sku: fila.sku,
-        nombre: fila.nombre,
-        marca: fila.marca,
-        categoria: fila.categoria,
-        precioCentavos: fila.precioCentavos,
-        moneda: fila.moneda,
-        precioUsdCentavos: fila.precioUsdCentavos,
-        stock: fila.stock,
-        gestionaStock: fila.gestionaStock,
-        codigoBarras: fila.codigoBarras,
-        imagenUrl: fila.imagenUrl,
-        activo: fila.activo,
-        lastSyncedAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
+  const r = await refrescarFichaDeProducto(db, payload, tc);
+  if (!r.aplicado) console.warn('[webhook] Ficha ilegible, se ignora:', r.motivo);
 }
 
 async function desactivarProducto(payload: unknown) {
   const id = (payload as { id?: number }).id;
   if (typeof id !== 'number') return;
   // No se borra: se desactiva. Las ventas viejas siguen apuntando al producto.
-  await db.update(products).set({ activo: false, updatedAt: new Date() }).where(eq(products.wooId, id));
+  await db
+    .update(products)
+    .set({ activo: false, updatedAt: new Date() })
+    .where(eq(products.wooId, id));
 }
