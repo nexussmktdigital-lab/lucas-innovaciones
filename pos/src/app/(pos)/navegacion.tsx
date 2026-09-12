@@ -26,10 +26,13 @@ const SECCIONES = [
   { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', fase: 3, soloDuenio: true },
   { href: '/precios', etiqueta: 'Precios', tecla: 'F8', fase: 3, soloDuenio: true },
   { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', fase: 3, soloDuenio: true },
+  // Sin tecla: es una pantalla de configuración, no de mostrador. Las teclas de
+  // función son escasas y valen para lo que se usa todos los días.
+  { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, fase: 5, soloDuenio: true },
   { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 10, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 4;
+const FASE_ACTUAL = 5;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();
@@ -43,7 +46,9 @@ export default function Navegacion({ rol }: { rol: Rol }) {
   useEffect(() => {
     function alTeclado(e: KeyboardEvent) {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      const destino = visibles.find((s) => s.tecla === e.key && s.fase <= FASE_ACTUAL);
+      const destino = visibles.find(
+        (s) => s.tecla !== null && s.tecla === e.key && s.fase <= FASE_ACTUAL,
+      );
       if (!destino) return;
 
       e.preventDefault();
@@ -84,7 +89,7 @@ export default function Navegacion({ rol }: { rol: Rol }) {
             }`}
           >
             {s.etiqueta}
-            <kbd className="ml-1.5 text-xs opacity-60">{s.tecla}</kbd>
+            {s.tecla ? <kbd className="ml-1.5 text-xs opacity-60">{s.tecla}</kbd> : null}
           </Link>
         );
       })}
