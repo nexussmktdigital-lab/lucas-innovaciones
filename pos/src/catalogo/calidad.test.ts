@@ -241,6 +241,24 @@ describe('marcadorDeProductoReal', () => {
     expect(agosto.origen).toBe('legacy');
   });
 
+  /*
+   * El mes es el del calendario del local. Una venta de las 22:30 del 31 de
+   * agosto en Villa Santa Rosa son las 01:30 del 1 de septiembre en UTC: sin
+   * `AT TIME ZONE`, la última noche de cada mes se contaba en el mes siguiente.
+   */
+  it('la última noche del mes cuenta en su mes, no en el siguiente', async () => {
+    await db.insert(legacySales).values({
+      referenciaExterna: 'y-noche',
+      fecha: new Date('2026-09-01T01:30:00Z'), // 22:30 del 31 de agosto acá
+      totalCentavos: 7_000_000,
+      sinProducto: false,
+    });
+
+    const marcador = await marcadorDeProductoReal(db);
+    expect(marcador.map((m) => m.mes)).toContain('2026-08');
+    expect(marcador.map((m) => m.mes)).not.toContain('2026-09');
+  });
+
   it('sin ventas devuelve una lista vacía en vez de romper', async () => {
     expect(await marcadorDeProductoReal(db)).toEqual([]);
   });

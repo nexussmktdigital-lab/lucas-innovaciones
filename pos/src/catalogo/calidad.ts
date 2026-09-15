@@ -249,7 +249,10 @@ export async function marcadorDeProductoReal(
     origen: 'pos' | 'legacy';
   }>(
     await db.execute(sql`
-      SELECT to_char(fecha, 'YYYY-MM')          AS mes,
+      -- El mes es el del calendario del local, no el del servidor: una venta
+      -- de las 22:30 del 31 en Villa Santa Rosa es del mes siguiente en UTC, y
+      -- sin AT TIME ZONE la última noche de cada mes se contaba en el otro.
+      SELECT to_char(fecha AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM') AS mes,
              SUM(total_centavos)                AS total,
              SUM(total_centavos)                AS con_producto,
              'pos'                              AS origen
@@ -259,7 +262,7 @@ export async function marcadorDeProductoReal(
 
       UNION ALL
 
-      SELECT to_char(fecha, 'YYYY-MM')                                       AS mes,
+      SELECT to_char(fecha AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM') AS mes,
              SUM(total_centavos)                                             AS total,
              SUM(total_centavos) FILTER (WHERE NOT sin_producto)             AS con_producto,
              'legacy'                                                        AS origen
