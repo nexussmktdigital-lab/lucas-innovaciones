@@ -19,7 +19,7 @@
  * comisión de Mercado Pago. El precio de mostrador queda guardado aparte, en
  * `precioLocalCentavos`, que la sincronización no pisa.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { auditLog, products, syncQueue } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
@@ -54,6 +54,14 @@ export async function encolarPublicacion(
       throw new ErrorPublicar(`«${producto.nombre}» ya está en la tienda online.`);
     }
 
+    /*
+     * Si ya hay un pedido encolado no se duplica, pero **sí se reintenta**.
+     * Con `onConflictDoNothing` a secas pasaba algo peor que no hacer nada: una
+     * publicación que agotó los reintentos queda en `fallido`, el drenaje solo
+     * levanta las pendientes, y el botón contestaba «encolado, va apenas haya
+     * conexión» sin haber encolado nada. Un botón que informa éxito y es un
+     * no-op para siempre.
+     */
     await tx
       .insert(syncQueue)
       .values({
@@ -61,7 +69,19 @@ export async function encolarPublicacion(
         idempotencyKey: `producto:${productId}`,
         payload: { productId },
       })
-      .onConflictDoNothing({ target: syncQueue.idempotencyKey });
+      .onConflictDoUpdate({
+        target: syncQueue.idempotencyKey,
+        set: {
+          estado: sql`CASE WHEN sync_queue.estado = 'fallido' THEN 'pendiente'::estado_sync
+                           ELSE sync_queue.estado END`,
+          intentos: sql`CASE WHEN sync_queue.estado = 'fallido' THEN 0 ELSE sync_queue.intentos END`,
+          proximoIntento: sql`CASE WHEN sync_queue.estado = 'fallido' THEN now()
+                                   ELSE sync_queue.proximo_intento END`,
+          ultimoError: sql`CASE WHEN sync_queue.estado = 'fallido' THEN NULL
+                                ELSE sync_queue.ultimo_error END`,
+          updatedAt: sql`now()`,
+        },
+      });
 
     await tx.insert(auditLog).values({
       usuarioId,

@@ -35,6 +35,29 @@ describe('las celdas', () => {
   });
 });
 
+describe('las fórmulas de Excel', () => {
+  /*
+   * Una celda que empieza con `=` es una fórmula, no un texto, y los nombres de
+   * producto entran por la planilla de un distribuidor que no escribimos
+   * nosotros.
+   */
+  it('un nombre que parece fórmula sale neutralizado', () => {
+    expect(celda('=1+1')).toBe('"\'=1+1"');
+    expect(celda('+A1')).toBe('"\'+A1"');
+    expect(celda('@SUM(A1)')).toBe('"\'@SUM(A1)"');
+    expect(celda('-A1')).toBe('"\'-A1"');
+  });
+
+  /* Y lo que importa del otro lado: un importe negativo sigue siendo número. */
+  it('un monto negativo no se toca, para que Excel lo pueda sumar', () => {
+    expect(celda(montoParaPlanilla(-12_500_50))).toBe('-12500,50');
+  });
+
+  it('un nombre normal no se entrecomilla al pedo', () => {
+    expect(celda('Cable tipo C')).toBe('Cable tipo C');
+  });
+});
+
 describe('los montos', () => {
   /* Con punto, Excel lo toma como texto y no se puede sumar la columna. */
   it('van con coma decimal, que es lo que Excel en castellano suma', () => {

@@ -23,6 +23,21 @@ import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import type { MedioPago } from '@/ventas/carrito';
 import { instante, type Periodo } from './periodo';
 
+/**
+ * Lo que se cobró de verdad por una línea de venta.
+ *
+ * El descuento global se guarda en la venta y **no baja a las líneas**: una
+ * venta de cuatro vidrios de $5.000 con 10% de descuento tiene líneas que suman
+ * $20.000 y un total de $18.000. Sumar las líneas sin corregir hace que la misma
+ * pantalla diga «vendido $23.000» arriba y «$25.000» en el ranking de productos.
+ *
+ * Así que se reparte proporcionalmente. Cuando no hubo descuento global el
+ * factor es 1 y la cuenta no cambia nada.
+ */
+const COBRADO_POR_LINEA = sql`ROUND(
+  i.total_centavos::numeric * s.total_centavos / NULLIF(s.subtotal_centavos, 0)
+)::bigint`;
+
 export interface ResumenDeVentas {
   cantidadDeVentas: number;
   unidades: number;
@@ -88,21 +103,58 @@ export interface VentaPorMedio {
 }
 
 /**
- * Lo cobrado por cada medio de pago.
+ * Lo cobrado por cada medio de pago, **neto de vuelto**.
  *
- * Es el bruto de los pagos de las ventas del período: sirve para saber cuánto
- * se mueve por transferencia o por tarjeta. No es el arqueo, que va neto de
- * vuelto y suma los cobros de deudas viejas; para eso está el reporte del turno.
+ * La primera versión de esto sumaba el bruto de los renglones de pago, y en la
+ * auditoría quedó a la vista lo que eso produce: una venta de $5.000 pagada con
+ * un billete de $10.000 hacía figurar «Efectivo $10.000». Con dos ventas así, la
+ * pantalla decía *vendido $23.000* arriba y *efectivo $30.000* abajo. Es el
+ * mismo error que el hallazgo 22, ya corregido en el arqueo y reintroducido acá.
+ *
+ * El vuelto se resta **una vez por venta y no una por renglón de pago**: si
+ * alguien paga con dos billetes cargados por separado, restarlo dos veces deja
+ * el número en rojo. La cuenta corriente queda afuera porque no es plata que
+ * entró, sino deuda; lo fiado se informa por su cuenta en el resumen.
+ *
+ * Lo que sí no incluye, y el arqueo sí, son los cobros de deudas viejas: esto
+ * es un reporte de **ventas** del período, no del movimiento del cajón.
  */
 export async function ventasPorMedio(db: BaseDatos, p: Periodo): Promise<VentaPorMedio[]> {
   const filas = filasDe<{ medio: MedioPago; cantidad: string | number; total: string | number }>(
     await db.execute(sql`
-      SELECT pg.medio, COUNT(*) AS cantidad, SUM(pg.monto_centavos) AS total
-        FROM sale_payments pg
-        JOIN sales s ON s.id = pg.sale_id
-       WHERE s.estado = 'completed'
-         AND s.fecha >= ${instante(p.desde)} AND s.fecha < ${instante(p.hasta)}
-       GROUP BY pg.medio
+      WITH vueltos AS (
+        SELECT s.id,
+               GREATEST(
+                 COALESCE((
+                   SELECT SUM(pg.monto_centavos) FROM sale_payments pg WHERE pg.sale_id = s.id
+                 ), 0) - s.total_centavos,
+                 0
+               ) AS vuelto
+          FROM sales s
+         WHERE s.estado = 'completed'
+           AND s.fecha >= ${instante(p.desde)} AND s.fecha < ${instante(p.hasta)}
+      ),
+      pagos AS (
+        SELECT pg.sale_id,
+               pg.medio::text         AS medio,
+               count(*)               AS cantidad,
+               SUM(pg.monto_centavos) AS bruto
+          FROM sale_payments pg
+          JOIN sales s ON s.id = pg.sale_id
+         WHERE s.estado = 'completed'
+           AND pg.medio <> 'cuenta_corriente'
+           AND s.fecha >= ${instante(p.desde)} AND s.fecha < ${instante(p.hasta)}
+         GROUP BY pg.sale_id, pg.medio
+      )
+      SELECT g.medio,
+             SUM(g.cantidad) AS cantidad,
+             SUM(
+               g.bruto - CASE WHEN g.medio = 'efectivo'
+                              THEN COALESCE(v.vuelto, 0) ELSE 0 END
+             ) AS total
+        FROM pagos g
+        LEFT JOIN vueltos v ON v.id = g.sale_id
+       GROUP BY g.medio
        ORDER BY total DESC
     `),
   );
@@ -152,7 +204,7 @@ export async function productosVendidos(
         MAX(i.descripcion)          AS descripcion,
         MAX(pr.categoria)           AS categoria,
         SUM(i.cantidad)             AS unidades,
-        SUM(i.total_centavos)       AS total,
+        SUM(${COBRADO_POR_LINEA})   AS total,
         COUNT(DISTINCT i.sale_id)   AS ventas
       FROM sale_items i
       JOIN sales s ON s.id = i.sale_id
@@ -191,7 +243,7 @@ export async function ventasPorCategoria(
     total: string | number;
   }>(
     await db.execute(sql`
-      SELECT pr.categoria, SUM(i.cantidad) AS unidades, SUM(i.total_centavos) AS total
+      SELECT pr.categoria, SUM(i.cantidad) AS unidades, SUM(${COBRADO_POR_LINEA}) AS total
         FROM sale_items i
         JOIN sales s ON s.id = i.sale_id
         LEFT JOIN products pr ON pr.id = i.product_id
@@ -347,7 +399,7 @@ export async function rentabilidad(db: BaseDatos, p: Periodo): Promise<Rentabili
   }>(
     await db.execute(sql`
       SELECT
-        COALESCE(SUM(i.total_centavos) FILTER (WHERE i.costo_centavos IS NOT NULL), 0) AS venta,
+        COALESCE(SUM(${COBRADO_POR_LINEA}) FILTER (WHERE i.costo_centavos IS NOT NULL), 0) AS venta,
         COALESCE(SUM(i.costo_centavos * i.cantidad), 0)                                AS costo,
         COALESCE(SUM(i.cantidad) FILTER (WHERE i.costo_centavos IS NOT NULL), 0)       AS con_costo,
         COALESCE(SUM(i.cantidad), 0)                                                   AS total_unidades

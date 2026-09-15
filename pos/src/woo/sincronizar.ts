@@ -86,7 +86,12 @@ export async function sincronizarCatalogo(
           activo: sql`excluded.activo`,
           esServicio: sql`excluded.es_servicio`,
           soloMostrador: sql`excluded.solo_mostrador`,
-          fichaIncompleta: sql`excluded.ficha_incompleta`,
+          // Una ficha que alguien dio por terminada se queda terminada. Antes
+          // esto la reabria en la siguiente sincronizacion: el duenio apretaba
+          // «la ficha ya esta» y a los diez minutos el producto volvia a la
+          // lista, porque el mapeo la vuelve a marcar por no tener foto. La
+          // marca solo se puede quitar, nunca volver a poner desde Woo.
+          fichaIncompleta: sql`products.ficha_incompleta AND excluded.ficha_incompleta`,
           lastSyncedAt: sql`excluded.last_synced_at`,
           updatedAt: sql`excluded.updated_at`,
           // costoCentavos, precioEditable, precioLocalCentavos y stockComprometido

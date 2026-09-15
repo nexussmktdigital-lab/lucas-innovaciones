@@ -180,6 +180,27 @@ describe('lo que no deja pasar', () => {
     await expect(alta({ stock: TECHO_STOCK_ALTA + 1 })).rejects.toThrow(/importación masiva/);
   });
 
+  /*
+   * `activo` sale del estado de WooCommerce: un producto en borrador allá está
+   * inactivo acá y no aparece en el buscador. Si el alta no lo mirara, el
+   * vendedor lo carga de nuevo y al publicarse el borrador quedan dos fichas
+   * activas con el mismo nombre, dos precios y dos stocks.
+   */
+  it('un producto oculto por estar en borrador también frena el alta', async () => {
+    const a = await alta();
+    await db.update(products).set({ activo: false }).where(eq(products.id, a.id));
+
+    await expect(alta()).rejects.toThrow(/está oculto/);
+  });
+
+  it('un costo negativo no entra', async () => {
+    await expect(alta({ costoCentavos: -1 })).rejects.toThrow(/no puede ser negativo/);
+  });
+
+  it('un costo con ceros de más tampoco', async () => {
+    await expect(alta({ costoCentavos: 900_000_000_00 })).rejects.toThrow(/sobran ceros/);
+  });
+
   it('un nombre vacío', async () => {
     await expect(alta({ nombre: '   ' })).rejects.toThrow();
   });

@@ -27,7 +27,7 @@
  * El producto queda marcado con `fichaIncompleta`, que es la lista de lo que
  * hay que terminar. La columna ya existía en el esquema desde la fase 1.
  */
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { auditLog, products, syncQueue } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
 import { limpiarTitulo, sugerirSku } from './alta';
@@ -69,6 +69,14 @@ export interface DatosDeAlta {
   sku?: string | null;
   usuarioId: string;
   ip?: string | null;
+  /**
+   * Los SKU ya tomados, cuando quien llama los tiene a mano.
+   *
+   * Lo usa la importación masiva: sin esto, cada renglón vuelve a leer la
+   * columna entera de SKU del catálogo, y en una planilla de 500 renglones
+   * sobre 800 productos eso son casi medio millón de filas de ida y vuelta.
+   */
+  skusTomados?: Iterable<string>;
 }
 
 export interface ProductoCreado {
@@ -108,6 +116,22 @@ export async function crearProducto(
     );
   }
 
+  /*
+   * El costo se valida igual que el precio, y por una razón más fuerte: se copia
+   * congelado a cada línea de venta, así que un costo negativo o con ceros de
+   * más envenena la rentabilidad de todas las ventas futuras de ese producto y
+   * no hay forma de arreglar las líneas ya escritas.
+   */
+  const costoCentavos = datos.costoCentavos ?? null;
+  if (costoCentavos !== null) {
+    if (!Number.isInteger(costoCentavos) || costoCentavos < 0) {
+      throw new ErrorCrear('El costo no puede ser negativo.', 'precio_invalido');
+    }
+    if (costoCentavos > TECHO_PRECIO_ALTA_CENTAVOS) {
+      throw new ErrorCrear('Ese costo es imposible. Revisá si sobran ceros.', 'precio_invalido');
+    }
+  }
+
   const esServicio = datos.esServicio ?? esCategoriaDeServicio(datos.categoria ?? null);
   const stock = esServicio ? 0 : (datos.stock ?? 0);
 
@@ -131,22 +155,36 @@ export async function crearProducto(
   const soloMostrador = true;
 
   return db.transaction(async (tx) => {
-    // Un nombre repetido casi siempre es alguien cargando dos veces lo mismo
-    // porque no encontró lo que ya estaba. Se frena y se le muestra cuál es.
+    /*
+     * Un nombre repetido casi siempre es alguien cargando dos veces lo mismo
+     * porque no encontró lo que ya estaba.
+     *
+     * Se miran también los **inactivos**, que es lo que la auditoría encontró:
+     * `activo` sale del estado de WooCommerce, así que un producto en borrador
+     * allá está inactivo acá y no aparece en el buscador. El vendedor lo carga
+     * de nuevo, el dueño publica el borrador, y quedan dos fichas activas con
+     * el mismo nombre, dos precios y dos stocks.
+     */
     const [gemelo] = await tx
-      .select({ id: products.id, nombre: products.nombre })
+      .select({ id: products.id, nombre: products.nombre, activo: products.activo })
       .from(products)
-      .where(sql`lower(${products.nombre}) = lower(${titulo}) AND ${products.activo}`)
+      .where(sql`lower(${products.nombre}) = lower(${titulo})`)
       .limit(1);
 
     if (gemelo) {
       throw new ErrorCrear(
-        `Ya existe un producto que se llama «${gemelo.nombre}». Buscalo en vez de cargarlo de nuevo.`,
+        gemelo.activo
+          ? `Ya existe un producto que se llama «${gemelo.nombre}». Buscalo en vez de cargarlo de nuevo.`
+          : `Ya existe «${gemelo.nombre}», pero está oculto porque en la tienda online figura como borrador. Publicalo allá en vez de cargarlo de nuevo.`,
         'nombre_repetido',
       );
     }
 
-    const sku = (datos.sku ?? '').trim() || (await proponerSku(tx, { ...datos, nombre: titulo }));
+    const sku =
+      (datos.sku ?? '').trim() ||
+      (datos.skusTomados
+        ? sugerirSku({ ...datos, nombre: titulo }, datos.skusTomados)
+        : await proponerSku(tx, { ...datos, nombre: titulo }));
 
     const [repetido] = await tx
       .select({ nombre: products.nombre })
@@ -161,9 +199,7 @@ export async function crearProducto(
       );
     }
 
-    const [creado] = await tx
-      .insert(products)
-      .values({
+    const [creado] = await insertarProducto(tx, sku, {
         wooId: null,
         sku,
         nombre: titulo,
@@ -175,7 +211,7 @@ export async function crearProducto(
         stock,
         gestionaStock: !esServicio,
         codigoBarras: (datos.codigoBarras ?? '')?.trim() || null,
-        costoCentavos: datos.costoCentavos ?? null,
+        costoCentavos,
         activo: true,
         esServicio,
         soloMostrador,
@@ -185,8 +221,7 @@ export async function crearProducto(
         // Un servicio se cotiza en el momento: su precio se escribe al vender.
         precioEditable: esServicio,
         fichaIncompleta: true,
-      })
-      .returning({ id: products.id });
+    });
 
     const id = creado!.id;
 
@@ -199,7 +234,7 @@ export async function crearProducto(
         nombre: titulo,
         sku,
         precioCentavos: datos.precioCentavos,
-        costoCentavos: datos.costoCentavos ?? null,
+        costoCentavos,
         stock,
         esServicio,
         soloMostrador,
@@ -218,6 +253,41 @@ export async function crearProducto(
       notaInterna,
     };
   });
+}
+
+/**
+ * Inserta el producto y traduce el choque de SKU a un mensaje entendible.
+ *
+ * El control de arriba mira y después escribe, y entre las dos cosas no hay
+ * nada: dos tablets cargando lo mismo a la vez pasan las dos, y como el SKU se
+ * propone de forma determinista a partir del nombre, las dos calculan el mismo.
+ * Lo único que cierra esa ventana es el índice único de la base
+ * (`products_sku_uq`); acá se lo traduce para que no llegue a la pantalla como
+ * un error de PostgreSQL.
+ */
+async function insertarProducto(
+  tx: BaseDatos,
+  sku: string,
+  valores: typeof products.$inferInsert,
+): Promise<{ id: string }[]> {
+  try {
+    return await tx.insert(products).values(valores).returning({ id: products.id });
+  } catch (e) {
+    if (esViolacionDeUnico(e)) {
+      throw new ErrorCrear(
+        `El SKU ${sku} lo tomó otro producto recién. Probá de nuevo.`,
+        'sku_repetido',
+      );
+    }
+    throw e;
+  }
+}
+
+/** `23505` es «unique_violation» en PostgreSQL. */
+function esViolacionDeUnico(e: unknown): boolean {
+  const codigo = (e as { code?: unknown; cause?: { code?: unknown } })?.code
+    ?? (e as { cause?: { code?: unknown } })?.cause?.code;
+  return codigo === '23505';
 }
 
 function esCategoriaDeServicio(categoria: string | null): boolean {
@@ -273,10 +343,18 @@ export interface FichaPendiente {
 }
 
 /**
- * Los productos cargados a las apuradas que todavía hay que terminar.
+ * Los productos cargados en el mostrador que todavía no están en la tienda.
  *
  * Es la contrapartida del alta rápida: si esta lista no existiera, «rápida»
  * significaría «a medias y para siempre».
+ *
+ * **Solo los que nacieron acá** (`woo_id` nulo). La marca `ficha_incompleta`
+ * también se la pone el mapeo de WooCommerce a cualquier ficha sin SKU, sin
+ * foto o con un precio sospechoso, y el catálogo real tiene cientos así: sin
+ * este filtro, el panel decía «Cargados en el mostrador» sobre productos que
+ * nunca pasaron por el alta, y con el catálogo entero encima quedaba inservible.
+ * De las fichas que ya están en la tienda se ocupa Calidad del catálogo, que es
+ * donde viven esos mismos criterios.
  */
 export async function fichasPendientes(db: BaseDatos, limite = 50): Promise<FichaPendiente[]> {
   return db
@@ -293,9 +371,36 @@ export async function fichasPendientes(db: BaseDatos, limite = 50): Promise<Fich
       createdAt: products.createdAt,
     })
     .from(products)
-    .where(and(eq(products.fichaIncompleta, true), eq(products.activo, true)))
+    .where(
+      and(
+        eq(products.fichaIncompleta, true),
+        eq(products.activo, true),
+        isNull(products.wooId),
+      ),
+    )
     .orderBy(products.createdAt)
     .limit(limite);
+}
+
+/**
+ * Cuántas fichas de mostrador hay en total.
+ *
+ * La lista viene cortada, así que el título no puede contar las filas que
+ * recibió: con 200 productos importados diría «50» y nadie sabría que hay más.
+ */
+export async function cuantasFichasPendientes(db: BaseDatos): Promise<number> {
+  const [fila] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(products)
+    .where(
+      and(
+        eq(products.fichaIncompleta, true),
+        eq(products.activo, true),
+        isNull(products.wooId),
+      ),
+    );
+
+  return fila?.total ?? 0;
 }
 
 /** Marca la ficha como terminada. Lo hace el dueño desde el catálogo. */

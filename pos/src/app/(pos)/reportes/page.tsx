@@ -186,8 +186,8 @@ export default async function PaginaReportes({
               ))}
             </dl>
             <p className="mt-2 text-xs text-(--color-tinta-suave)">
-              Es el bruto de los pagos de las ventas del período. El efectivo que se cuenta en el
-              cajón está en el reporte del turno, que va neto de vuelto.
+              Neto de vuelto y sin la cuenta corriente, que es deuda y no plata. No incluye los
+              cobros de deudas viejas: eso es movimiento del cajón y está en el reporte del turno.
             </p>
           </Panel>
         ) : null}
@@ -315,7 +315,10 @@ export default async function PaginaReportes({
         ) : null}
       </div>
 
-      <Panel titulo="Mes a mes">
+      {/* Este panel NO sigue el período elegido arriba, y hay que decirlo en el
+          título: si no, alguien que mira «mes pasado» ve el mes actual a medias
+          al final del gráfico y lo lee como un derrumbe de las ventas. */}
+      <Panel titulo="Mes a mes · últimos 12 meses, sin importar el período elegido">
         <p className="mb-2 text-xs text-(--color-tinta-suave)">
           El negocio no empezó con este POS. Lo que quedó del sistema anterior se suma acá para
           poder comparar, y se distingue de lo que registró el POS.

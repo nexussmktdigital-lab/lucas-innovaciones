@@ -249,6 +249,107 @@ describe('el resumen del período', () => {
   });
 });
 
+/*
+ * Los dos hallazgos de la auditoría de las fases 8 y 9, que hacían que la misma
+ * pantalla mostrara tres números distintos para lo mismo.
+ */
+describe('todo tiene que cuadrar con lo vendido', () => {
+  /*
+   * El descuento global se guarda en la venta y no baja a las líneas: cuatro
+   * vidrios de $5.000 con 10% dan líneas que suman $20.000 y un total de
+   * $18.000. Sin prorratear, el ranking de productos decía más que lo vendido.
+   */
+  it('el descuento global se reparte entre las líneas', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 4 }],
+      descuentoGlobal: { tipo: 'porcentaje', porcentaje: 10 },
+      pagos: [{ medio: 'efectivo', montoCentavos: 18_000_00, monetaryAccountId: caja }],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    const r = await resumenDeVentas(db, TODO);
+    expect(r.totalCentavos).toBe(18_000_00);
+
+    const top = await productosVendidos(db, TODO);
+    expect(top.reduce((n, x) => n + x.totalCentavos, 0)).toBe(18_000_00);
+
+    const cats = await ventasPorCategoria(db, TODO);
+    expect(cats.reduce((n, x) => n + x.totalCentavos, 0)).toBe(18_000_00);
+  });
+
+  it('y el margen no se infla con el descuento que se hizo', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: celular, cantidad: 1 }],
+      descuentoGlobal: { tipo: 'monto', centavos: 80_000_00 },
+      pagos: [{ medio: 'efectivo', montoCentavos: 300_000_00, monetaryAccountId: caja }],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    // Se vendió a 300.000 lo que costó 300.000: no se ganó nada.
+    const m = await rentabilidad(db, TODO);
+    expect(m.ventaConCostoCentavos).toBe(300_000_00);
+    expect(m.gananciaCentavos).toBe(0);
+  });
+
+  /*
+   * Una venta de $5.000 pagada con $10.000 hacía figurar «Efectivo $10.000».
+   * Es el hallazgo 22 otra vez, que ya estaba corregido en el arqueo.
+   */
+  it('el efectivo va neto de vuelto, como en el arqueo', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 1 }],
+      pagos: [{ medio: 'efectivo', montoCentavos: 10_000_00, monetaryAccountId: caja }],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    const medios = await ventasPorMedio(db, TODO);
+    expect(medios).toEqual([{ medio: 'efectivo', cantidad: 1, totalCentavos: 5_000_00 }]);
+  });
+
+  /* Restarlo una vez por renglón de pago dejaría el número en rojo. */
+  it('con dos billetes cargados por separado el vuelto se resta una sola vez', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 1 }],
+      pagos: [
+        { medio: 'efectivo', montoCentavos: 5_000_00, monetaryAccountId: caja },
+        { medio: 'efectivo', montoCentavos: 5_000_00, monetaryAccountId: caja },
+      ],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    const [efectivo] = await ventasPorMedio(db, TODO);
+    expect(efectivo!.totalCentavos).toBe(5_000_00);
+  });
+
+  /* La cuenta corriente no es plata que entró: es deuda. */
+  it('lo fiado no figura como plata cobrada', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 1 }],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: 5_000_00 }],
+      clienteId: cliente,
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    expect(await ventasPorMedio(db, TODO)).toEqual([]);
+    expect((await resumenDeVentas(db, TODO)).fiadoCentavos).toBe(5_000_00);
+  });
+});
+
 describe('los límites del día', () => {
   /*
    * El caso que rompe todo si el huso se ignora: una venta de las 22:30 del 15

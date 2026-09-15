@@ -36,7 +36,8 @@ export const EXPORTABLES: { que: QueExportar; etiqueta: string; detalle: string 
   {
     que: 'gastos',
     etiqueta: 'Gastos',
-    detalle: 'Lo que salió en el período, con categoría, beneficiario y cuenta.',
+    detalle:
+      'Lo que salió en el período, con categoría, beneficiario y cuenta. Incluye lo pendiente de pago, marcado como tal.',
   },
 ];
 
@@ -64,7 +65,7 @@ async function csvDeVentas(db: BaseDatos, p: Periodo): Promise<string> {
     cliente: string | null;
     medios: string | null;
     unidades: string | number;
-    subtotal: string | number;
+    bruto: string | number;
     descuento: string | number;
     total: string | number;
     motivo_anulacion: string | null;
@@ -78,7 +79,11 @@ async function csvDeVentas(db: BaseDatos, p: Periodo): Promise<string> {
            FROM sale_payments pg WHERE pg.sale_id = s.id)           AS medios,
         COALESCE((SELECT SUM(i.cantidad)
            FROM sale_items i WHERE i.sale_id = s.id), 0)            AS unidades,
-        s.subtotal_centavos AS subtotal,
+        -- Bruto y no subtotal: el contador va a restar las tres columnas, y
+        -- el subtotal ya viene neto de los descuentos de línea mientras que la
+        -- columna de descuento los incluye, así que restarlas los contaba dos
+        -- veces. Con el bruto, Bruto menos Descuento da Total siempre.
+        (s.total_centavos + s.descuento_centavos) AS bruto,
         s.descuento_centavos AS descuento,
         s.total_centavos AS total,
         s.motivo_anulacion
@@ -94,7 +99,7 @@ async function csvDeVentas(db: BaseDatos, p: Periodo): Promise<string> {
     [
       'Numero', 'Fecha', 'Hora', 'Estado', 'Tipo', 'Canal', 'Terminal',
       'Vendedor', 'Cliente', 'Medios de pago', 'Unidades',
-      'Subtotal', 'Descuento', 'Total', 'Motivo de anulacion',
+      'Bruto', 'Descuento', 'Total', 'Motivo de anulacion',
     ],
     filas.map((f) => {
       const { fecha, hora } = fechaParaPlanilla(new Date(f.fecha));
@@ -114,7 +119,7 @@ async function csvDeVentas(db: BaseDatos, p: Periodo): Promise<string> {
           .map((m) => nombreDelMedio(m as MedioPago))
           .join(' + '),
         Number(f.unidades),
-        montoParaPlanilla(Number(f.subtotal)),
+        montoParaPlanilla(Number(f.bruto)),
         montoParaPlanilla(Number(f.descuento)),
         montoParaPlanilla(Number(f.total)),
         f.motivo_anulacion ?? '',
@@ -152,7 +157,11 @@ async function csvDeRenglones(db: BaseDatos, p: Periodo): Promise<string> {
         i.precio_unitario_centavos AS precio_unitario,
         i.descuento_centavos       AS descuento,
         i.costo_centavos           AS costo,
-        i.total_centavos           AS total,
+        -- Prorrateado: el descuento global vive en la venta y no baja a las
+        -- líneas, así que sin esto la columna «Total» suma más que lo cobrado.
+        ROUND(
+          i.total_centavos::numeric * s.total_centavos / NULLIF(s.subtotal_centavos, 0)
+        )::bigint                  AS total,
         pr.sku, pr.categoria, pr.marca,
         c.nombre AS cliente,
         u.nombre AS vendedor

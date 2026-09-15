@@ -20,9 +20,12 @@ const INICIAL: EstadoCatalogo = {};
  */
 export default function FichasPendientes({
   fichas,
+  total,
   wooUrl,
 }: {
   fichas: FichaPendiente[];
+  /** Cuántas hay en total: la lista viene cortada. */
+  total: number;
   wooUrl: string | null;
 }) {
   if (fichas.length === 0) return null;
@@ -31,7 +34,8 @@ export default function FichasPendientes({
     <section aria-label="Fichas por completar" className="space-y-2">
       <div>
         <h2 className="text-sm font-semibold text-(--color-tinta-suave)">
-          Cargados en el mostrador · {fichas.length}
+          Cargados en el mostrador · {total}
+          {total > fichas.length ? ` · se muestran ${fichas.length}` : ''}
         </h2>
         <p className="text-xs text-(--color-tinta-suave)">
           Se venden en el local. No están en la tienda online hasta que alguien los publique.

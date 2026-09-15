@@ -155,6 +155,33 @@ describe('la planilla de ventas', () => {
     expect(fila![encabezado!.indexOf('Motivo de anulacion')]).toBe('Se arrepintió');
   });
 
+  /*
+   * El contador va a restar las tres columnas. Antes no daba: el subtotal venía
+   * neto de los descuentos de línea y la columna de descuento los incluía, así
+   * que restarlas los contaba dos veces.
+   */
+  it('Bruto menos Descuento da Total, siempre', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 4 }],
+      descuentoGlobal: { tipo: 'porcentaje', porcentaje: 10 },
+      pagos: [{ medio: 'efectivo', montoCentavos: 18_000_00, monetaryAccountId: caja }],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `exp-desc-${Math.random()}`,
+    });
+
+    const [encabezado, fila] = await planilla('ventas');
+    const leer = (c: string) => fila![encabezado!.indexOf(c)]!;
+    const aNumero = (x: string) => Number(x.replace(',', '.'));
+
+    expect(aNumero(leer('Bruto')) - aNumero(leer('Descuento'))).toBeCloseTo(
+      aNumero(leer('Total')),
+      2,
+    );
+    expect(leer('Total')).toBe('18000,00');
+  });
+
   it('un período sin ventas devuelve el encabezado solo', async () => {
     const filas = leerCsv(await exportar(db, 'ventas', periodoEntre('2021-01-01', '2021-01-31')));
     expect(filas).toHaveLength(1);
@@ -194,6 +221,25 @@ describe('la planilla de renglones', () => {
     const [encabezado, fila] = await planilla('renglones');
     expect(fila![encabezado!.indexOf('Costo unitario')]).toBe('');
     expect(fila![encabezado!.indexOf('Ganancia')]).toBe('');
+  });
+
+  /*
+   * El descuento global vive en la venta y no baja a las líneas: sin
+   * prorratear, la columna «Total» de los renglones suma más que lo cobrado.
+   */
+  it('el total del renglón es lo que se cobró, con el descuento global adentro', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 4 }],
+      descuentoGlobal: { tipo: 'porcentaje', porcentaje: 10 },
+      pagos: [{ medio: 'efectivo', montoCentavos: 18_000_00, monetaryAccountId: caja }],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `exp-rdesc-${Math.random()}`,
+    });
+
+    const [encabezado, fila] = await planilla('renglones');
+    expect(fila![encabezado!.indexOf('Total')]).toBe('18000,00');
   });
 
   /* Un renglón de una venta anulada no se vendió. */

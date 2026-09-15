@@ -10,7 +10,7 @@ import {
   evaluarCatalogo,
   type TipoDeProblema,
 } from '@/catalogo/calidad';
-import { fichasPendientes } from '@/catalogo/crear';
+import { cuantasFichasPendientes, fichasPendientes } from '@/catalogo/crear';
 import FichasPendientes from './fichas-pendientes';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,7 @@ export default async function PaginaCatalogo({
   const { solo, importados } = await searchParams;
   const soloBloqueantes = solo !== 'todo';
   const pendientes = await fichasPendientes(db);
+  const totalPendientes = await cuantasFichasPendientes(db);
 
   const tc = await cotizacionVigente(db);
   const informe = await evaluarCatalogo(db, tc?.valorCentavos ?? null, {
@@ -74,7 +75,7 @@ export default async function PaginaCatalogo({
         </p>
       ) : null}
 
-      <FichasPendientes fichas={pendientes} wooUrl={urlWoo} />
+      <FichasPendientes fichas={pendientes} total={totalPendientes} wooUrl={urlWoo} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Dato titulo="Fichas revisadas" valor={informe.totalProductos.toLocaleString('es-AR')} />

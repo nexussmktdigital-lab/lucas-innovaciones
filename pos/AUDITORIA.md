@@ -558,3 +558,162 @@ por el driver real antes de darse por bueno.
 En la práctica: cuando una fase agrega consultas nuevas escritas a mano, el test
 de punta a punta contra el PostgreSQL de verdad no es un extra, es la única
 prueba que existe de que el código anda. Esta vez alcanzó con abrir la pantalla.
+
+---
+
+# Tercera pasada — control de las fases 8 y 9
+
+Auditoría de lo construido en el alta de productos y en los reportes: lectura
+adversarial del código, sondas contra la base real y manejo del sistema en el
+navegador. **Trece hallazgos, seis de ellos de plata.** Nueve quedaron
+corregidos en esta misma pasada; los otros cuatro están anotados abajo.
+
+## Lo que se veía en pantalla
+
+Una sola pantalla —Reportes, con dos ventas cargadas— mostraba **tres números
+distintos para lo mismo**:
+
+```
+Vendido                    $ 23.000      ← sales.total_centavos
+Por medio de pago          $ 30.000      ← bruto de los pagos, con el vuelto adentro
+Qué se vendió              $ 25.000      ← suma de líneas, sin el descuento global
+Por categoría              $ 25.000
+Caja (arqueo, misma plata) $ 23.000
+```
+
+Dos causas distintas, las dos corregidas.
+
+### 26. El descuento global no baja a las líneas *(corregido)*
+
+`calcularTotales` resta el descuento global del subtotal y lo guarda en la
+venta; las líneas quedan con su precio sin tocar. La identidad exacta es
+`SUM(sale_items.total_centavos) = sales.total_centavos + descuentoGlobal`.
+
+Todo lo que agrega líneas —el ranking de productos, el desglose por categoría,
+**la rentabilidad** y la columna «Total» de la planilla de renglones— informaba
+de más, exactamente por el descuento. El peor de esos es el margen: quedaba
+sistemáticamente optimista, y es el único número sobre el que el dueño toma
+decisiones. Los botones de descuento son el camino normal de la pantalla de
+cobro, no un caso raro.
+
+Se corrige prorrateando el descuento entre las líneas al consultar. Arreglarlo
+en `confirmarVenta` sería más correcto de fondo, pero no aplica a lo ya vendido.
+
+### 27. «Por medio de pago» sumaba el bruto, con el vuelto adentro *(corregido)*
+
+Una venta de $5.000 pagada con un billete de $10.000 figuraba como «Efectivo
+$10.000». Es **el hallazgo 22 otra vez**, ya corregido en el arqueo y
+reintroducido en los reportes por escribir la consulta de cero en vez de partir
+de la que ya estaba resuelta.
+
+Ahora va neto de vuelto —restado una vez por venta, no una por renglón de
+pago— y sin la cuenta corriente, que es deuda y no plata.
+
+## Lo que engañaba al usuario
+
+### 28. «La ficha ya está» se deshacía sola a los diez minutos *(corregido)*
+
+`darFichaPorCompleta` ponía `ficha_incompleta = false` y la sincronización lo
+volvía a poner en `true`, porque el mapeo de WooCommerce marca así cualquier
+ficha sin foto. El dueño marcaba la ficha como terminada y el producto
+reaparecía en la lista en la siguiente pasada del cron. Ahora la marca solo se
+puede quitar, nunca volver a poner desde Woo.
+
+### 29. «Cargados en el mostrador» listaba productos de WooCommerce *(corregido)*
+
+El panel filtraba por `ficha_incompleta`, que el mapeo de Woo también pone. En
+la prueba, 3 de 4 fichas listadas venían de Woo y nunca habían pasado por el
+alta rápida. Con el catálogo real —803 productos, 97% sin foto— el panel
+hubiera listado cientos de fichas bajo un título falso y habría quedado
+inservible. Ahora solo los de `woo_id` nulo, que son los que el POS creó.
+
+El título además contaba las filas que recibía, no las que hay: con 200
+productos importados decía «50».
+
+### 30. Un botón que informaba éxito y no hacía nada *(corregido)*
+
+«Publicar en la tienda» encolaba con `onConflictDoNothing`. Si el pedido había
+agotado los reintentos quedaba en `fallido`, el drenaje solo levanta las
+pendientes, y volver a apretar el botón contestaba «encolado, va apenas haya
+conexión» sin encolar nada. Un no-op que informa éxito, para siempre. Ahora un
+pedido fallido se reintenta.
+
+## Lo que podía corromper datos
+
+### 31. El costo entraba sin validar *(corregido)*
+
+`precioCentavos` se validaba contra techo y negativos; `costoCentavos` iba
+derecho a la base. Un costo negativo o con ceros de más se copia **congelado** a
+cada línea de venta futura y envenena la rentabilidad sin forma de arreglar las
+líneas ya escritas. Ahora se valida igual que el precio, en el alta y en la
+planilla.
+
+### 32. Dos tablets podían crear el mismo producto *(corregido)*
+
+El alta mira y después escribe, sin bloqueo ni restricción de base. Dos personas
+cargando lo mismo a la vez pasan las dos el control, y como el SKU se propone de
+forma determinista a partir del nombre, **las dos calculan el mismo**.
+
+Se agrega el índice único `products_sku_pos_uq`. La primera versión cubría el
+catálogo entero y **rompía la sincronización**: WooCommerce es la fuente de
+verdad (D4) y lo que mande tiene que entrar aunque traiga un SKU repetido de una
+migración vieja. Lo encontró la suite, no producción. Quedó acotado a
+`woo_id IS NULL`, que es el alcance real del problema.
+
+### 33. Un producto oculto en Woo se podía cargar dos veces *(corregido)*
+
+El control de nombre repetido miraba solo los activos, y `activo` sale del
+estado de WooCommerce: un producto en borrador allá está inactivo acá y no
+aparece en el buscador. El vendedor lo carga de nuevo, el dueño publica el
+borrador, y quedan **dos fichas activas con el mismo nombre**, dos precios y dos
+stocks. La revisión de la planilla tenía la misma asimetría y prometía en verde
+renglones que después fallaban.
+
+### 34. Inyección de fórmulas en las planillas *(corregido)*
+
+`celda()` no neutralizaba `=`, `+`, `@` ni `-`. Un cliente llamado
+`=HYPERLINK(...)` o un producto de una planilla de un distribuidor terminan en
+el archivo que se le manda al contador, y Excel los evalúa. Ahora se les
+antepone un apóstrofo —salvo al signo menos seguido de un dígito, que es un
+importe negativo legítimo y tiene que seguir siendo número para que la columna
+se pueda sumar.
+
+## Lo que confundía sin ser incorrecto
+
+### 35. `Subtotal − Descuento ≠ Total` en la planilla de ventas *(corregido)*
+
+Tres columnas contiguas que cualquier contador va a restar, y no daban: el
+subtotal venía neto de los descuentos de línea y la columna de descuento los
+incluía, así que restarlas los contaba dos veces. Se exporta el bruto, con lo
+que `Bruto − Descuento = Total` siempre.
+
+### 36. «Mes a mes» ignora el período elegido *(corregido por etiqueta)*
+
+Es el único panel que no sigue el selector. Elegir «mes pasado» dejaba el mes
+actual a medias al final del gráfico, que se lee como un derrumbe de las ventas.
+Ahora el título lo dice.
+
+## Lo que queda abierto
+
+| # | Qué | Por qué se deja | Cuándo conviene |
+|---|---|---|---|
+| 37 | El precio de mostrador de un producto nacido en el POS queda fijo para siempre: `precioLocalCentavos` se escribe siempre en el alta, así que los cambios de precio en WooCommerce no llegan nunca al mostrador. Dos productos vecinos se comportan al revés y nada en pantalla lo explica | Es una decisión de producto, no un error: hay que definir si el precio del alta es una fijación deliberada o solo el valor inicial | Con la próxima pasada sobre precios |
+| 38 | La importación corre en una acción de servidor y una planilla de 500 renglones sobre un catálogo grande puede pasarse del tiempo de la plataforma. Se midió 4 ms por renglón con 229 productos y se sacó la lectura de SKU del bucle, pero no se probó contra 800 | Falta un catálogo real para medirlo. El riesgo está acotado: si corta, los productos creados quedan y reintentar los marca como repetidos | Antes del primer despliegue con el catálogo entero |
+| 39 | El stock de la planilla se lee con `replace('.', '')`: una planilla en inglés con `1.5` unidades entra como 15 | El precio se parsea con cuidado y el stock no; hay que darle el mismo trato | Cualquier momento |
+| 40 | No hay tope al período que se exporta: `desde=1970` arma la tabla entera en memoria | Es del dueño y autenticado, así que es un pie de plomo, no un ataque | Cualquier momento |
+
+## Lo que se revisó y está bien
+
+- **Inyección SQL**: limpia. Todo pasa por plantillas de Drizzle, que
+  parametrizan. No hay `sql.raw` ni concatenación en ninguno de los dos módulos.
+- **Permisos**: sin agujeros. El vendedor no entra a reportes ni por pantalla ni
+  bajando la planilla a mano (403).
+- **Los límites de los períodos**: exactos, incluidos los de `expenses.fecha`,
+  que es `date` y no `timestamptz`, y la ida y vuelta del período por la URL de
+  descarga.
+- **Doble publicación**: guardada dos veces, antes y después de la cola.
+- **La importación repetida**: no duplica nada; la segunda pasada marca todo
+  como repetido.
+- **Las columnas del POS que la sincronización no pisa**: `costoCentavos`,
+  `precioEditable`, `precioLocalCentavos` y `stockComprometido` se preservan
+  bien. `fichaIncompleta` era la excepción y es el hallazgo 28.

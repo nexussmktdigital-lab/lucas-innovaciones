@@ -174,10 +174,16 @@ export async function revisarPlanilla(
 
   const columnas = mapearColumnas(filas[0]!);
 
+  /*
+   * También los inactivos: es lo que mira `crearProducto` al escribir. Cuando
+   * la revisión miraba solo los activos, un renglón que chocaba con un producto
+   * en borrador de WooCommerce salía en verde como «se carga» y después
+   * aparecía en la lista de los que no entraron. La pantalla previa prometía
+   * una cosa y el resultado decía otra.
+   */
   const existentes = await db
     .select({ nombre: products.nombre, sku: products.sku })
-    .from(products)
-    .where(eq(products.activo, true));
+    .from(products);
 
   const nombresTomados = new Set(existentes.map((p) => normalizar(p.nombre)));
   const skusTomados = new Set(
@@ -235,12 +241,17 @@ export async function revisarPlanilla(
       continue;
     }
 
-    if (precioCentavos > TECHO_PRECIO_ALTA_CENTAVOS) {
+    if (precioCentavos < 0 || precioCentavos > TECHO_PRECIO_ALTA_CENTAVOS) {
       renglones.push({
         ...base,
         precioCentavos,
         destino: 'rechazado',
-        motivo: 'El precio es imposible. Fijate si sobran ceros.',
+        // Se frena acá y no al escribir: si no, la revisión muestra el renglón
+        // en verde y recién después aparece en la lista de los que no entraron.
+        motivo:
+          precioCentavos < 0
+            ? 'El precio no puede ser negativo.'
+            : 'El precio es imposible. Fijate si sobran ceros.',
       });
       continue;
     }
@@ -263,6 +274,9 @@ export async function revisarPlanilla(
     if (costoCrudo !== '') {
       try {
         costoCentavos = aCentavos(costoCrudo);
+        if (costoCentavos < 0 || costoCentavos > TECHO_PRECIO_ALTA_CENTAVOS) {
+          throw new ErrorImportar('fuera de rango');
+        }
       } catch {
         renglones.push({
           ...base,
@@ -330,6 +344,16 @@ export async function importarPlanilla(
   usuarioId: string,
 ): Promise<ResultadoImportacion> {
   const revision = await revisarPlanilla(db, csv);
+
+  // Se leen una vez y se van sumando los que la propia planilla va tomando: si
+  // cada renglón los volviera a pedir, una planilla larga sobre un catálogo
+  // grande tarda más que la paciencia de cualquiera.
+  const skusTomados = new Set(
+    (await db.select({ sku: products.sku }).from(products))
+      .filter((f) => f.sku)
+      .map((f) => f.sku!.trim().toUpperCase()),
+  );
+
   const resultado: ResultadoImportacion = {
     creados: 0,
     salteados: revision.repetidos + revision.rechazados,
@@ -340,7 +364,7 @@ export async function importarPlanilla(
     if (r.destino !== 'alta') continue;
 
     try {
-      await crearProducto(db, {
+      const creado = await crearProducto(db, {
         nombre: r.nombre,
         categoria: r.categoria,
         marca: r.marca,
@@ -348,9 +372,14 @@ export async function importarPlanilla(
         stock: r.stock,
         sku: r.sku,
         costoCentavos: r.costoCentavos,
+        skusTomados,
         usuarioId,
       });
       resultado.creados += 1;
+      // El que se agrega es el que quedó, no el de la planilla: los renglones
+      // sin SKU propio reciben uno propuesto, y si no se acumulara, dos
+      // productos parecidos de la misma planilla pedirían el mismo.
+      if (creado.sku) skusTomados.add(creado.sku.toUpperCase());
     } catch (e) {
       resultado.fallidos.push({
         linea: r.linea,

@@ -30,9 +30,23 @@ export function celda(valor: string | number | null | undefined): string {
   if (valor === null || valor === undefined) return '';
 
   const texto = String(valor);
-  if (!/[";\n\r]/.test(texto)) return texto;
 
-  return `"${texto.replace(/"/g, '""')}"`;
+  /*
+   * Una celda que empieza con `=`, `+`, `@` o `-` es una fórmula para Excel, no
+   * un texto. El nombre de un producto puede empezar así —y los nombres entran
+   * por la planilla de un distribuidor, que no la escribimos nosotros—, así que
+   * se le antepone un apóstrofo, que Excel entiende como «esto es texto».
+   *
+   * El signo menos seguido de un dígito queda afuera a propósito: es un importe
+   * negativo, y una ganancia en rojo marcada como texto rompe la suma de la
+   * columna, que es exactamente lo que este archivo viene a evitar.
+   */
+  const esFormula = /^[=+@\t\r]/.test(texto) || /^-(?![\d])/.test(texto);
+  const seguro = esFormula ? `'${texto}` : texto;
+
+  if (!/[";\n\r]/.test(seguro) && !esFormula) return seguro;
+
+  return `"${seguro.replace(/"/g, '""')}"`;
 }
 
 /** Centavos como los espera Excel en castellano: `12500,50`. */
