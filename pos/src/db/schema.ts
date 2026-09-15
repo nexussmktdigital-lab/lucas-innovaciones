@@ -594,6 +594,49 @@ export const creditPaymentAllocations = pgTable(
   ],
 );
 
+/**
+ * Plata que el negocio le quedo debiendo a un cliente.
+ *
+ * Nace de un solo caso, pero es un caso que pasa: se anula una venta fiada de
+ * la que el cliente ya habia pagado una parte. La deuda se borra con la venta,
+ * pero esa plata entro a la caja y el cliente no se llevo nada. Sin esta tabla
+ * el negocio se la queda y no hay ninguna pantalla donde eso se vea.
+ *
+ * No es un saldo a favor en la cuenta corriente: ese modelo no admite saldo
+ * negativo a proposito (D36). Es una deuda del local, con su propia vida, que
+ * se salda devolviendo la plata y marcandola.
+ */
+export const pendingRefunds = pgTable(
+  'pending_refunds',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    customerId: uuid()
+      .notNull()
+      .references(() => customers.id),
+    /** La venta anulada que dejo la plata sin respaldo. */
+    saleId: uuid()
+      .notNull()
+      .references(() => sales.id),
+    montoCentavos: bigint({ mode: 'number' }).notNull(),
+    motivo: text(),
+    creadoPorId: uuid()
+      .notNull()
+      .references(() => users.id),
+    creadoEn: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    /** Cuando se le devolvio la plata. Nulo mientras siga pendiente. */
+    resueltoEn: timestamp({ withTimezone: true }),
+    resueltoPorId: uuid().references(() => users.id),
+    notaResolucion: text(),
+  },
+  (t) => [
+    index('pending_refunds_cliente_idx').on(t.customerId),
+    index('pending_refunds_pendientes_idx')
+      .on(t.creadoEn)
+      .where(sql`${t.resueltoEn} IS NULL`),
+    check('pending_refunds_monto_ck', sql`${t.montoCentavos} > 0`),
+  ],
+);
+
 /* -------------------------------------------------------------------------- */
 /* Gastos                                                                     */
 /* -------------------------------------------------------------------------- */

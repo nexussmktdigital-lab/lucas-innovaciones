@@ -57,6 +57,13 @@
       "when": 1789251782813,
       "tag": "0007_mensajes_de_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789489240751,
+      "tag": "0008_devoluciones_pendientes",
+      "breakpoints": true
     }
   ]
 }
