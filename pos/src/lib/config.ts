@@ -17,6 +17,9 @@ const esquema = z.object({
     .string()
     .regex(/^[A-Z0-9]{1,4}$/, 'POS_TERMINAL tiene que ser corto y en mayusculas, ej. T1')
     .default('T1'),
+  /** Opcional: sin esto el alta de productos funciona igual, escrita a mano. */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODELO: z.string().optional(),
 });
 
 export type Config = z.infer<typeof esquema>;
@@ -32,6 +35,11 @@ export function config(): Config {
   }
   cache = r.data;
   return cache;
+}
+
+/** True si el alta de productos puede pedir ayuda para armar la ficha. */
+export function hayAyudaDeFicha(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
 /** True si hay credenciales de WooCommerce cargadas. */

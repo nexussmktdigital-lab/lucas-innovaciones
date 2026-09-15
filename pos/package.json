@@ -23,6 +23,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "@electric-sql/pglite": "^0.5.8",
     "@tanstack/react-query": "^5.102.8",
     "bcryptjs": "^3.0.3",
