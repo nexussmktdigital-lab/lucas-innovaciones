@@ -1,8 +1,10 @@
 import Link from 'next/link';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { cashSessions, monetaryAccounts, users } from '@/db/schema';
+import { monetaryAccounts } from '@/db/schema';
 import { resumenDeSesion, sesionAbierta } from '@/caja/sesion';
+import { cierresRecientes, cuantosSeContaron } from '@/caja/reporte';
+import { haceCuanto, horasAbierta, HORAS_PARA_AVISAR } from '@/caja/arqueo';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
@@ -61,11 +63,29 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
 
   return (
     <section className="space-y-4">
+      {/* La auditoría encontró sesiones abiertas días enteros: una caja que
+          nunca cierra no tiene arqueo ni reporte de nada. */}
+      {horasAbierta(abiertaEn) >= HORAS_PARA_AVISAR ? (
+        <p
+          role="alert"
+          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+        >
+          Este turno está abierto <strong>{haceCuanto(abiertaEn)}</strong>. Mientras no se cierre
+          no hay arqueo ni reporte del día, y todo lo que se vendió queda en la misma bolsa.
+        </p>
+      ) : null}
+
       <div className="rounded-(--radius-caja) border border-(--color-ok) bg-(--color-ok)/8 p-4">
         <p className="text-sm font-semibold text-(--color-ok)">Turno abierto</p>
         <p className="text-sm text-(--color-tinta-suave)">
-          Desde {formatearFechaHora(abiertaEn)}
+          Desde {formatearFechaHora(abiertaEn)} · {haceCuanto(abiertaEn)}
         </p>
+        <Link
+          href={`/caja/${sesionId}`}
+          className="mt-1 inline-block text-sm font-medium underline underline-offset-2"
+        >
+          Ver el reporte del turno
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -74,7 +94,11 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
         <Dato
           titulo="Efectivo esperado"
           valor={formatearARS(resumen.efectivoEsperadoCentavos)}
-          detalle={`Incluye ${formatearARS(resumen.saldoInicialCentavos)} de apertura`}
+          detalle={
+            resumen.efectivoEsperadoCentavos < 0
+              ? 'Da negativo: la apertura se declaró corta'
+              : `Incluye ${formatearARS(resumen.saldoInicialCentavos)} de apertura`
+          }
         />
       </div>
 
@@ -146,65 +170,90 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
         </div>
       ) : null}
 
-      <FormularioCierre esperadoCentavos={resumen.efectivoEsperadoCentavos} />
+      <FormularioCierre
+        esperadoCentavos={resumen.efectivoEsperadoCentavos}
+        terminal={config().POS_TERMINAL}
+      />
     </section>
   );
 }
 
+/**
+ * Los cierres anteriores.
+ *
+ * La justificación de una diferencia va en la tabla y no en un `title`: un
+ * tooltip que solo aparece pasando el mouse no existe para quien lee el listado
+ * en una tablet, ni para quien lo imprime. Era el hallazgo 14 de la auditoría.
+ */
 async function SesionesAnteriores() {
-  const cerradas = await db
-    .select({
-      id: cashSessions.id,
-      abiertaEn: cashSessions.abiertaEn,
-      cerradaEn: cashSessions.cerradaEn,
-      esperado: cashSessions.saldoEsperadoCentavos,
-      contado: cashSessions.saldoContadoCentavos,
-      diferencia: cashSessions.diferenciaCentavos,
-      justificacion: cashSessions.justificacion,
-      cerradaPor: users.nombre,
-    })
-    .from(cashSessions)
-    .leftJoin(users, eq(users.id, cashSessions.cerradaPorId))
-    .orderBy(desc(cashSessions.cerradaEn))
-    .limit(10);
+  const cierres = await cierresRecientes(db, 10);
+  if (cierres.length === 0) return null;
 
-  const conCierre = cerradas.filter((s) => s.cerradaEn !== null);
-  if (conCierre.length === 0) return null;
+  const contados = await cuantosSeContaron(db, 10);
 
   return (
-    <section>
-      <h2 className="mb-2 text-sm font-semibold text-(--color-tinta-suave)">Cierres anteriores</h2>
-      <div className="overflow-x-auto rounded-(--radius-caja) border border-(--color-borde)">
-        <table className="w-full min-w-lg text-sm">
-          <thead className="bg-(--color-panel) text-left text-xs text-(--color-tinta-suave)">
-            <tr>
-              <th className="px-3 py-2 font-medium">Cerrada</th>
-              <th className="px-3 py-2 font-medium">Por</th>
-              <th className="px-3 py-2 text-right font-medium">Esperado</th>
-              <th className="px-3 py-2 text-right font-medium">Contado</th>
-              <th className="px-3 py-2 text-right font-medium">Diferencia</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-(--color-borde) bg-(--color-panel)">
-            {conCierre.map((s) => (
-              <tr key={s.id}>
-                <td className="px-3 py-2">{formatearFechaHora(s.cerradaEn!)}</td>
-                <td className="px-3 py-2">{s.cerradaPor ?? '—'}</td>
-                <td className="tabular px-3 py-2 text-right">{formatearARS(s.esperado ?? 0)}</td>
-                <td className="tabular px-3 py-2 text-right">{formatearARS(s.contado ?? 0)}</td>
-                <td
-                  className={`tabular px-3 py-2 text-right font-medium ${
-                    (s.diferencia ?? 0) === 0 ? 'text-(--color-ok)' : 'text-(--color-alerta)'
-                  }`}
-                  title={s.justificacion ?? undefined}
-                >
-                  {formatearARS(s.diferencia ?? 0)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <section aria-label="Cierres anteriores">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-(--color-tinta-suave)">Cierres anteriores</h2>
+        {/* Si esto se va a cero, el arqueo volvió a ser un trámite. */}
+        <p className="text-xs text-(--color-tinta-suave)">
+          {contados.contados} de los últimos {contados.total} se cerraron contando los billetes
+        </p>
       </div>
+
+      <ul className="flex flex-col gap-1.5">
+        {cierres.map((c) => (
+          <li
+            key={c.id}
+            className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-3 text-sm"
+          >
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <Link
+                href={`/caja/${c.id}`}
+                className="font-medium underline underline-offset-2"
+              >
+                {formatearFechaHora(c.cerradaEn)}
+              </Link>
+              <span className="text-xs text-(--color-tinta-suave)">
+                {c.terminal}
+                {c.cerradaPor ? ` · ${c.cerradaPor}` : ''}
+              </span>
+              {c.seConto ? (
+                <span className="rounded bg-(--color-ok)/15 px-1.5 py-0.5 text-xs font-semibold text-(--color-ok)">
+                  Contado
+                </span>
+              ) : (
+                <span className="rounded bg-(--color-papel) px-1.5 py-0.5 text-xs text-(--color-tinta-suave)">
+                  Total a mano
+                </span>
+              )}
+
+              <span
+                className={`tabular ml-auto font-semibold ${
+                  c.diferenciaCentavos === 0 ? 'text-(--color-ok)' : 'text-(--color-alerta)'
+                }`}
+              >
+                {c.diferenciaCentavos === 0
+                  ? 'Cuadró'
+                  : `${c.diferenciaCentavos > 0 ? 'Sobró' : 'Faltó'} ${formatearARS(
+                      Math.abs(c.diferenciaCentavos),
+                    )}`}
+              </span>
+            </div>
+
+            <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-(--color-tinta-suave)">
+              <span>Esperado: {formatearARS(c.esperadoCentavos)}</span>
+              <span>Contado: {formatearARS(c.contadoCentavos)}</span>
+            </div>
+
+            {c.justificacion ? (
+              <p className="mt-1 rounded-(--radius-caja) bg-(--color-papel) p-2">
+                {c.justificacion}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

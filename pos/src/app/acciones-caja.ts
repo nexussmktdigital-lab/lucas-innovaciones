@@ -4,6 +4,7 @@
  * Acciones de caja: abrir el turno y cerrarlo con arqueo.
  */
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { auth } from '@/auth';
@@ -13,6 +14,7 @@ import { monetaryAccounts } from '@/db/schema';
 import { config } from '@/lib/config';
 import { aCentavos, ErrorDinero } from '@/lib/dinero';
 import { abrirCaja, cerrarCaja, ErrorCaja, sesionAbierta } from '@/caja/sesion';
+import { ErrorArqueo, hayConteo, leerConteo, totalDelConteo } from '@/caja/arqueo';
 
 export interface EstadoCaja {
   error?: string;
@@ -73,35 +75,66 @@ export async function cerrarCajaAccion(
   const abierta = await sesionAbierta(db, config().POS_TERMINAL);
   if (!abierta) return { error: 'No hay ninguna caja abierta.' };
 
+  /*
+   * El cajón se puede contar de dos maneras y las dos valen.
+   *
+   * Si vino el conteo por denominación, el total lo calcula el servidor a
+   * partir de los billetes: lo que sume el navegador es una comodidad para el
+   * cajero, no un dato en el que confiar. Si no vino, se toma el total escrito
+   * a mano, que es lo que se hacía hasta ahora.
+   */
+  const conteo = leerConteo(Object.fromEntries(datos.entries()));
+
+  let sueltoCentavos = 0;
+  const sueltoCrudo = String(datos.get('suelto') ?? '').trim();
+  if (sueltoCrudo !== '') {
+    try {
+      sueltoCentavos = aCentavos(sueltoCrudo);
+    } catch {
+      return { error: 'El monto de monedas y sueltos no es válido.' };
+    }
+  }
+
+  const seConto = hayConteo(conteo, sueltoCentavos);
+
   let saldoContadoCentavos: number;
   try {
-    saldoContadoCentavos = montoDelFormulario(datos, 'saldoContado');
+    saldoContadoCentavos = seConto
+      ? totalDelConteo(conteo, sueltoCentavos)
+      : montoDelFormulario(datos, 'saldoContado');
   } catch (e) {
+    if (e instanceof ErrorArqueo) return { error: e.message };
     return { error: e instanceof ErrorDinero ? e.message : 'Monto inválido.' };
   }
 
   try {
-    const cierre = await cerrarCaja(db, {
+    await cerrarCaja(db, {
       sesionId: abierta.id,
       usuarioId: sesion.user.id,
       saldoContadoCentavos,
       justificacion: String(datos.get('justificacion') ?? '').trim() || null,
+      nota: String(datos.get('nota') ?? '').trim() || null,
+      conteo: seConto ? { conteo, sueltoCentavos } : null,
     });
-
-    revalidatePath('/caja');
-    revalidatePath('/vender');
-
-    return {
-      ok:
-        cierre.diferenciaCentavos === 0
-          ? 'Caja cerrada. Cuadró exacto.'
-          : 'Caja cerrada con la diferencia justificada.',
-    };
   } catch (e) {
     if (e instanceof ErrorCaja) return { error: e.message };
     console.error('[caja] Falló el cierre:', e);
     return { error: 'No se pudo cerrar la caja.' };
   }
+
+  revalidatePath('/caja');
+  revalidatePath('/vender');
+  revalidatePath('/');
+
+  /*
+   * Al cerrar se va al reporte del turno, no se vuelve a /caja con un cartel.
+   *
+   * Un `ok` en el estado de la acción no sobrevive a la revalidación: sin turno
+   * abierto el formulario de cierre se desmonta entero y el cartel —con su
+   * enlace al reporte— se va con él. Ya nos pasó dos veces. El redirect va
+   * afuera del try porque `redirect` funciona lanzando.
+   */
+  redirect(`/caja/${abierta.id}`);
 }
 
 /** Cuentas monetarias activas, para elegir sobre cuál se abre el turno. */
