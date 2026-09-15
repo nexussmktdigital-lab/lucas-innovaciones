@@ -3,10 +3,10 @@
 Primera pasada: 2026-09-12, antes de la fase 4 (fases 1 a 3, commit `c825d06`).
 Segunda pasada: 2026-09-15, antes de la fase 6 (fases 1 a 5, commit `aa7d9c9`).
 
-> **Estado: quedan abiertos diez hallazgos; dos de ellos tocan plata.** La fase
-> 3.5 corrigió del 1 al 8, el 12 y el 13; la 3.7 cerró el 9, el 10 y el 11. La
-> segunda pasada sumó del 21 al 25 y agravó el 15. Lo pendiente está en la lista
-> del final.
+> **Estado: quedan abiertos cinco hallazgos, todos menores.** La fase 3.5
+> corrigió del 1 al 8, el 12 y el 13; la 3.7 cerró el 9, el 10 y el 11; la 5.5
+> cerró los cinco de la segunda pasada, del 21 al 25. Lo pendiente está en la
+> lista del final.
 
 Cómo se hizo: se levantó el sistema completo contra un PostgreSQL 16 real, con
 los datos de prueba, y se lo usó a mano con un navegador —ingreso como dueño y
@@ -376,10 +376,24 @@ a nadie. Queda en la bitácora, que el mostrador no lee.
 No es un caso raro: anular está limitado al turno abierto, y en un turno un
 cliente puede fiar a la mañana y pasar a pagar al mediodía.
 
-**Decisión pendiente**, porque hay tres caminos razonables y es una decisión de
-negocio: rechazar la anulación y pedir que primero se devuelva el pago; anularla
-y sacar la plata de la caja automáticamente; o anularla avisando fuerte en
-pantalla que hay que devolver $4.000.
+**Arreglado (fase 5.5).** De los tres caminos posibles —rechazar la anulación,
+sacar la plata de la caja automáticamente, o anular avisando— se eligió el
+tercero: rechazar deja al mostrador trabado con una venta mal cargada, y sacar
+la plata sola asume que sale en efectivo y ahora mismo, cuando el cobro pudo
+haber sido por transferencia o en otro turno.
+
+Ahora `anularVenta` calcula lo que el cliente ya había pagado y lo anota en
+`pending_refunds`, una tabla propia: no es un saldo a favor en la cuenta
+corriente, porque ese modelo no admite negativos a propósito (D36) y torcerlo
+volvería «te debo» y «me debes» el mismo número con distinto signo. Son dos
+cosas y el mostrador las trata distinto: una se cobra, la otra se devuelve.
+
+El aviso aparece en tres lugares y **lo pone el servidor**: en la fila de la
+venta anulada, en la lista de fiado y arriba de todo en la ficha del cliente,
+hasta que alguien marca «ya se le devolvió». Que lo ponga el servidor no es un
+detalle: el primer intento lo mostraba desde el formulario de anulación y no se
+veía nunca, porque al anular la página se vuelve a renderizar y ese formulario
+desaparece junto con la venta. Lo encontró el test de punta a punta.
 
 ### 22. El desglose «Por medio de pago» del turno no cuadra con la caja
 
@@ -405,7 +419,15 @@ fiada y **omite por completo el cobro de fiado**, que sí fue plata. Quien cierr
 la caja y quiera cuadrar por medio de pago no puede.
 
 La consulta está en `resumenDeSesion` (`src/caja/sesion.ts`): agrupa
-`sale_payments` en vez de `cash_movements`, que es donde está la plata de verdad.
+`sale_payments`, que son los renglones del cobro, no la plata.
+
+**Arreglado (fase 5.5).** El desglose ahora dice qué entró: el efectivo va neto
+de vuelto —restado una sola vez por venta, aunque haya dos pagos en efectivo—,
+los cobros de fiado entran porque son plata, y la cuenta corriente sale del
+bloque y figura aparte como «fiado en el turno · no entró plata». La pantalla se
+llama ahora «Plata que entró, por medio», y hay un test que exige que el
+efectivo del desglose sea exactamente el efectivo esperado menos la apertura:
+el número contra el que se cuenta el cajón.
 
 ---
 
@@ -419,6 +441,13 @@ Total: $12.000». Ninguno de los dos dice que el cliente quedó debiendo, ni
 cuánto debe en total. Es exactamente el papel que se guarda para discutir
 después.
 
+**Arreglado (fase 5.5).** El ticket suma un renglón recuadrado —«Queda debiendo
+de esta compra $7.000,00»— y el comprobante de WhatsApp tiene un campo nuevo,
+`{fiado}`, que el dueño puede mover o sacar como cualquier otro y que no imprime
+nada cuando la venta se pagó al contado. Va el monto de **esta** compra y no el
+saldo total, que cambia con el tiempo y volvería mentiroso a un comprobante
+reimpreso el mes que viene.
+
 ### 24. «Quedó debiendo $X» en la ficha del cliente puede contradecir el saldo
 
 El renglón de cada cobro guarda el saldo que quedaba en ese momento
@@ -426,13 +455,19 @@ El renglón de cada cobro guarda el saldo que quedaba en ese momento
 venta, la ficha muestra «Deuda $0,00» arriba y «quedó debiendo $1.000,00» en el
 movimiento. Los dos números son correctos y juntos confunden.
 
+**Arreglado (fase 5.5).** El renglón dice ahora «en ese momento quedaba debiendo
+$1.000,00». El tiempo verbal y el «en ese momento» lo ubican como historia y no
+como estado actual, que es lo que era desde el principio.
+
 ### 25. Un comprobante de WhatsApp muy largo pasa los 2.000 caracteres de URL
 
 Medido: a 20 renglones la URL va en 1.402 caracteres; a 40 renglones, 2.542.
 Algunos clientes de WhatsApp truncan el texto pasado ese punto. Con las ventas
-típicas del mostrador no llega, pero una venta de muchos accesorios sí. Se
-arregla cortando el detalle a los primeros renglones y agregando «y N productos
-más».
+típicas del mostrador no llega, pero una venta de muchos accesorios sí.
+
+**Arreglado (fase 5.5).** `acortarDetalle` corta a doce renglones y agrega «y N
+productos más». Hay un test que vende veinticinco accesorios y exige que el
+enlace quede por debajo de los 2.000 caracteres.
 
 ---
 
@@ -454,17 +489,29 @@ Los cuatro están tapados: la suite pasó de 236 a 269 tests unitarios y de 24 a
 La fase 3.5 cerró los hallazgos 1 a 8, el 12 y el 13; la 3.7 cerró el 9, el 10
 y el 11. Quedan diez, y dos de ellos tocan plata:
 
+La fase 5.5 cerró los cinco de la segunda pasada: el 21, el 22, el 23, el 24 y
+el 25. Quedan cinco, todos menores:
+
 | # | Qué | Cuándo conviene |
 |---|---|---|
-| **21** | **Anular una venta fiada ya cobrada en parte deja plata del cliente sin registrar** | **Antes de la fase 6** |
-| **22** | **El desglose por medio de pago no cuadra: bruto de vuelto, cuenta el fiado como plata y omite los cobros de fiado** | **Antes de la fase 6** |
 | 14 | La justificación del arqueo solo se ve como tooltip | Con la fase de reportes |
-| 15 | *(absorbido por el 22)* | — |
+| 15 | *(absorbido por el 22, cerrado)* | — |
 | 16 | `npm run lint` no está configurado | Cuando se arme la integración continua |
-| 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Sigue abierto: el PIN del dueño no se hizo en la fase 4 |
+| 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Cuando se haga el PIN del dueño en pantalla |
 | 18 | Inicio dice que sincronizó cuando el seed nunca sincronizó | Cualquier momento |
 | 19 | «Sin ningún problema: 0%» en Calidad del catálogo | Cualquier momento |
 | 20 | Un reintento idempotente informa vuelto $0 | Cualquier momento |
-| 23 | El comprobante y el WhatsApp de una venta fiada no dicen la deuda | Con el 21, que es el mismo tema |
-| 24 | «Quedó debiendo $X» puede contradecir el saldo tras una anulación | Con el 21 |
-| 25 | Un WhatsApp de más de ~30 renglones pasa los 2.000 caracteres de URL | Cualquier momento |
+
+### Una lección de la fase 5.5, para no repetirla
+
+Un mensaje que una acción de servidor devuelve **no se ve** si esa acción
+revalida una ruta que deja de renderizar el componente que lo muestra. Pasó dos
+veces en esta fase: el aviso de devolución puesto en el formulario de anulación
+y el «se le devolvieron $X» de la ficha del cliente. Los dos desaparecían con su
+propio componente.
+
+La regla que queda: **lo que tiene que sobrevivir a la revalidación se renderiza
+desde el servidor, leyéndolo de la base.** Los `estado.ok` sirven para
+formularios que siguen en pantalla después de enviarse, no para los que se
+desmontan. Y en los tests de punta a punta se afirma sobre el resultado visible
+—la sección que aparece o desaparece— y no sobre el cartel de éxito.

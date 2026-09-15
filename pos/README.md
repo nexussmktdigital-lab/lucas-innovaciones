@@ -233,7 +233,8 @@ El fiado vive hoy en una libreta de papel y, en el POS viejo, cargado como si
 fuera un producto: es la mitad del 58% de facturación sin producto real (D24).
 Acá pasa a ser lo que es, **un saldo por cliente con su historia**.
 
-En **Fiado** (`F5`) se ve quién debe, cuánto y desde cuándo, y se recibe un pago;
+En **Fiado** (`F5`) se ve quién debe, cuánto y desde cuándo, se recibe un pago y
+se ve si hay plata para devolverle a alguien;
 la plata entra a la caja del turno igual que una venta, así que el arqueo sigue
 cerrando. En la ficha de cada cliente están sus movimientos —lo que se le fió y
 lo que pagó, junto— y las dos cosas que solo el dueño toca: el tope de fiado y
@@ -252,7 +253,12 @@ Las reglas están en la transacción, no en la pantalla:
 - **El saldo nunca queda negativo.** Cobrar de más se rechaza: si el cliente
   pagó de más eso es un vuelto, no un saldo a favor.
 - **Anular una venta fiada le saca la deuda al cliente**, y como mucho lo que
-  todavía debe.
+  todavía debe. Si ya había pagado parte, esa plata quedó en la caja y el
+  cliente no se llevó nada: el sistema la anota como **devolución pendiente** y
+  la reclama en la fila de la venta, en la lista de fiado y arriba de la ficha
+  del cliente, hasta que alguien marca que se la devolvió. No saca el efectivo
+  del cajón solo —eso puede pasar en otro turno y por otro medio del que
+  entró—, pero no deja que se olvide.
 - **Los cobros son inmutables y llevan clave de idempotencia**: reintentar el
   formulario no cobra dos veces.
 
@@ -474,6 +480,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una venta anulada o sin cliente no ofrece comprobante | `src/whatsapp/mensajes.test.ts` |
 | Lo que se guarda es el texto que se armó, no la plantilla | `src/whatsapp/mensajes.test.ts` |
 | Recordarle la deuda dos veces en la semana pide confirmación | `src/whatsapp/mensajes.test.ts`, `e2e/whatsapp.spec.ts` |
+| Anular una venta fiada ya cobrada en parte deja anotada la plata a devolver | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| El efectivo del desglose es exactamente el que hay que contar en el cajón | `src/caja/sesion.test.ts` |
+| Con dos pagos en efectivo, el vuelto se resta una sola vez | `src/caja/sesion.test.ts` |
+| Un cobro de fiado figura como plata que entró; lo fiado, no | `src/caja/sesion.test.ts` |
+| El comprobante de una venta fiada dice cuánto queda debiendo | `src/ventas/ticket.test.ts`, `src/whatsapp/mensajes.test.ts` |
+| Una venta de 25 accesorios no manda una URL que WhatsApp trunque | `src/whatsapp/mensajes.test.ts` |
 | Una vista previa de Vercel no se toma por producción, aunque `NODE_ENV` lo diga | `src/lib/produccion.test.ts` |
 | El staging se reconoce por ruta y por subdominio, y un dominio que empieza con «dev» no lo es | `src/lib/produccion.test.ts` |
 | Sin `CRON_SECRET` en producción el POS lo reclama; en desarrollo no molesta | `src/lib/produccion.test.ts` |
@@ -538,6 +550,7 @@ src/
   lib/            Dinero en centavos, fechas, texto, auditoría, chequeos de despliegue
   ventas/         Carrito, buscador, confirmación de venta y ticket
   whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
+  fiado/          Cuenta corriente y devoluciones pendientes
   woo/            Cliente REST, mapeo, sincronización, cola, webhooks
   scripts/        Comandos de consola
 drizzle/          Migraciones SQL versionadas
