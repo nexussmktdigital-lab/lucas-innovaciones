@@ -474,6 +474,9 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una venta anulada o sin cliente no ofrece comprobante | `src/whatsapp/mensajes.test.ts` |
 | Lo que se guarda es el texto que se armó, no la plantilla | `src/whatsapp/mensajes.test.ts` |
 | Recordarle la deuda dos veces en la semana pide confirmación | `src/whatsapp/mensajes.test.ts`, `e2e/whatsapp.spec.ts` |
+| Una vista previa de Vercel no se toma por producción, aunque `NODE_ENV` lo diga | `src/lib/produccion.test.ts` |
+| El staging se reconoce por ruta y por subdominio, y un dominio que empieza con «dev» no lo es | `src/lib/produccion.test.ts` |
+| Sin `CRON_SECRET` en producción el POS lo reclama; en desarrollo no molesta | `src/lib/produccion.test.ts` |
 | El vendedor no puede fiar, pero sí recibir un pago | `e2e/fiado.spec.ts` |
 | Un teléfono argentino se normaliza como lo escriban | `src/clientes/clientes.test.ts` |
 | El mismo teléfono no se puede cargar en dos clientes | `src/clientes/clientes.test.ts`, `e2e/fiado.spec.ts` |
@@ -532,7 +535,7 @@ src/
   catalogo/       Calidad de las fichas y marcador de producto real
   cotizacion/     Tipo de cambio: historial, guardas y vencimiento
   db/             Esquema Drizzle, migraciones, seed, base de test
-  lib/            Dinero en centavos, fechas, texto, auditoría
+  lib/            Dinero en centavos, fechas, texto, auditoría, chequeos de despliegue
   ventas/         Carrito, buscador, confirmación de venta y ticket
   whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
   woo/            Cliente REST, mapeo, sincronización, cola, webhooks
@@ -551,6 +554,26 @@ Vercel, con la raíz del proyecto en `pos/`. Antes del primer despliegue:
 2. Cargar las variables de entorno en Vercel.
 3. Correr `npm run woo:sync` una vez, apuntando al staging.
 4. Dar de alta los webhooks en WooCommerce.
+
+**El paso a paso completo está en [PRODUCCION.md](PRODUCCION.md)**, con lo que se
+configura afuera del repositorio: la rotación de credenciales, a qué tienda
+apunta cada entorno y el secreto de la tarea programada.
+
+Tres cosas se configuran en Neon, en WooCommerce y en Vercel, y ninguna falla de
+forma ruidosa cuando falta: el drenaje programado simplemente no corre, y
+apuntarle a la tienda equivocada simplemente escribe el stock en el lugar
+equivocado. Por eso se chequean desde dos lados:
+
+```bash
+npm run produccion:chequear                                  # este entorno
+vercel env pull .env.produccion && \
+  npm run produccion:chequear -- --env .env.produccion --produccion
+```
+
+Sale con código 1 si falta algo, así que se puede encadenar antes de desplegar.
+No imprime ningún secreto: dice si están y a dónde apuntan. Y el POS lo reclama
+solo: si algo quedó mal, **Estado del sistema** muestra un panel rojo que solo ve
+el dueño y que desaparece cuando se resuelve.
 
 **El POS no tiene por qué ser accesible desde toda internet.** El PIN de
 vendedor es corto por diseño; conviene restringir el acceso por IP o por
