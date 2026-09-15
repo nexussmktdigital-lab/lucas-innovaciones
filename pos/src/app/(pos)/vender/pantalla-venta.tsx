@@ -51,6 +51,8 @@ interface Props {
   cuentas: Cuenta[];
   clientes: Cliente[];
   pendientesDeSync: number;
+  /** True si quien atiende puede dar de alta un producto que falta. */
+  puedeCargarProductos: boolean;
 }
 
 export default function PantallaVenta({
@@ -61,6 +63,7 @@ export default function PantallaVenta({
   cuentas,
   clientes,
   pendientesDeSync,
+  puedeCargarProductos,
 }: Props) {
   const router = useRouter();
   const [lineas, setLineas] = useState<LineaEnPantalla[]>([]);
@@ -217,6 +220,7 @@ export default function PantallaVenta({
             enfocarBuscador.current = fn;
           }}
           tcCentavos={tcCentavos}
+          puedeCargar={puedeCargarProductos}
         />
       </section>
 

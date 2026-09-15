@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { db } from '@/db';
@@ -9,6 +10,8 @@ import {
   evaluarCatalogo,
   type TipoDeProblema,
 } from '@/catalogo/calidad';
+import { fichasPendientes } from '@/catalogo/crear';
+import FichasPendientes from './fichas-pendientes';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,13 +21,14 @@ const TOPE = 60;
 export default async function PaginaCatalogo({
   searchParams,
 }: {
-  searchParams: Promise<{ solo?: string }>;
+  searchParams: Promise<{ solo?: string; importados?: string }>;
 }) {
   const sesion = await auth();
   if (sesion?.user.rol !== 'owner') redirect('/');
 
-  const { solo } = await searchParams;
+  const { solo, importados } = await searchParams;
   const soloBloqueantes = solo !== 'todo';
+  const pendientes = await fichasPendientes(db);
 
   const tc = await cotizacionVigente(db);
   const informe = await evaluarCatalogo(db, tc?.valorCentavos ?? null, {
@@ -37,13 +41,40 @@ export default async function PaginaCatalogo({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Calidad del catálogo</h1>
-        <p className="mt-1 text-sm text-(--color-tinta-suave)">
-          Las fichas se arreglan en WooCommerce. Acá se ve cuáles y por qué, ordenadas por lo que
-          más cuesta dejarlas así.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Catálogo</h1>
+          <p className="mt-1 text-sm text-(--color-tinta-suave)">
+            Las fichas de WooCommerce se arreglan allá. Acá se ve cuáles y por qué, y se carga lo
+            que todavía no está.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href="/catalogo/nuevo"
+            className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 leading-10 font-semibold text-white"
+          >
+            Cargar un producto
+          </Link>
+          <Link
+            href="/catalogo/importar"
+            className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 leading-10 font-medium"
+          >
+            Importar planilla
+          </Link>
+        </div>
       </div>
+
+      {/* Se renderiza desde el servidor y no como estado de la acción: la
+          importación redirige acá, así que un `ok` del formulario no
+          sobreviviría al cambio de pantalla. */}
+      {importados ? (
+        <p className="rounded-(--radius-caja) border-2 border-(--color-ok) bg-(--color-ok)/8 p-3 text-sm font-semibold text-(--color-ok)">
+          Se cargaron {importados} productos de la planilla. Ya se pueden vender.
+        </p>
+      ) : null}
+
+      <FichasPendientes fichas={pendientes} wooUrl={urlWoo} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Dato titulo="Fichas revisadas" valor={informe.totalProductos.toLocaleString('es-AR')} />

@@ -6,6 +6,7 @@ import { exchangeRates, monetaryAccounts } from '@/db/schema';
 import { clientesParaVender } from '@/clientes/clientes';
 import { sesionAbierta } from '@/caja/sesion';
 import { config } from '@/lib/config';
+import { puede } from '@/auth/permisos';
 import { pendientesDeSincronizar } from '@/woo/cola';
 import PantallaVenta from './pantalla-venta';
 
@@ -44,6 +45,9 @@ export default async function PaginaVender() {
       cuentas={cuentas}
       clientes={clientes}
       pendientesDeSync={cola.pendientes + cola.fallidas}
+      puedeCargarProductos={
+        sesion?.user ? puede(sesion.user.rol, 'producto.alta_rapida') : false
+      }
     />
   );
 }

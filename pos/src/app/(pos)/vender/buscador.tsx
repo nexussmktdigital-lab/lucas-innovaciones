@@ -9,12 +9,14 @@ interface Props {
   onAgregar: (r: ResultadoBusqueda) => void;
   registrarFoco: (fn: () => void) => void;
   tcCentavos: number | null;
+  /** True si quien atiende puede dar de alta lo que no encuentra. */
+  puedeCargar: boolean;
 }
 
 /** Espera antes de consultar, para no pedir una búsqueda por tecla. */
 const ESPERA_MS = 120;
 
-export default function Buscador({ onAgregar, registrarFoco, tcCentavos }: Props) {
+export default function Buscador({ onAgregar, registrarFoco, tcCentavos, puedeCargar }: Props) {
   const [texto, setTexto] = useState('');
   const [consulta, setConsulta] = useState('');
   const [sinStock, setSinStock] = useState(false);
@@ -110,11 +112,25 @@ export default function Buscador({ onAgregar, registrarFoco, tcCentavos }: Props
         </div>
       </div>
 
+      {/* El producto que no está es el momento en que la venta se traba: ninguna
+          línea puede existir sin un producto real (D24). En vez de dejar a
+          quien atiende sin salida, desde acá se carga, con lo que ya escribió
+          puesto en el formulario. */}
       {consulta.length > 0 && resultados.length === 0 && !isFetching ? (
-        <p className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-6 text-center text-sm text-(--color-tinta-suave)">
-          No hay nada que coincida con «{consulta}».
-          {!sinStock ? ' Probá marcando «incluir sin stock».' : ''}
-        </p>
+        <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-6 text-center text-sm">
+          <p className="text-(--color-tinta-suave)">
+            No hay nada que coincida con «{consulta}».
+            {!sinStock ? ' Probá marcando «incluir sin stock».' : ''}
+          </p>
+          {puedeCargar ? (
+            <a
+              href={`/catalogo/nuevo?q=${encodeURIComponent(consulta)}`}
+              className="mt-3 inline-block min-h-11 rounded-(--radius-caja) border-2 border-(--color-marca) px-4 leading-[2.75rem] font-semibold"
+            >
+              Cargar «{consulta}» al catálogo
+            </a>
+          ) : null}
+        </div>
       ) : null}
 
       <ul className="flex flex-col gap-1.5">
