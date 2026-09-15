@@ -78,9 +78,16 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
         />
       </div>
 
-      {resumen.porMedio.length > 0 ? (
+      {resumen.porMedio.length > 0 || resumen.fiadoCentavos > 0 ? (
         <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-          <h2 className="mb-2 text-sm font-semibold text-(--color-tinta-suave)">Por medio de pago</h2>
+          <h2 className="mb-1 text-sm font-semibold text-(--color-tinta-suave)">
+            Plata que entró, por medio
+          </h2>
+          <p className="mb-2 text-xs text-(--color-tinta-suave)">
+            Neto de vuelto, con los cobros de fiado adentro. El efectivo de acá es contra lo que se
+            cuenta el cajón.
+          </p>
+
           <dl className="flex flex-col gap-1 text-sm">
             {resumen.porMedio.map((m) => (
               <div key={m.medio} className="flex justify-between">
@@ -92,6 +99,24 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
               </div>
             ))}
           </dl>
+
+          {/* Lo que NO entró, separado para que nadie lo sume al cajón. */}
+          {resumen.fiadoCentavos > 0 || resumen.cobrosDeFiadoCentavos > 0 ? (
+            <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm text-(--color-tinta-suave)">
+              {resumen.fiadoCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Fiado en el turno · no entró plata</dt>
+                  <dd className="tabular">{formatearARS(resumen.fiadoCentavos)}</dd>
+                </div>
+              ) : null}
+              {resumen.cobrosDeFiadoCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>De lo de arriba, cobros de deudas viejas</dt>
+                  <dd className="tabular">{formatearARS(resumen.cobrosDeFiadoCentavos)}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
         </div>
       ) : null}
 

@@ -4,12 +4,14 @@ import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
 import {
   auditLog,
   cashSessions,
+  customers,
   exchangeRates,
   monetaryAccounts,
   products,
   users,
 } from '@/db/schema';
 import { confirmarVenta } from '@/ventas/confirmar';
+import { cobrarFiado } from '@/fiado/cuenta';
 import { abrirCaja, cerrarCaja, ErrorCaja, resumenDeSesion, sesionAbierta } from './sesion';
 
 let db: TestDb;
@@ -168,6 +170,150 @@ describe('resumenDeSesion', () => {
     });
 
     expect((await resumenDeSesion(db, s.id)).efectivoEsperadoCentavos).toBe(1_000_000);
+  });
+
+  /*
+   * El desglose por medio tiene que decir qué plata entró.
+   *
+   * Es el número contra el que el cajero cuenta el cajón al cerrar: si suma
+   * algo que no existe, el arqueo deja de servir. Antes sumaba el efectivo
+   * bruto de vuelto, contaba el fiado como si fuera plata y no mostraba los
+   * cobros de fiado, que sí lo son.
+   */
+  describe('el desglose por medio dice qué entró de verdad', () => {
+    it('el efectivo va neto de vuelto, no por lo que entregó el cliente', async () => {
+      const s = await abrirCaja(db, { ...apertura(), saldoInicialCentavos: 0 });
+
+      // $10.000 de venta, paga con $20.000.
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 2_000_000, monetaryAccountId: cajaId }],
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd1',
+      });
+
+      const r = await resumenDeSesion(db, s.id);
+      expect(r.porMedio).toEqual([{ medio: 'efectivo', cantidad: 1, totalCentavos: 1_000_000 }]);
+    });
+
+    it('con dos pagos en efectivo el vuelto se resta una sola vez', async () => {
+      const s = await abrirCaja(db, { ...apertura(), saldoInicialCentavos: 0 });
+
+      // $10.000 de venta pagados con $6.000 + $10.000: vuelto $6.000.
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [
+          { medio: 'efectivo', montoCentavos: 600_000, monetaryAccountId: cajaId },
+          { medio: 'efectivo', montoCentavos: 1_000_000, monetaryAccountId: cajaId },
+        ],
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd2',
+      });
+
+      const r = await resumenDeSesion(db, s.id);
+      const efectivo = r.porMedio.find((m) => m.medio === 'efectivo')!;
+      expect(efectivo.totalCentavos).toBe(1_000_000);
+      expect(efectivo.totalCentavos).toBe(r.efectivoEsperadoCentavos);
+    });
+
+    it('lo fiado no figura como plata que entró: va aparte', async () => {
+      const [cli] = await db.insert(customers).values({ nombre: 'Gaby' }).returning();
+      const s = await abrirCaja(db, { ...apertura(), saldoInicialCentavos: 0 });
+
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        clienteId: cli!.id,
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd3',
+      });
+
+      const r = await resumenDeSesion(db, s.id);
+      expect(r.porMedio).toEqual([]);
+      expect(r.fiadoCentavos).toBe(1_000_000);
+      expect(r.totalVendidoCentavos).toBe(1_000_000);
+      expect(r.efectivoEsperadoCentavos).toBe(0);
+    });
+
+    it('un cobro de fiado es plata que entró y tiene que figurar', async () => {
+      const [cli] = await db.insert(customers).values({ nombre: 'Gaby' }).returning();
+      const s = await abrirCaja(db, { ...apertura(), saldoInicialCentavos: 0 });
+
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        clienteId: cli!.id,
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd4',
+      });
+
+      await cobrarFiado(db, {
+        customerId: cli!.id,
+        montoCentavos: 400_000,
+        medio: 'efectivo',
+        cashSessionId: s.id,
+        usuarioId,
+        idempotencyKey: 'd4-cobro',
+      });
+
+      const r = await resumenDeSesion(db, s.id);
+      expect(r.porMedio).toEqual([{ medio: 'efectivo', cantidad: 1, totalCentavos: 400_000 }]);
+      expect(r.cobrosDeFiadoCentavos).toBe(400_000);
+      expect(r.efectivoEsperadoCentavos).toBe(400_000);
+    });
+
+    it('el turno entero: lo que suman los medios en efectivo es lo que hay en el cajón', async () => {
+      const [cli] = await db.insert(customers).values({ nombre: 'Gaby' }).returning();
+      const s = await abrirCaja(db, apertura()); // $20.000 de apertura
+
+      // Venta de $10.000 en efectivo pagando con $20.000: entran $10.000.
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 2_000_000, monetaryAccountId: cajaId }],
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd5-contado',
+      });
+
+      // Venta de $10.000 fiada: no entra nada.
+      await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 2 }],
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        clienteId: cli!.id,
+        vendedorId: usuarioId,
+        cashSessionId: s.id,
+        terminal: 'T1',
+        idempotencyKey: 'd5-fiada',
+      });
+
+      // Y paga $4.000 de la deuda: entran $4.000.
+      await cobrarFiado(db, {
+        customerId: cli!.id,
+        montoCentavos: 400_000,
+        medio: 'efectivo',
+        cashSessionId: s.id,
+        usuarioId,
+        idempotencyKey: 'd5-cobro',
+      });
+
+      const r = await resumenDeSesion(db, s.id);
+      const efectivo = r.porMedio.find((m) => m.medio === 'efectivo')!;
+
+      // Por el cajón pasaron $14.000, más los $20.000 de apertura.
+      expect(efectivo.totalCentavos).toBe(1_400_000);
+      expect(r.efectivoEsperadoCentavos).toBe(r.saldoInicialCentavos + efectivo.totalCentavos);
+      expect(r.fiadoCentavos).toBe(1_000_000);
+      expect(r.cobrosDeFiadoCentavos).toBe(400_000);
+    });
   });
 });
 

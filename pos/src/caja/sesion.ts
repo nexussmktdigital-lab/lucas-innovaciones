@@ -130,8 +130,19 @@ export interface ResumenDeSesion {
   efectivoEsperadoCentavos: number;
   cantidadDeVentas: number;
   totalVendidoCentavos: number;
-  /** Cuánto se cobró por cada medio, para el reporte de cierre. */
+  /**
+   * Plata que entró de verdad, por medio.
+   *
+   * Neto de vuelto, con los cobros de fiado adentro y sin la cuenta corriente,
+   * que es una deuda y no un ingreso. La suma de los medios en efectivo tiene
+   * que dar el efectivo esperado menos la apertura: es el número contra el que
+   * se cuenta el cajón.
+   */
   porMedio: { medio: string; cantidad: number; totalCentavos: number }[];
+  /** Lo que se fió en el turno. Es facturación, pero no entró plata. */
+  fiadoCentavos: number;
+  /** Cuánto de lo que entró vino de deudas viejas y no de ventas de hoy. */
+  cobrosDeFiadoCentavos: number;
 }
 
 export async function resumenDeSesion(
@@ -161,17 +172,85 @@ export async function resumenDeSesion(
     .from(sales)
     .where(and(eq(sales.cashSessionId, sesionId), eq(sales.estado, 'completed')));
 
+  /*
+   * El desglose por medio tiene que decir qué plata entró, que no es lo mismo
+   * que la suma de los renglones de pago:
+   *
+   *  - El efectivo de una venta con vuelto figura por lo que entregó el
+   *    cliente. Lo que entró es el neto, y el vuelto sale siempre del efectivo.
+   *  - La cuenta corriente no es plata: es una deuda. Va aparte.
+   *  - Un cobro de fiado sí es plata y no tiene venta detrás, así que no
+   *    aparecía por ningún lado.
+   *
+   * Sin esto el desglose suma un número que no existe en ningún cajón.
+   */
   const porMedio = filasDe<{ medio: string; cantidad: string | number; total: string | number }>(
     await db.execute(sql`
-      SELECT p.medio,
-             count(*)                 AS cantidad,
-             SUM(p.monto_centavos)    AS total
+      WITH vueltos AS (
+        SELECT s.id,
+               GREATEST(
+                 COALESCE((SELECT SUM(p.monto_centavos) FROM sale_payments p WHERE p.sale_id = s.id), 0)
+                   - s.total_centavos,
+                 0
+               ) AS vuelto
+          FROM sales s
+         WHERE s.cash_session_id = ${sesionId} AND s.estado = 'completed'
+      ),
+      -- Primero por venta y medio: si una venta lleva dos pagos en efectivo,
+      -- el vuelto se resta una sola vez y no una por renglón.
+      pagos AS (
+        SELECT p.sale_id,
+               p.medio::text         AS medio,
+               count(*)              AS cantidad,
+               SUM(p.monto_centavos) AS bruto
+          FROM sale_payments p
+          JOIN sales s ON s.id = p.sale_id
+         WHERE s.cash_session_id = ${sesionId}
+           AND s.estado = 'completed'
+           AND p.medio <> 'cuenta_corriente'
+         GROUP BY p.sale_id, p.medio
+      ),
+      de_ventas AS (
+        SELECT g.medio,
+               SUM(g.cantidad) AS cantidad,
+               SUM(
+                 g.bruto - CASE WHEN g.medio = 'efectivo'
+                                THEN COALESCE(v.vuelto, 0) ELSE 0 END
+               ) AS total
+          FROM pagos g
+          LEFT JOIN vueltos v ON v.id = g.sale_id
+         GROUP BY g.medio
+      ),
+      de_cobros AS (
+        SELECT c.medio::text AS medio,
+               count(*)      AS cantidad,
+               SUM(c.monto_centavos) AS total
+          FROM credit_payments c
+         WHERE c.cash_session_id = ${sesionId}
+         GROUP BY c.medio
+      )
+      SELECT medio, SUM(cantidad) AS cantidad, SUM(total) AS total
+        FROM (SELECT * FROM de_ventas UNION ALL SELECT * FROM de_cobros) t
+       GROUP BY medio
+       ORDER BY SUM(total) DESC
+    `),
+  );
+
+  const [fiado] = filasDe<{ total: string | number }>(
+    await db.execute(sql`
+      SELECT COALESCE(SUM(p.monto_centavos), 0) AS total
         FROM sale_payments p
         JOIN sales s ON s.id = p.sale_id
        WHERE s.cash_session_id = ${sesionId}
          AND s.estado = 'completed'
-       GROUP BY p.medio
-       ORDER BY SUM(p.monto_centavos) DESC
+         AND p.medio = 'cuenta_corriente'
+    `),
+  );
+
+  const [cobros] = filasDe<{ total: string | number }>(
+    await db.execute(sql`
+      SELECT COALESCE(SUM(monto_centavos), 0) AS total
+        FROM credit_payments WHERE cash_session_id = ${sesionId}
     `),
   );
 
@@ -187,6 +266,8 @@ export async function resumenDeSesion(
       cantidad: Number(f.cantidad),
       totalCentavos: Number(f.total),
     })),
+    fiadoCentavos: Number(fiado?.total ?? 0),
+    cobrosDeFiadoCentavos: Number(cobros?.total ?? 0),
   };
 }
 

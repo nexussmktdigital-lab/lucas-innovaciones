@@ -171,10 +171,11 @@ test('la caja refleja las ventas del turno', async ({ page }) => {
 
   await expect(page.getByText('Ventas del turno')).toBeVisible();
 
-  // El desglose por medio solo aparece cuando ya hubo una venta en el turno.
+  // El desglose solo aparece cuando ya hubo una venta en el turno, y dice qué
+  // plata entró de verdad: neto de vuelto y sin contar el fiado como ingreso.
   const desglose = page
     .locator('div')
-    .filter({ has: page.getByRole('heading', { name: 'Por medio de pago' }) })
+    .filter({ has: page.getByRole('heading', { name: 'Plata que entró, por medio' }) })
     .last();
   await expect(desglose).toContainText('Efectivo');
 });
