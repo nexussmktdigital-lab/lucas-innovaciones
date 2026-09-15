@@ -22,17 +22,18 @@ const SECCIONES = [
   { href: '/caja', etiqueta: 'Caja', tecla: 'F3', fase: 2 },
   { href: '/ventas', etiqueta: 'Ventas', tecla: 'F4', fase: 3 },
   { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5', fase: 4 },
-  { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', fase: 7 },
+  { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', fase: 6, soloDuenio: true },
   { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', fase: 3, soloDuenio: true },
   { href: '/precios', etiqueta: 'Precios', tecla: 'F8', fase: 3, soloDuenio: true },
   { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', fase: 3, soloDuenio: true },
   // Sin tecla: es una pantalla de configuración, no de mostrador. Las teclas de
   // función son escasas y valen para lo que se usa todos los días.
   { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, fase: 5, soloDuenio: true },
+  { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, fase: 6, soloDuenio: true },
   { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 10, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 5;
+const FASE_ACTUAL = 6;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();

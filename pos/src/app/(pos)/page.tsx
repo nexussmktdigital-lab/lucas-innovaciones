@@ -8,6 +8,8 @@ import { estadoDeLaCotizacion, productosEnDolares } from '@/cotizacion/cotizacio
 import { formatearARS, formatearUSD, usdAPesos } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
 import { chequearProduccion, pendientes, type Chequeo } from '@/lib/produccion';
+import { fechaLocalISO } from '@/lib/fecha';
+import { totalPendiente } from '@/gastos/gastos';
 import { pendientesDeSincronizar } from '@/woo/cola';
 
 export const dynamic = 'force-dynamic';
@@ -47,6 +49,13 @@ export default async function PaginaInicio() {
   // Lo que se configura afuera del repositorio y falla en silencio: si falta,
   // lo reclama la pantalla que el dueño abre todos los días.
   const porConfigurar = esDuenio ? pendientes(chequearProduccion()) : [];
+
+  // Lo que hay que pagar. Solo se avisa si algo está vencido: una factura que
+  // vence la semana que viene no es una alarma, y un cartel permanente se
+  // vuelve invisible.
+  const aPagar = esDuenio
+    ? await totalPendiente(db, fechaLocalISO())
+    : { totalCentavos: 0, cantidad: 0, vencidos: 0 };
 
   const total = resumen?.total ?? 0;
 
@@ -92,6 +101,20 @@ export default async function PaginaInicio() {
       ) : null}
 
       {porConfigurar.length > 0 ? <PorConfigurar chequeos={porConfigurar} /> : null}
+
+      {aPagar.vencidos > 0 ? (
+        <p
+          role="alert"
+          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+        >
+          Hay <strong>{aPagar.vencidos}</strong> gasto{aPagar.vencidos === 1 ? '' : 's'} vencido
+          {aPagar.vencidos === 1 ? '' : 's'} sin pagar, de un total pendiente de{' '}
+          <strong>{formatearARS(aPagar.totalCentavos)}</strong>.{' '}
+          <Link href="/gastos" className="font-semibold underline underline-offset-2">
+            Ver los gastos
+          </Link>
+        </p>
+      ) : null}
 
       <Marcador meses={marcador} />
 
