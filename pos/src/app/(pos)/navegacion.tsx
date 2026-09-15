@@ -30,10 +30,10 @@ const SECCIONES = [
   // función son escasas y valen para lo que se usa todos los días.
   { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, fase: 5, soloDuenio: true },
   { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, fase: 6, soloDuenio: true },
-  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 10, soloDuenio: true },
+  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 9, soloDuenio: true },
 ] as const;
 
-const FASE_ACTUAL = 6;
+const FASE_ACTUAL = 9;
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();
