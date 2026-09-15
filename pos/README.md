@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 4 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y cerrar el turno con arqueo. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 7 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -369,6 +369,58 @@ tiene la tabla (`expense_items`) para cuando llegue. Los gastos recurrentes
 
 ---
 
+## Caja: arqueo y cierre
+
+Cerrar la caja era un casillero para escribir un número. La auditoría del POS
+viejo encontró la consecuencia: **el efectivo contado figuraba siempre en cero**.
+Un casillero libre a las nueve de la noche no se llena contando, se llena con lo
+primero que salga.
+
+Ahora el cierre arranca por denominación, que es el gesto que ya se hace: se
+apilan los billetes por valor y se cuentan las pilas. Se escribe cuántos de
+$20.000, cuántos de $10.000, cuántos de $1.000; el sistema suma, muestra el
+subtotal de cada fila y el total abajo. **Las monedas y los billetes viejos van
+en un renglón aparte**, porque contar monedas de a una no lo hace nadie.
+
+- **El total lo calcula el servidor a partir de los billetes.** Lo que suma el
+  navegador es una comodidad para quien cuenta, no un dato en el que confiar.
+- **Escribir el total directo sigue estando**, a un clic, abajo y sin fricción.
+  Un arqueo que traba el cierre es un arqueo que se saltea. Pero queda
+  registrado que se hizo así: en la lista de cierres se ve «Contado» o «Total a
+  mano», y arriba de todo el número que importa —*cuántos de los últimos diez
+  cierres se hicieron contando los billetes*—. Si eso se va a cero, el arqueo
+  volvió a ser un trámite.
+- **Una diferencia no se cierra sin explicarla.** El campo aparece solo cuando
+  sobra o falta plata, y es obligatorio.
+- **Un turno abierto más de catorce horas se reclama en pantalla.** La auditoría
+  encontró sesiones abiertas días enteros: una caja que nunca cierra no tiene
+  arqueo ni reporte de nada.
+
+### El reporte del turno
+
+Cerrar lleva directo a `/caja/[id]`, la hoja del turno: ventas, unidades,
+facturado, el arqueo completo (apertura, lo que entró por cada medio, los gastos
+y las salidas, el esperado, el contado y la diferencia), con qué billetes se
+contó, los gastos pagados en el turno y las ventas anuladas. **La justificación
+de la diferencia va en el cuerpo, no en un `title`**: un tooltip que solo aparece
+pasando el mouse no existe para quien lo lee en una tablet ni para quien lo
+imprime.
+
+Se imprime desde el mismo botón —`@media print` le saca la barra, la navegación
+y los botones, y pasa todo a tinta sobre blanco—, que es la hoja que se cuelga
+en la carpeta del mes.
+
+**El reporte se recalcula, no se congela.** Los números salen de los mismos
+asientos que movieron la plata, así que el turno de hace un mes dice hoy lo mismo
+que decía al cerrarlo. Se puede porque una venta solo se anula dentro del turno
+abierto (D29): un turno cerrado ya no cambia.
+
+Si el esperado da negativo, el reporte lo dice con todas las letras: no es un
+error de las ventas, es un turno que se abrió declarando menos plata de la que
+había en el cajón.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -668,8 +720,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 4 | Clientes y fiado, con la migración de las fichas de papel | **Hecha** |
 | 5 | WhatsApp: comprobantes y recordatorios | **Hecha** |
 | 6 | Gastos y cuentas monetarias | **Hecha** |
-| 7 | Caja completa: arqueo y cierre | Siguiente |
-| 8 | Alta asistida de productos: rápida, con IA, importación masiva | |
+| 7 | Caja completa: arqueo y cierre | **Hecha** |
+| 8 | Alta asistida de productos: rápida, con IA, importación masiva | Siguiente |
 | 9 | Reportes y exportación | |
 | 10 | Devoluciones de turnos cerrados y migración del histórico | |
 | v1.1 | Offline acotado: caché de catálogo y cola de venta | |

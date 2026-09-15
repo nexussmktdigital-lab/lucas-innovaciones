@@ -185,10 +185,16 @@ test('el cierre exige justificar la diferencia', async ({ page }) => {
   await asegurarCajaAbierta(page);
 
   await page.getByRole('button', { name: 'Cerrar el turno' }).click();
-  await page.getByLabel('Efectivo contado').fill('1');
 
-  await expect(page.getByText(/Falta\s/)).toBeVisible();
-  await expect(page.getByLabel('¿A qué se debe?')).toBeVisible();
+  // El cierre arranca contando billetes; escribir el total sigue estando.
+  const form = page.getByRole('form', { name: 'Cerrar el turno' });
+  await form.getByRole('button', { name: 'Prefiero escribir el total' }).click();
+  await form.getByLabel('Efectivo contado').fill('1');
+
+  // Que sobre o que falte depende de lo que dejaron los tests anteriores; lo
+  // que se comprueba es que una diferencia pida explicación.
+  await expect(form.getByText(/^(Falta|Sobra)\s/)).toBeVisible();
+  await expect(form.getByLabel('¿A qué se debe?')).toBeVisible();
 });
 
 test('una variación se cobra a su precio, no al del producto padre', async ({ page }) => {

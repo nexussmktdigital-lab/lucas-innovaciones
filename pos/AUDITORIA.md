@@ -490,17 +490,17 @@ La fase 3.5 cerró los hallazgos 1 a 8, el 12 y el 13; la 3.7 cerró el 9, el 10
 y el 11. Quedan diez, y dos de ellos tocan plata:
 
 La fase 5.5 cerró los cinco de la segunda pasada: el 21, el 22, el 23, el 24 y
-el 25. Quedan cinco, todos menores:
+el 25. La fase 7 cerró el 14 y el 20. Quedan cuatro, todos menores:
 
 | # | Qué | Cuándo conviene |
 |---|---|---|
-| 14 | La justificación del arqueo solo se ve como tooltip | Con la fase de reportes |
+| 14 | *(cerrado en la fase 7: la justificación va en el cuerpo del reporte y de la lista de cierres)* | — |
 | 15 | *(absorbido por el 22, cerrado)* | — |
 | 16 | `npm run lint` no está configurado | Cuando se arme la integración continua |
 | 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Cuando se haga el PIN del dueño en pantalla |
 | 18 | Inicio dice que sincronizó cuando el seed nunca sincronizó | Cualquier momento |
 | 19 | «Sin ningún problema: 0%» en Calidad del catálogo | Cualquier momento |
-| 20 | Un reintento idempotente informa vuelto $0 | Cualquier momento |
+| 20 | *(cerrado en la fase 7: el reintento recalcula el vuelto desde los pagos guardados)* | — |
 
 ### Una lección de la fase 5.5, para no repetirla
 
@@ -515,3 +515,19 @@ desde el servidor, leyéndolo de la base.** Los `estado.ok` sirven para
 formularios que siguen en pantalla después de enviarse, no para los que se
 desmontan. Y en los tests de punta a punta se afirma sobre el resultado visible
 —la sección que aparece o desaparece— y no sobre el cartel de éxito.
+
+### La misma lección, tercera vez (fase 7)
+
+El cierre de caja terminaba en un cartel con un enlace al reporte del turno.
+Nunca se vio: al cerrar, `/caja` deja de tener turno abierto, el formulario de
+cierre se desmonta entero y el cartel se va con él. Lo encontró el test de punta
+a punta, no la pantalla.
+
+Esta vez la salida no fue renderizar el aviso desde el servidor sino **redirigir**:
+al cerrar, la acción manda a `/caja/[id]`, que es a donde se quería llegar. Un
+`redirect` sobrevive a cualquier revalidación porque no depende de que nada siga
+montado, y de paso el reporte del turno queda donde corresponde —en pantalla,
+recién cerrado— en vez de escondido detrás de un enlace.
+
+Regla ampliada: **si después de una acción hay que estar en otro lado, ir a ese
+otro lado.** Un cartel con un enlace es la versión frágil de un redirect.
