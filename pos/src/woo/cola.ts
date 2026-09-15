@@ -91,6 +91,12 @@ export async function drenarCola(
     try {
       if (operacion.operacion === 'venta.descontar_stock') {
         informe.conflictos += await sincronizarStockDeVenta(db, cliente, operacion.payload);
+      } else if (operacion.operacion === 'producto.publicar') {
+        // El recargo se lee acá y no al encolar: si el dueño lo cambió entre
+        // que pidió publicar y que la cola drenó, vale el de ahora.
+        const { publicarProducto } = await import('@/catalogo/publicar');
+        const { recargoDeTienda } = await import('@/precios/config');
+        await publicarProducto(db, cliente, operacion.payload, await recargoDeTienda(db));
       } else {
         throw new Error(`Operación desconocida: ${operacion.operacion}`);
       }
