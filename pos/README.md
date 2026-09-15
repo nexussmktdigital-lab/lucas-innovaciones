@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 8 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 9 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -508,6 +508,82 @@ lo note.
 
 ---
 
+## Reportes y planillas
+
+Hasta acá los números vivían de a turno: el arqueo dice qué pasó ese día y nada
+más, y para saber cómo viene el mes había que sumar cierres a mano.
+
+**Reportes** (`F10`, solo el dueño) arranca por la pregunta que se hace primero
+—cuánto vendí— y **cada número viene con el del período anterior al lado**,
+porque «$180.000» no dice nada y «$180.000, 12% más que la semana pasada» sí. Se
+elige el período de un clic —hoy, ayer, últimos 7 días, este mes, el mes pasado,
+últimos 12 meses— o se escribe un rango a mano.
+
+Lo que muestra, en ese orden: vendido, ventas, ticket promedio y unidades; lo
+que se fio aparte, porque está facturado y esa plata no entró; vendido contra
+gastos pagados; por medio de pago; por categoría; qué se vendió, **ordenado por
+facturación y no por unidades** (veinte vidrios son más unidades que un celular
+y mucha menos plata, y lo que hay que reponer primero es lo segundo); día por
+día; y mes a mes, sumando el histórico que quedó del sistema anterior para poder
+comparar con algo.
+
+Los gráficos son barras en CSS. Sin librería: son quince filas y una barra es un
+`div` con un ancho en porcentaje; una dependencia de 90 kB sería más código que
+mantener y una pantalla más lenta en la tablet del mostrador.
+
+### Tres reglas que valen para todos los números
+
+- **Una venta anulada no existe.** Anular no inserta una venta negativa: marca
+  la original como anulada (D29), así que no hay nada que restar en ninguna
+  parte y una venta anulada no cuenta en ningún número de la pantalla.
+- **El día es el del local, no el de UTC.** Una venta de las 22:30 es del día en
+  que se hizo aunque en UTC ya sea mañana. Sin eso, la última hora de cada día
+  se cuenta en el día siguiente y ningún reporte cierra contra la caja. De paso
+  se corrigió el mismo error, que estaba en el marcador de producto real.
+- **Lo fiado se factura aunque no entre plata.** Cuenta como venta y se informa
+  aparte, porque confundir las dos cosas es creer que entró plata que está en la
+  libreta.
+
+### Cuánto quedó
+
+El costo se congela en cada línea de venta al confirmarla, así que una venta
+vieja no cambia de margen porque hoy el proveedor cobre otra cosa.
+
+Lo importante es lo que el reporte **dice de sí mismo**: informa sobre cuántas
+de las unidades vendidas está hablando. Un margen calculado sobre una parte del
+movimiento y presentado como «el margen del mes» es peor que no tener el número.
+
+Para que haya margen hace falta cargar el costo, y por eso esta fase lo agregó
+en dos lugares: el campo *«cuánto te costó»* del alta de productos y la columna
+**costo** de la planilla de importación. Antes no existía ninguna forma de
+cargarlo y el panel habría nacido vacío para siempre.
+
+### Las planillas
+
+Tres, del período elegido, que se bajan de un clic:
+
+| Planilla | Una fila por | Para qué |
+|---|---|---|
+| **Ventas** | venta | Es lo que se le manda al contador. Las anuladas van marcadas y con el motivo: esconderlas haría que los números no se puedan conciliar con los de ningún otro lado. |
+| **Productos vendidos** | producto vendido | Con esto se arma cualquier análisis que el POS no traiga hecho, sin pedir una pantalla nueva. Trae costo y ganancia por renglón. |
+| **Gastos** | gasto | Lo que salió, con categoría, beneficiario y cuenta. |
+
+Salen en el dialecto que Excel en castellano abre bien haciendo doble clic:
+**punto y coma**, **BOM** —sin él los acentos salen rotos— y **decimales con
+coma**, porque con el punto Excel lo toma como texto y no se puede sumar la
+columna, que es lo primero que hace cualquiera que abre esto. Es el mismo
+dialecto que lee la importación de productos, así que lo que sale se puede
+volver a cargar; hay un test que lo comprueba.
+
+Donde no hay costo cargado, la ganancia queda **vacía y no en cero**: cero sería
+decir que no se ganó nada, y lo que pasa es que no se sabe.
+
+La descarga es una ruta con `Content-Disposition` y no una acción de servidor:
+un `<a href>` baja el archivo sin una línea de JavaScript, y además funciona con
+«guardar enlace como».
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -809,6 +885,6 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 6 | Gastos y cuentas monetarias | **Hecha** |
 | 7 | Caja completa: arqueo y cierre | **Hecha** |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | **Hecha** |
-| 9 | Reportes y exportación | Siguiente |
-| 10 | Devoluciones de turnos cerrados y migración del histórico | |
+| 9 | Reportes y exportación | **Hecha** |
+| 10 | Devoluciones de turnos cerrados y migración del histórico | Siguiente |
 | v1.1 | Offline acotado: caché de catálogo y cola de venta | |

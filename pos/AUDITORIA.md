@@ -531,3 +531,30 @@ recién cerrado— en vez de escondido detrás de un enlace.
 
 Regla ampliada: **si después de una acción hay que estar en otro lado, ir a ese
 otro lado.** Un cartel con un enlace es la versión frágil de un redirect.
+
+### Lo que PGlite deja pasar y el driver de verdad no (fase 9)
+
+Los reportes tenían 76 tests en verde y **no andaba ni uno** en el local. La
+pantalla entera devolvía «Application error» y lo encontró el test de punta a
+punta, no la suite de unidad.
+
+La causa: una consulta escrita a mano que recibe un `Date` como parámetro.
+PGlite —el PostgreSQL compilado a WASM que usan los tests— lo acepta sin
+chistar; `postgres`, el driver de producción, lo rechaza con *«the string
+argument must be of type string or an instance of Buffer»*. Las nueve consultas
+del módulo fallaban por lo mismo, y la única que andaba era justamente la que no
+recibía fechas.
+
+La corrección es de una línea por consulta: se manda el instante como texto ISO.
+Lo que queda es la lección.
+
+**PGlite y el driver de producción no son intercambiables.** Los tests de unidad
+corren contra migraciones reales y eso cubre el esquema, las restricciones y los
+disparadores, pero **no cubre el protocolo**: cómo se serializa cada parámetro
+es cosa del driver, y ahí los dos difieren. Todo lo que se escribe con
+`db.execute(sql\`…\`)` y parámetros que no sean texto o número tiene que pasar
+por el driver real antes de darse por bueno.
+
+En la práctica: cuando una fase agrega consultas nuevas escritas a mano, el test
+de punta a punta contra el PostgreSQL de verdad no es un extra, es la única
+prueba que existe de que el código anda. Esta vez alcanzó con abrir la pantalla.
