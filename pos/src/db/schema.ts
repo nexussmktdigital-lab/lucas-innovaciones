@@ -322,6 +322,15 @@ export const cashSessions = pgTable(
     saldoContadoCentavos: bigint({ mode: 'number' }),
     diferenciaCentavos: bigint({ mode: 'number' }),
     justificacion: text(),
+    /**
+     * Con que billetes se conto el cajon: `{ conteo: { "100000": 5 },
+     * sueltoCentavos: 35000 }`. Nulo si se escribio el total a mano.
+     *
+     * Se guarda porque es lo que permite entender una diferencia despues: un
+     * total que no cuadra con cuatro billetes de $10.000 contados cuenta una
+     * historia distinta a uno escrito de memoria.
+     */
+    conteo: jsonb(),
     nota: text(),
   },
   (t) => [

@@ -1,0 +1,1 @@
+ALTER TABLE "cash_sessions" ADD COLUMN "conteo" jsonb;

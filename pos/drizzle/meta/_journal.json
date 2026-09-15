@@ -71,6 +71,13 @@
       "when": 1789490892662,
       "tag": "0009_gastos_anulables",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789495140190,
+      "tag": "0010_conteo_del_arqueo",
+      "breakpoints": true
     }
   ]
 }

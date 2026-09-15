@@ -130,6 +130,8 @@ export interface ResumenDeSesion {
   efectivoEsperadoCentavos: number;
   cantidadDeVentas: number;
   totalVendidoCentavos: number;
+  /** Unidades que salieron del stock. Es lo que el cierre llama «productos vendidos». */
+  unidadesVendidas: number;
   /**
    * Plata que entró de verdad, por medio.
    *
@@ -173,13 +175,23 @@ export async function resumenDeSesion(
     `),
   );
 
-  const [ventas] = await db
-    .select({
-      cantidad: sql<number>`count(*)`.mapWith(Number),
-      total: sql<number>`COALESCE(SUM(${sales.totalCentavos}), 0)`.mapWith(Number),
-    })
-    .from(sales)
-    .where(and(eq(sales.cashSessionId, sesionId), eq(sales.estado, 'completed')));
+  const [ventas] = filasDe<{
+    cantidad: string | number;
+    total: string | number;
+    unidades: string | number;
+  }>(
+    await db.execute(sql`
+      SELECT count(*) AS cantidad,
+             COALESCE(SUM(s.total_centavos), 0) AS total,
+             COALESCE((SELECT SUM(i.cantidad)
+                         FROM sale_items i
+                         JOIN sales s2 ON s2.id = i.sale_id
+                        WHERE s2.cash_session_id = ${sesionId}
+                          AND s2.estado = 'completed'), 0) AS unidades
+        FROM sales s
+       WHERE s.cash_session_id = ${sesionId} AND s.estado = 'completed'
+    `),
+  );
 
   /*
    * El desglose por medio tiene que decir qué plata entró, que no es lo mismo
@@ -289,8 +301,9 @@ export async function resumenDeSesion(
     abiertaEn: sesion.abiertaEn,
     saldoInicialCentavos: sesion.saldoInicialCentavos,
     efectivoEsperadoCentavos: Number(efectivo?.total ?? 0),
-    cantidadDeVentas: ventas?.cantidad ?? 0,
-    totalVendidoCentavos: ventas?.total ?? 0,
+    cantidadDeVentas: Number(ventas?.cantidad ?? 0),
+    totalVendidoCentavos: Number(ventas?.total ?? 0),
+    unidadesVendidas: Number(ventas?.unidades ?? 0),
     porMedio: porMedio.map((f) => ({
       medio: String(f.medio),
       cantidad: Number(f.cantidad),
@@ -309,6 +322,15 @@ export interface DatosCierre {
   saldoContadoCentavos: number;
   justificacion?: string | null;
   nota?: string | null;
+  /**
+   * Con qué billetes se contó el cajón.
+   *
+   * Opcional: quien quiera escribir el total directo puede. Se guarda porque es
+   * lo que permite entender una diferencia después — un total que no cuadra con
+   * cuatro billetes de $10.000 contados cuenta otra historia que uno escrito de
+   * memoria.
+   */
+  conteo?: { conteo: Record<number, number>; sueltoCentavos: number } | null;
 }
 
 export interface CierreDeCaja {
@@ -353,7 +375,8 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
         saldoContadoCentavos: datos.saldoContadoCentavos,
         diferenciaCentavos,
         justificacion: datos.justificacion?.trim() || null,
-        nota: datos.nota ?? sesion.nota,
+        conteo: datos.conteo ?? null,
+        nota: datos.nota?.trim() || sesion.nota,
       })
       .where(eq(cashSessions.id, datos.sesionId));
 
