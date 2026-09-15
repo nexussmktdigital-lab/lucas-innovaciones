@@ -1,12 +1,12 @@
-# Auditoría del POS antes de la fase 4
+# Auditoría del POS
 
-Fecha: 2026-09-12 · Sobre el código de la rama `claude/vigilant-volta-335wxv`
-(commit `c825d06`, fases 1 a 3 terminadas).
+Primera pasada: 2026-09-12, antes de la fase 4 (fases 1 a 3, commit `c825d06`).
+Segunda pasada: 2026-09-15, antes de la fase 6 (fases 1 a 5, commit `aa7d9c9`).
 
-> **Estado: quedan abiertos siete hallazgos, todos menores.** La fase 3.5
-> corrigió del 1 al 8, el 12 y el 13; la 3.7 cerró los tres que faltaban antes
-> de producción: el 9, el 10 y el 11. Cada uno tiene abajo su línea «Arreglado».
-> Lo que sigue pendiente está en la lista del final.
+> **Estado: quedan abiertos diez hallazgos; dos de ellos tocan plata.** La fase
+> 3.5 corrigió del 1 al 8, el 12 y el 13; la 3.7 cerró el 9, el 10 y el 11. La
+> segunda pasada sumó del 21 al 25 y agravó el 15. Lo pendiente está en la lista
+> del final.
 
 Cómo se hizo: se levantó el sistema completo contra un PostgreSQL 16 real, con
 los datos de prueba, y se lo usó a mano con un navegador —ingreso como dueño y
@@ -307,6 +307,135 @@ es un dato equivocado saliendo del núcleo.
 
 ---
 
+# Segunda pasada — antes de la fase 6
+
+Fecha: 2026-09-15 · Fases 1 a 5 terminadas, commit `aa7d9c9`.
+
+Cómo se hizo: 407 tests unitarios y 47 de punta a punta en verde como punto de
+partida, y a partir de ahí **sondas escritas para cruzar fases**, que es donde
+no mira nadie: cada módulo prueba lo suyo y las costuras quedan sin cubrir. Se
+operó además un turno completo en el navegador —abrir caja, vender con vuelto,
+fiar, cobrar a cuenta, anular, cerrar— leyendo los números en pantalla en cada
+paso, y se recorrieron las once pantallas como dueño y como vendedor.
+
+**Lo que se verificó y está sano**, para no perderlo de vista:
+
+- **El redondeo del precio de mostrador** en todo el rango real del catálogo
+  ($5.000 a $2.152.000): la diferencia queda entre 6,00% y 6,29% con un recargo
+  de 6,71%, siempre a favor del mostrador, y la vuelta al precio de tienda da
+  exacto. Solo se aplana por debajo de $800, y el producto más barato es $5.000.
+- **Las plantillas de WhatsApp no inyectan campos**: un cliente llamado
+  `{cliente} Pérez {total}` sale literal, no expandido.
+- **El candado de fila del fiado**: dos cobros del saldo completo a la vez, uno
+  entra y el otro recibe «ese cliente no debe nada». El saldo nunca queda
+  negativo.
+- **La idempotencia del cobro aguanta el monto cambiado**: misma clave con otro
+  importe devuelve el primer cobro y no cobra de nuevo.
+- **El tope de fiado en el borde**: llegar justo al tope entra, un peso más no.
+- **Montos cero y negativos rechazados** en el cobro.
+- **La búsqueda de clientes**: «jose», «JOSÉ», «perez», «ñandu», «nandu»,
+  «MARÍA», «angélica» y un teléfono parcial encuentran todos lo que tienen que
+  encontrar.
+- **Anular dos veces** se rechaza y no duplica la reversión; el deudor de una
+  venta anulada desaparece de la lista; los números de venta no se reutilizan;
+  el recordatorio de deuda desaparece solo cuando la deuda se salda o se anula.
+- **El efectivo esperado del arqueo dio exacto en todos los escenarios
+  probados**, incluidos vuelto, fiado y cobros de fiado. Lo que falla es el
+  desglose, no el esperado.
+
+---
+
+## Graves — tocan plata
+
+### 21. Anular una venta fiada que ya se cobró en parte deja plata del cliente sin registrar
+
+Reproducido en el navegador, turno completo:
+
+1. Se le fía $5.000 a un cliente. Deuda: $5.000.
+2. El cliente pasa y paga $4.000 a cuenta. Deuda: $1.000. Caja: +$4.000.
+3. Se anula esa venta (se cargó mal, el cliente se arrepintió, lo que sea).
+
+Queda así:
+
+| | Antes de anular | Después |
+|---|---|---|
+| Deuda del cliente | $1.000 | **$0** |
+| Efectivo en caja | +$4.000 | **+$4.000** (no se movió) |
+| Qué se llevó el cliente | nada, el stock volvió | nada |
+
+El cliente entregó $4.000 y no se llevó nada, y el sistema dice que están a
+mano. **El negocio se quedó con la plata y no hay ninguna pantalla donde eso se
+vea.** La ficha del cliente muestra «Deuda $0,00» y, dos renglones abajo, un
+cobro de $4.000 contra una venta tachada.
+
+La causa está en `descontarDeuda` (`src/ventas/anular.ts`): descuenta
+`min(montoFiado, saldoActual)` y devuelve cuánto descontó de verdad, pero la
+diferencia —la parte de esa venta que el cliente ya había pagado— no se informa
+a nadie. Queda en la bitácora, que el mostrador no lee.
+
+No es un caso raro: anular está limitado al turno abierto, y en un turno un
+cliente puede fiar a la mañana y pasar a pagar al mediodía.
+
+**Decisión pendiente**, porque hay tres caminos razonables y es una decisión de
+negocio: rechazar la anulación y pedir que primero se devuelva el pago; anularla
+y sacar la plata de la caja automáticamente; o anularla avisando fuerte en
+pantalla que hay que devolver $4.000.
+
+### 22. El desglose «Por medio de pago» del turno no cuadra con la caja
+
+Agrava el hallazgo 15, que en la primera pasada era menor porque el fiado no
+existía. Ahora falla de tres maneras a la vez. Turno real:
+
+- Venta de $5.000 en efectivo, el cliente paga con $10.000 y se lleva $5.000 de vuelto.
+- Venta de $5.000 fiada.
+- El cliente paga $4.000 a cuenta.
+
+Por la caja pasaron **$9.000** ($5.000 netos de la venta + $4.000 del cobro).
+La pantalla muestra:
+
+```
+Efectivo esperado    $ 29.000,00     ← correcto (20.000 de apertura + 9.000)
+Por medio de pago
+  Efectivo (1)       $ 10.000,00     ← bruto: es lo que entregó el cliente, no lo que entró
+  Cuenta corriente (1) $ 5.000,00    ← no entró plata: es una deuda
+```
+
+El desglose suma $15.000 contra $9.000 reales, cuenta como ingreso una venta
+fiada y **omite por completo el cobro de fiado**, que sí fue plata. Quien cierre
+la caja y quiera cuadrar por medio de pago no puede.
+
+La consulta está en `resumenDeSesion` (`src/caja/sesion.ts`): agrupa
+`sale_payments` en vez de `cash_movements`, que es donde está la plata de verdad.
+
+---
+
+## Menores
+
+### 23. El comprobante y el WhatsApp de una venta fiada no dicen cuánto queda debiendo
+
+Venta de $12.000: $5.000 en efectivo y $7.000 fiados. El ticket imprime
+«Cuenta corriente $7.000,00» y el WhatsApp dice «Gracias por tu compra ·
+Total: $12.000». Ninguno de los dos dice que el cliente quedó debiendo, ni
+cuánto debe en total. Es exactamente el papel que se guarda para discutir
+después.
+
+### 24. «Quedó debiendo $X» en la ficha del cliente puede contradecir el saldo
+
+El renglón de cada cobro guarda el saldo que quedaba en ese momento
+(`saldoResultanteCentavos`, congelado a propósito). Si después se anula una
+venta, la ficha muestra «Deuda $0,00» arriba y «quedó debiendo $1.000,00» en el
+movimiento. Los dos números son correctos y juntos confunden.
+
+### 25. Un comprobante de WhatsApp muy largo pasa los 2.000 caracteres de URL
+
+Medido: a 20 renglones la URL va en 1.402 caracteres; a 40 renglones, 2.542.
+Algunos clientes de WhatsApp truncan el texto pasado ese punto. Con las ventas
+típicas del mostrador no llega, pero una venta de muchos accesorios sí. Se
+arregla cortando el detalle a los primeros renglones y agregando «y N productos
+más».
+
+---
+
 ## Huecos de prueba que explicaban los hallazgos
 
 Los cuatro están tapados: la suite pasó de 236 a 269 tests unitarios y de 24 a
@@ -323,15 +452,19 @@ Los cuatro están tapados: la suite pasó de 236 a 269 tests unitarios y de 24 a
 ## Lo que queda abierto
 
 La fase 3.5 cerró los hallazgos 1 a 8, el 12 y el 13; la 3.7 cerró el 9, el 10
-y el 11, que eran los tres que había que resolver antes de producción. Siguen
-pendientes siete, todos menores:
+y el 11. Quedan diez, y dos de ellos tocan plata:
 
 | # | Qué | Cuándo conviene |
 |---|---|---|
+| **21** | **Anular una venta fiada ya cobrada en parte deja plata del cliente sin registrar** | **Antes de la fase 6** |
+| **22** | **El desglose por medio de pago no cuadra: bruto de vuelto, cuenta el fiado como plata y omite los cobros de fiado** | **Antes de la fase 6** |
 | 14 | La justificación del arqueo solo se ve como tooltip | Con la fase de reportes |
-| 15 | El desglose por medio de pago del cierre es bruto de vuelto | Con la fase de reportes |
+| 15 | *(absorbido por el 22)* | — |
 | 16 | `npm run lint` no está configurado | Cuando se arme la integración continua |
-| 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Con la fase 4, junto con el PIN del dueño |
+| 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Sigue abierto: el PIN del dueño no se hizo en la fase 4 |
 | 18 | Inicio dice que sincronizó cuando el seed nunca sincronizó | Cualquier momento |
 | 19 | «Sin ningún problema: 0%» en Calidad del catálogo | Cualquier momento |
 | 20 | Un reintento idempotente informa vuelto $0 | Cualquier momento |
+| 23 | El comprobante y el WhatsApp de una venta fiada no dicen la deuda | Con el 21, que es el mismo tema |
+| 24 | «Quedó debiendo $X» puede contradecir el saldo tras una anulación | Con el 21 |
+| 25 | Un WhatsApp de más de ~30 renglones pasa los 2.000 caracteres de URL | Cualquier momento |
