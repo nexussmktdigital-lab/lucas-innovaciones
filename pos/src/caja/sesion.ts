@@ -143,6 +143,15 @@ export interface ResumenDeSesion {
   fiadoCentavos: number;
   /** Cuánto de lo que entró vino de deudas viejas y no de ventas de hoy. */
   cobrosDeFiadoCentavos: number;
+  /**
+   * Plata que salió del cajón en el turno, en positivo.
+   *
+   * Un gasto pagado en efectivo y un depósito al banco salen del mismo cajón
+   * que se cuenta a la noche. Sin verlos, el arqueo da de menos y nadie sabe
+   * por qué: es la mitad que faltaba del libro.
+   */
+  gastosCentavos: number;
+  retirosCentavos: number;
 }
 
 export async function resumenDeSesion(
@@ -254,6 +263,27 @@ export async function resumenDeSesion(
     `),
   );
 
+  /*
+   * Las salidas se leen de los movimientos y no de la tabla de gastos: así el
+   * número es el mismo que movió el saldo, y una transferencia al banco —que no
+   * es un gasto— también aparece.
+   *
+   * Van netas de anulación. Un gasto cargado y anulado en el mismo turno dejó
+   * dos asientos que se cancelan, y contar solo el primero diría que salieron
+   * $12.000 del cajón que siguen estando adentro.
+   */
+  const [salidas] = filasDe<{ gastos: string | number; retiros: string | number }>(
+    await db.execute(sql`
+      SELECT COALESCE(-SUM(monto_centavos) FILTER (
+               WHERE tipo = 'gasto'
+                  OR (tipo = 'anulacion' AND referencia_tipo = 'expenses')
+             ), 0) AS gastos,
+             COALESCE(-SUM(monto_centavos) FILTER (WHERE tipo = 'retiro'), 0) AS retiros
+        FROM cash_movements
+       WHERE cash_session_id = ${sesionId}
+    `),
+  );
+
   return {
     sesionId,
     abiertaEn: sesion.abiertaEn,
@@ -268,6 +298,8 @@ export async function resumenDeSesion(
     })),
     fiadoCentavos: Number(fiado?.total ?? 0),
     cobrosDeFiadoCentavos: Number(cobros?.total ?? 0),
+    gastosCentavos: Number(salidas?.gastos ?? 0),
+    retirosCentavos: Number(salidas?.retiros ?? 0),
   };
 }
 

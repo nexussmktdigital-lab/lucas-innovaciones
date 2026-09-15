@@ -78,7 +78,10 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
         />
       </div>
 
-      {resumen.porMedio.length > 0 || resumen.fiadoCentavos > 0 ? (
+      {resumen.porMedio.length > 0 ||
+      resumen.fiadoCentavos > 0 ||
+      resumen.gastosCentavos > 0 ||
+      resumen.retirosCentavos > 0 ? (
         <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
           <h2 className="mb-1 text-sm font-semibold text-(--color-tinta-suave)">
             Plata que entró, por medio
@@ -99,6 +102,29 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
               </div>
             ))}
           </dl>
+
+          {/* Lo que salió del cajón: sin esto el conteo da de menos y nadie
+              sabe por qué. */}
+          {resumen.gastosCentavos > 0 || resumen.retirosCentavos > 0 ? (
+            <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm">
+              {resumen.gastosCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Gastos pagados del cajón</dt>
+                  <dd className="tabular font-medium text-(--color-error)">
+                    −{formatearARS(resumen.gastosCentavos)}
+                  </dd>
+                </div>
+              ) : null}
+              {resumen.retirosCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Salidas a otra cuenta</dt>
+                  <dd className="tabular font-medium text-(--color-error)">
+                    −{formatearARS(resumen.retirosCentavos)}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
 
           {/* Lo que NO entró, separado para que nadie lo sume al cajón. */}
           {resumen.fiadoCentavos > 0 || resumen.cobrosDeFiadoCentavos > 0 ? (
