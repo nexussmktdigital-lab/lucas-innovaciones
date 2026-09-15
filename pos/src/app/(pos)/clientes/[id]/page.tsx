@@ -4,11 +4,13 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { clientePorId } from '@/clientes/clientes';
 import { cuentaDe, movimientosDe } from '@/fiado/cuenta';
+import { devolucionesDe } from '@/fiado/devoluciones';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { armarRecordatorio, mensajesDe, ultimoRecordatorio } from '@/whatsapp/mensajes';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
 import BotonWhatsApp from '../../boton-whatsapp';
+import Devoluciones from './devoluciones';
 import FormularioCliente from '../formulario-cliente';
 import FormularioLimite from './formulario-limite';
 import FormularioFicha from './formulario-ficha';
@@ -27,6 +29,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
   const cuenta = await cuentaDe(db, id);
   const movimientos = await movimientosDe(db, id);
 
+  const aDevolver = await devolucionesDe(db, id);
   const ajustes = await ajustesDeWhatsApp(db);
   const recordatorio = await armarRecordatorio(db, id, ajustes);
   const aviso = await ultimoRecordatorio(db, id, ajustes.diasEntreRecordatorios);
@@ -55,6 +58,8 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           notas: cliente.notas,
         }}
       />
+
+      <Devoluciones pendientes={aDevolver} />
 
       <section className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -179,9 +184,13 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   {m.tipo === 'cobro' ? '−' : '+'}
                   {formatearARS(m.montoCentavos)}
                 </span>
+                {/* En pasado y con «en ese momento»: es el saldo de ese día,
+                    congelado. Si después se anuló una venta, el saldo de arriba
+                    ya no coincide, y decir «quedó debiendo» a secas hacía que
+                    los dos números se leyeran como contradictorios. */}
                 {m.tipo === 'cobro' ? (
                   <span className="tabular w-full text-right text-xs text-(--color-tinta-suave)">
-                    quedó debiendo {formatearARS(m.saldoResultanteCentavos)}
+                    en ese momento quedaba debiendo {formatearARS(m.saldoResultanteCentavos)}
                   </span>
                 ) : null}
               </li>

@@ -21,6 +21,12 @@ export default function FormularioAnulacion({
   const [estado, accion, pendiente] = useActionState(anularVentaAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
 
+  /*
+   * Anulada la venta, este formulario desaparece con ella: la página se vuelve
+   * a renderizar y las ventas anuladas no lo muestran. Por eso el aviso de
+   * «devolvele la plata» no vive acá sino en la fila, puesto por el servidor;
+   * si no, nadie lo llegaría a leer.
+   */
   if (estado.ok) {
     return (
       <p role="status" className="text-sm font-medium text-(--color-ok)">

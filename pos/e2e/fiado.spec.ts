@@ -212,3 +212,87 @@ test('la ficha de papel entra una sola vez', async ({ page }) => {
   // Ya no se ofrece de nuevo: sumar dos veces la misma deuda es el error a evitar.
   await expect(page.getByRole('button', { name: 'Cargar una ficha de papel' })).toHaveCount(0);
 });
+
+/*
+ * Hallazgo 21 de la auditoría.
+ *
+ * Anular una venta fiada que el cliente ya pagó en parte dejaba esa plata en la
+ * caja sin ninguna pantalla donde se viera: el sistema decía que estaban a mano
+ * y el negocio se quedaba con el dinero.
+ */
+test('anular una venta fiada ya cobrada en parte deja anotada la devolución', async ({ page }) => {
+  const CLIENTE_DEV = `Devolución ${SUFIJO}`;
+
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(CLIENTE_DEV);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(`«${CLIENTE_DEV}» quedó cargado`)).toBeVisible();
+
+  // Se le fía un vidrio de $5.000.
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page.getByPlaceholder('Buscar por nombre').press('Enter');
+  await elegirCliente(page, CLIENTE_DEV);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  // Pasa y paga $2.000 a cuenta.
+  await page.goto('/fiado');
+  const fila = page.getByRole('listitem').filter({ hasText: CLIENTE_DEV });
+  await fila.getByRole('button', { name: 'Recibir un pago' }).click();
+  await fila.getByLabel('¿Cuánto paga?').fill('2000');
+  await fila.getByRole('button', { name: 'Registrar el pago' }).click();
+  await expect(page.getByText(/Cobrado/)).toBeVisible();
+
+  // Y se anula la venta.
+  await page.goto('/ventas');
+  const filaVenta = page.getByRole('listitem').filter({ hasText: /Vidrio templado/ }).first();
+  await filaVenta.getByRole('button', { name: 'Anular' }).click();
+  await page.getByLabel(/¿Por qué se anula/).first().fill('Se arrepintió');
+  await page.getByRole('button', { name: 'Anular la venta' }).click();
+
+  // El aviso rojo queda en la fila de la venta anulada, puesto por el servidor:
+  // así sigue estando mañana y no depende de que alguien lo lea en el momento.
+  await expect(page.getByRole('alert').filter({ hasText: 'Devolvele' })).toContainText(
+    '$ 2.000,00',
+    { timeout: 15_000 },
+  );
+
+  // Y queda anotado donde se va a buscar: en fiado y en la ficha del cliente.
+  await page.goto('/fiado');
+  const aviso = page.getByRole('region', { name: 'Hay plata para devolver' });
+  await expect(aviso).toContainText(CLIENTE_DEV);
+  await expect(aviso).toContainText('$ 2.000,00');
+
+  await page.goto('/clientes');
+  await page.getByRole('link', { name: CLIENTE_DEV }).click();
+  await page.waitForURL(/\/clientes\//);
+  await expect(page.getByRole('region', { name: /Le debemos/ })).toContainText('$ 2.000,00');
+
+  // Se le devuelve y el recordatorio se cierra. Se afirma sobre el resultado
+  // visible y no sobre el cartel de éxito: al revalidar, la sección entera
+  // desaparece y se lleva el cartel con ella.
+  await page.getByRole('button', { name: 'Ya se le devolvió' }).click();
+  await page.getByLabel('Nota (opcional)').fill('En efectivo, del cajón');
+  await page.getByRole('button', { name: 'Confirmar' }).click();
+  await expect(page.getByRole('region', { name: /Le debemos/ })).toHaveCount(0, {
+    timeout: 15_000,
+  });
+
+  await page.goto('/fiado');
+  await expect(page.getByRole('region', { name: 'Hay plata para devolver' })).toHaveCount(0);
+
+  // Y en ventas tampoco queda el aviso: ya no hay nada que devolver.
+  await page.goto('/ventas');
+  await expect(page.getByRole('alert').filter({ hasText: 'Devolvele' })).toHaveCount(0);
+});
+

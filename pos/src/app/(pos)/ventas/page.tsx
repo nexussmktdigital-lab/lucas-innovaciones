@@ -7,6 +7,7 @@ import { ventasDelTurno } from '@/ventas/anular';
 import { nombreDelMedio } from '@/ventas/ticket';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
+import { devolucionesPendientes } from '@/fiado/devoluciones';
 import { armarComprobantes } from '@/whatsapp/mensajes';
 import type { MedioPago } from '@/ventas/carrito';
 import BotonWhatsApp from '../boton-whatsapp';
@@ -47,6 +48,14 @@ export default async function PaginaVentas() {
   const comprobantes = await armarComprobantes(
     db,
     vigentes.map((v) => v.id),
+  );
+
+  // El aviso de «devolvele la plata» lo pone el servidor y no el formulario de
+  // anulación: al anular, la página se vuelve a renderizar y ese formulario
+  // desaparece con la venta, así que un cartel suyo no lo llega a ver nadie.
+  // Además, así sigue estando mañana.
+  const aDevolver = new Map(
+    (await devolucionesPendientes(db)).map((d) => [d.saleId, d]),
   );
 
   return (
@@ -116,6 +125,27 @@ export default async function PaginaVentas() {
                   <p className="mt-2 rounded-(--radius-caja) bg-(--color-papel) p-2 text-sm">
                     <span className="font-medium">Motivo:</span> {v.motivoAnulacion}
                   </p>
+                ) : null}
+
+                {aDevolver.has(v.id) ? (
+                  <div
+                    role="alert"
+                    className="mt-2 rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-3 text-sm"
+                  >
+                    <p className="font-semibold text-(--color-error)">
+                      Devolvele {formatearARS(aDevolver.get(v.id)!.montoCentavos)} a{' '}
+                      {aDevolver.get(v.id)!.nombre}
+                    </p>
+                    <p className="mt-0.5">
+                      Ya había pagado esa parte de esta venta y quedó en la caja.
+                    </p>
+                    <Link
+                      href={`/clientes/${aDevolver.get(v.id)!.customerId}`}
+                      className="mt-1 inline-block font-medium underline underline-offset-2"
+                    >
+                      Marcarlo cuando se le devuelva
+                    </Link>
+                  </div>
                 ) : null}
 
                 <div className="mt-2 flex flex-wrap items-center gap-3">

@@ -6,6 +6,7 @@ import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import { sesionAbierta } from '@/caja/sesion';
 import { deudores, totalFiado } from '@/fiado/cuenta';
+import { devolucionesPendientes } from '@/fiado/devoluciones';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { recordatorioDe, ultimosRecordatorios } from '@/whatsapp/mensajes';
 import FilaDeudor from './fila-deudor';
@@ -29,6 +30,7 @@ export default async function PaginaFiado() {
 
   // Los recordatorios se arman acá, con los datos que la lista ya trajo, y no
   // uno por fila: una consulta más para saber a quién ya se le avisó.
+  const aDevolver = await devolucionesPendientes(db);
   const ajustes = await ajustesDeWhatsApp(db);
   const avisos = await ultimosRecordatorios(
     db,
@@ -53,6 +55,36 @@ export default async function PaginaFiado() {
           detalle={total.clientes === 0 ? 'Nadie debe nada' : undefined}
         />
       </div>
+
+      {aDevolver.length > 0 ? (
+        <section
+          aria-labelledby="devoluciones"
+          className="rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/8 p-4"
+        >
+          <h2 id="devoluciones" className="text-sm font-semibold">
+            Hay plata para devolver
+          </h2>
+          <p className="mt-0.5 text-sm text-(--color-tinta-media)">
+            Pagaron a cuenta de ventas que después se anularon. La plata quedó en la caja.
+          </p>
+          <ul className="mt-2 flex flex-col gap-1 text-sm">
+            {aDevolver.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-baseline gap-x-2">
+                <Link
+                  href={`/clientes/${d.customerId}`}
+                  className="font-medium underline underline-offset-2"
+                >
+                  {d.nombre}
+                </Link>
+                <span className="text-xs text-(--color-tinta-suave)">venta {d.numero}</span>
+                <span className="tabular ml-auto font-semibold">
+                  {formatearARS(d.montoCentavos)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {!caja ? (
         <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
