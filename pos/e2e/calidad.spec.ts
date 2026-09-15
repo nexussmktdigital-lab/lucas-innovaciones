@@ -77,7 +77,7 @@ test('calidad del catálogo encuentra el iPhone con el error de agosto', async (
   await entrarComoDuenio(page);
   await page.goto('/catalogo');
 
-  await expect(page.getByRole('heading', { name: 'Calidad del catálogo' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Catálogo', exact: true })).toBeVisible();
   await expect(page.getByText('iPhone 15 Pro Max 1TB')).toBeVisible();
   await expect(page.getByText(/cifra en dólares/)).toBeVisible();
 });

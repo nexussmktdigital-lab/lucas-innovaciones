@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 7 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 8 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -121,6 +121,8 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 | `WOO_WEBHOOK_SECRET` | Secreto compartido de los webhooks. Sin esto, el endpoint rechaza todo con 503. |
 | `WOO_AUTH_QUERY` | `true` si el hosting descarta la cabecera `Authorization` (pasa con LiteSpeed). Manda la credencial por query string, que también es método oficial de Woo sobre HTTPS. |
 | `POS_TERMINAL` | Prefijo del número de venta, ej. `T1`. Una terminal por despliegue: define de dónde salió cada venta y a qué caja pertenece. Con una sola caja, dejar `T1`. |
+| `ANTHROPIC_API_KEY` | **Opcional.** Habilita la ayuda que arma la ficha de un producto nuevo a partir de una descripción suelta. Sin esto el alta funciona igual, a mano. Nunca propone precio, stock ni imágenes. |
+| `ANTHROPIC_MODELO` | **Opcional.** Modelo a usar; por defecto `claude-opus-5`. |
 | `CRON_SECRET` | Secreto del drenaje programado de la cola. La tarea de Vercel (ver `vercel.json`) pega en `/api/cron/sincronizar` con `Authorization: Bearer <CRON_SECRET>`. Sin esto la ruta devuelve 503 y la cola solo se mueve al vender o a mano. |
 
 ---
@@ -418,6 +420,91 @@ abierto (D29): un turno cerrado ya no cambia.
 Si el esperado da negativo, el reporte lo dice con todas las letras: no es un
 error de las ventas, es un turno que se abrió declarando menos plata de la que
 había en el cajón.
+
+---
+
+## Cargar productos: de a uno, con ayuda, o una planilla entera
+
+Hasta acá el catálogo entraba **solo** por WooCommerce, y eso dejaba al
+mostrador sin salida justo cuando más lo necesitaba: llega mercadería nueva, o
+alguien pide un servicio que no está catalogado, y como ninguna línea de venta
+puede existir sin un producto real (D24) **la venta se traba**. La alternativa
+era abrir WooCommerce desde el celular con el cliente esperando.
+
+Ahora, cuando el buscador de la venta no encuentra nada, ofrece cargarlo, con lo
+que ya se escribió puesto en el formulario. Lo puede hacer **el vendedor**: es
+quien está en el mostrador cuando falta el producto, y el permiso
+`producto.alta_rapida` ya se lo daba desde la fase 1.
+
+El alta pide lo que quien atiende tiene en la cabeza —qué es, cuánto sale,
+cuántos hay— y resuelve sola el resto:
+
+- **El SKU se arma siguiendo la convención del catálogo**: `CAB-FOXB-CABLEUSBTI`,
+  igual que `ALM-HIKS-PENDRI32G`. Si choca con uno existente le agrega un
+  número, que es lo que hizo a mano quien cargó `CAR-FOX-FOX-2`.
+- **Las anotaciones internas salen del nombre.** El catálogo real tiene títulos
+  publicados como `iPhone 13 128gb 86% (54265) (Rec en enero $290, hoy a $250)`:
+  precios de compra, nombres de clientes y márgenes. Al cargar se separan y
+  quedan en la bitácora, no en el título.
+- **Un nombre repetido se frena.** Casi siempre es alguien cargando de nuevo
+  algo que no supo encontrar, así que se le dice cuál es en vez de duplicarlo.
+
+### Nace de mostrador, se publica aparte
+
+Lo que se carga acá queda con `wooId` en nulo y marcado como **Solo mostrador**
+(D19): se vende en el local en el acto, sin red de por medio, y **no sale a la
+tienda online**. Publicarlo es un segundo acto, desde el catálogo, y va por la
+misma cola que el stock de las ventas.
+
+No es exceso de prudencia. Publicar como borrador —que sería lo intuitivo— no
+sirve: la sincronización traduce el `status` de WooCommerce a `activo`, así que
+un borrador volvería de la próxima sincronización como producto **inactivo** y
+desaparecería del mostrador que lo creó.
+
+El catálogo lista lo cargado a las apuradas bajo **Cargados en el mostrador**.
+Es la contrapartida del alta rápida: sin esa lista, «rápida» querría decir «a
+medias y para siempre», que es exactamente como el catálogo llegó a tener 93
+productos sin SKU.
+
+### La ayuda para armar la ficha (opcional)
+
+Con `ANTHROPIC_API_KEY` cargada aparece un renglón para tirar lo que uno
+escribiría apurado —`cable tipo c fox box axon 20w`— y que el sistema proponga
+nombre, marca y categoría. **Se muestra, no se aplica solo**: nadie quiere ver
+cómo le reescriben lo que estaba tipeando.
+
+Cuatro límites, y los cuatro importan:
+
+- **Nunca propone precio ni stock.** Un precio inventado se cobra. Eso lo sabe
+  quien está atendiendo.
+- **Nunca propone una foto** (D15). Una imagen inventada de un SKU real produce
+  reclamos, devoluciones y contracargos, y bloquea el catálogo en Google
+  Merchant Center y Meta Commerce.
+- **Elige entre las categorías que ya existen**, o no elige. Lo que vuelve pasa
+  igual por el filtro del catálogo: una categoría inventada se descarta y una
+  marca escrita distinto se unifica con la que ya está, que es lo que evita
+  terminar con «Fox Box», «FoxBox» y «fox box» como tres marcas.
+- **Sin la variable, el alta funciona igual**, escrita a mano. Ninguna parte del
+  POS depende de que esto ande.
+
+### La planilla
+
+Cuando llega una entrega no llega un producto: llega una lista del distribuidor
+con treinta renglones. **Importar planilla** (solo el dueño) los carga de una
+vez, en dos pasos: primero muestra renglón por renglón qué va a pasar —cuántos
+se cargan, cuántos ya estaban, cuáles no se pueden leer y por qué— y recién
+después escribe. Una importación que guarda y después avisa es una importación
+que hay que deshacer a mano.
+
+Lee lo que salga de Excel: punto y coma o coma, comillas, BOM, y los títulos de
+columna que use la planilla que venga (`producto`, `rubro`, `importe`,
+`cantidad`…). Hacen falta `nombre` y `precio`; el resto es opcional.
+
+**Da de alta, no pisa lo que ya está.** Un SKU o un nombre que ya existe se
+informa y se saltea. Los precios de lo que ya está cargado se cambian en
+**Precios**, que es donde están los controles: una planilla capaz de reescribir
+precios en masa es la forma más rápida de cambiar todo el catálogo sin que nadie
+lo note.
 
 ---
 
@@ -721,7 +808,7 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 5 | WhatsApp: comprobantes y recordatorios | **Hecha** |
 | 6 | Gastos y cuentas monetarias | **Hecha** |
 | 7 | Caja completa: arqueo y cierre | **Hecha** |
-| 8 | Alta asistida de productos: rápida, con IA, importación masiva | Siguiente |
-| 9 | Reportes y exportación | |
+| 8 | Alta asistida de productos: rápida, con IA, importación masiva | **Hecha** |
+| 9 | Reportes y exportación | Siguiente |
 | 10 | Devoluciones de turnos cerrados y migración del histórico | |
 | v1.1 | Offline acotado: caché de catálogo y cola de venta | |
