@@ -64,6 +64,13 @@
       "when": 1789489240751,
       "tag": "0008_devoluciones_pendientes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789490892662,
+      "tag": "0009_gastos_anulables",
+      "breakpoints": true
     }
   ]
 }

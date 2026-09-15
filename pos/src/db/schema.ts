@@ -98,7 +98,13 @@ export const tipoBeneficiarioEnum = pgEnum('tipo_beneficiario', [
   'otro',
 ]);
 
-export const estadoGastoEnum = pgEnum('estado_gasto', ['pagado', 'pendiente']);
+/**
+ * Un gasto se carga pagado o pendiente, y se puede anular.
+ *
+ * Anulado y no borrado, por lo mismo que una venta (D29): lo que pasó no se
+ * borra, se le pone el asiento contrario y queda el motivo.
+ */
+export const estadoGastoEnum = pgEnum('estado_gasto', ['pagado', 'pendiente', 'anulado']);
 export const periodicidadEnum = pgEnum('periodicidad', ['mensual', 'bimestral', 'trimestral', 'anual']);
 
 export const origenCotizacionEnum = pgEnum('origen_cotizacion', [
@@ -704,6 +710,8 @@ export const expenses = pgTable(
       .notNull()
       .references(() => users.id),
     pagadoEn: timestamp({ withTimezone: true }),
+    /** Por qué se anuló. Obligatorio al anular, igual que en una venta. */
+    motivoAnulacion: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
