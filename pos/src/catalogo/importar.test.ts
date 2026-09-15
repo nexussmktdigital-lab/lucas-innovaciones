@@ -193,6 +193,28 @@ describe('importar de verdad', () => {
     expect(sinSku.sku).toBe('FND-GEN-FUNDASILIC');
   });
 
+  /* Sin una columna de costo, el reporte de ganancia nace vacío para siempre. */
+  it('lee el costo de la planilla cuando viene', async () => {
+    await importarPlanilla(db, PLANILLA_DE_EJEMPLO, duenio);
+    const cargados = await db.select().from(products);
+
+    const cable = cargados.find((p) => p.nombre === 'Cable USB tipo C 2 metros')!;
+    expect(cable.costoCentavos).toBe(7_000_00);
+
+    // Y el renglón que no trae costo entra igual, sin inventarlo.
+    const funda = cargados.find((p) => p.nombre === 'Funda silicona iPhone 15')!;
+    expect(funda.costoCentavos).toBeNull();
+  });
+
+  it('un costo que no es un número frena ese renglón y no la planilla', async () => {
+    const csv = ['nombre;precio;costo', 'Cable;1200;a convenir', 'Funda;800;500'].join('\n');
+    const r = await revisarPlanilla(db, csv);
+
+    expect(r.rechazados).toBe(1);
+    expect(r.altas).toBe(1);
+    expect(r.renglones[0]!.motivo).toMatch(/costo/);
+  });
+
   it('un renglón malo no se lleva puesta la entrega entera', async () => {
     const csv = ['nombre;precio', 'Cable bueno;1200', ';900', 'Funda buena;800'].join('\n');
     const r = await importarPlanilla(db, csv, duenio);

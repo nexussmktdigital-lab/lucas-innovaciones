@@ -100,6 +100,25 @@ describe('dar de alta un producto', () => {
     expect(enVenta!.precioCentavos).toBe(9_000_00);
   });
 
+  /*
+   * El costo es lo único que hace posible el reporte de ganancia: se copia a
+   * cada línea de venta al confirmarla y queda congelado ahí. Antes no había
+   * ninguna forma de cargarlo y el reporte era un panel siempre vacío.
+   */
+  it('el costo queda guardado y no sale a la tienda', async () => {
+    const r = await alta({ costoCentavos: 6_000_00 });
+
+    const [p] = await db.select().from(products).where(eq(products.id, r.id));
+    expect(p!.costoCentavos).toBe(6_000_00);
+    expect(p!.precioCentavos).toBe(9_000_00);
+  });
+
+  it('sin costo cargado el producto entra igual', async () => {
+    const r = await alta();
+    const [p] = await db.select().from(products).where(eq(products.id, r.id));
+    expect(p!.costoCentavos).toBeNull();
+  });
+
   it('queda en la bitácora', async () => {
     const r = await alta();
     const [linea] = await db.select().from(auditLog).where(eq(auditLog.entidadId, r.id));

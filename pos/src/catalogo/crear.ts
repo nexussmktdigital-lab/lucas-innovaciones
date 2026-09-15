@@ -57,6 +57,14 @@ export interface DatosDeAlta {
   /** Servicios y chips: sin stock y con precio editable en la venta (D24). */
   esServicio?: boolean;
   codigoBarras?: string | null;
+  /**
+   * Lo que costó, en centavos.
+   *
+   * Es lo único que hace posible el reporte de rentabilidad: el costo se copia
+   * a cada línea de venta al confirmarla y queda congelado ahí, así que una
+   * venta vieja no cambia de margen porque hoy el proveedor cobre otra cosa.
+   */
+  costoCentavos?: number | null;
   /** Si no viene, se propone siguiendo la convención del catálogo. */
   sku?: string | null;
   usuarioId: string;
@@ -167,6 +175,7 @@ export async function crearProducto(
         stock,
         gestionaStock: !esServicio,
         codigoBarras: (datos.codigoBarras ?? '')?.trim() || null,
+        costoCentavos: datos.costoCentavos ?? null,
         activo: true,
         esServicio,
         soloMostrador,
@@ -190,6 +199,7 @@ export async function crearProducto(
         nombre: titulo,
         sku,
         precioCentavos: datos.precioCentavos,
+        costoCentavos: datos.costoCentavos ?? null,
         stock,
         esServicio,
         soloMostrador,

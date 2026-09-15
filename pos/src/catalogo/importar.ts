@@ -39,6 +39,7 @@ const COLUMNAS: Record<string, readonly string[]> = {
   precio: ['precio', 'precio de mostrador', 'precio mostrador', 'importe', 'pvp'],
   stock: ['stock', 'cantidad', 'unidades', 'cant'],
   codigoBarras: ['codigo de barras', 'codigo barras', 'ean', 'barras'],
+  costo: ['costo', 'costo unitario', 'precio de costo', 'precio costo', 'compra'],
 };
 
 export type Destino = 'alta' | 'repetido' | 'rechazado';
@@ -53,6 +54,8 @@ export interface RenglonRevisado {
   marca: string | null;
   precioCentavos: number;
   stock: number;
+  /** Lo que costó, si la planilla lo trae. Habilita el reporte de margen. */
+  costoCentavos: number | null;
   /** Por qué se saltea o se rechaza. */
   motivo: string | null;
 }
@@ -211,6 +214,7 @@ export async function revisarPlanilla(
       marca,
       precioCentavos: 0,
       stock: 0,
+      costoCentavos: null,
     };
 
     if (nombre === '') {
@@ -254,7 +258,23 @@ export async function revisarPlanilla(
       continue;
     }
 
-    const completo = { ...base, precioCentavos, stock };
+    let costoCentavos: number | null = null;
+    const costoCrudo = leer('costo');
+    if (costoCrudo !== '') {
+      try {
+        costoCentavos = aCentavos(costoCrudo);
+      } catch {
+        renglones.push({
+          ...base,
+          precioCentavos,
+          destino: 'rechazado',
+          motivo: `El costo «${costoCrudo}» no es un número.`,
+        });
+        continue;
+      }
+    }
+
+    const completo = { ...base, precioCentavos, stock, costoCentavos };
 
     if (nombresTomados.has(normalizar(nombre))) {
       renglones.push({
@@ -327,6 +347,7 @@ export async function importarPlanilla(
         precioCentavos: r.precioCentavos,
         stock: r.stock,
         sku: r.sku,
+        costoCentavos: r.costoCentavos,
         usuarioId,
       });
       resultado.creados += 1;
@@ -344,8 +365,8 @@ export async function importarPlanilla(
 
 /** La planilla de ejemplo, para que nadie tenga que adivinar las columnas. */
 export const PLANILLA_DE_EJEMPLO = [
-  'nombre;sku;categoria;marca;precio;stock',
-  'Cable USB tipo C 2 metros;;Cables de carga;FoxBox;12000;20',
-  'Funda silicona iPhone 15;;Fundas;;9500;12',
-  'Cargador 30W tipo C;CAR-BASE-30W;Cargadores de pared;Baseus;28000;8',
+  'nombre;sku;categoria;marca;precio;stock;costo',
+  'Cable USB tipo C 2 metros;;Cables de carga;FoxBox;12000;20;7000',
+  'Funda silicona iPhone 15;;Fundas;;9500;12;',
+  'Cargador 30W tipo C;CAR-BASE-30W;Cargadores de pared;Baseus;28000;8;17000',
 ].join('\n');

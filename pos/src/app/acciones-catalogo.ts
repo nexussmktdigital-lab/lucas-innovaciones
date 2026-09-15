@@ -43,6 +43,7 @@ const esquemaAlta = z.object({
   precio: z.string().max(20),
   stock: z.string().max(10).optional(),
   codigoBarras: z.string().max(60).optional(),
+  costo: z.string().max(20).optional(),
   esServicio: z.string().optional(),
 });
 
@@ -69,6 +70,16 @@ export async function crearProductoAccion(
     return { error: e instanceof ErrorDinero ? e.message : 'El precio no es válido.' };
   }
 
+  let costoCentavos: number | null = null;
+  const costoCrudo = (d.costo ?? '').trim();
+  if (costoCrudo !== '') {
+    try {
+      costoCentavos = aCentavos(costoCrudo);
+    } catch (e) {
+      return { error: e instanceof ErrorDinero ? e.message : 'El costo no es válido.' };
+    }
+  }
+
   const stockCrudo = (d.stock ?? '').trim();
   const stock = stockCrudo === '' ? 0 : Number(stockCrudo);
   if (!Number.isInteger(stock) || stock < 0) {
@@ -83,6 +94,7 @@ export async function crearProductoAccion(
       precioCentavos,
       stock,
       codigoBarras: d.codigoBarras?.trim() || null,
+      costoCentavos,
       esServicio: d.esServicio === 'on' ? true : undefined,
       usuarioId: sesion.user.id,
     });

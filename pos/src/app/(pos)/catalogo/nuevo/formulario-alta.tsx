@@ -266,6 +266,24 @@ export default function FormularioAlta({
         </div>
 
         <div>
+          <label htmlFor="costo" className="mb-1 block text-sm font-medium">
+            Cuánto te costó (opcional)
+          </label>
+          <input
+            id="costo"
+            name="costo"
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            className="tabular min-h-11 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-3 text-right"
+          />
+          <p className="mt-1 text-xs text-(--color-tinta-suave)">
+            Es lo único que hace posible el reporte de ganancia. Queda guardado acá, nunca sale a
+            la tienda.
+          </p>
+        </div>
+
+        <div>
           <label htmlFor="codigoBarras" className="mb-1 block text-sm font-medium">
             Código de barras (opcional)
           </label>
