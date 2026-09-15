@@ -61,3 +61,42 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Imprimir.
+ *
+ * El reporte de cierre se cuelga en la carpeta del mes: es la hoja que se mira
+ * cuando una diferencia se discute una semana despues. Al imprimir se va todo
+ * lo que no es el reporte —barra, navegacion, botones— y los colores pasan a
+ * tinta sobre blanco, que es lo unico que sale bien en una laser barata.
+ */
+@media print {
+  .sin-imprimir {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Los paneles impresos son marcos finos: el relleno gris se come el toner. */
+  [class*='bg-(--color-panel)'],
+  [class*='bg-(--color-papel)'] {
+    background: #fff !important;
+  }
+
+  [class*='border-'] {
+    border-color: #999 !important;
+  }
+
+  /* Ninguna seccion del arqueo se parte entre dos hojas. */
+  section {
+    break-inside: avoid;
+  }
+}

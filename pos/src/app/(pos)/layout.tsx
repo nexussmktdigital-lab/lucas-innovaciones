@@ -11,7 +11,7 @@ export default async function LayoutPos({ children }: { children: React.ReactNod
   return (
     <Proveedores>
       <div className="flex min-h-dvh flex-col">
-        <header className="flex items-center gap-4 border-b border-(--color-borde) bg-(--color-panel) px-4 py-2">
+        <header className="sin-imprimir flex items-center gap-4 border-b border-(--color-borde) bg-(--color-panel) px-4 py-2">
           <span className="font-bold tracking-tight">Lucas Innovaciones</span>
           <Navegacion rol={sesion.user.rol} />
           <div className="ml-auto flex items-center gap-3 text-sm">
