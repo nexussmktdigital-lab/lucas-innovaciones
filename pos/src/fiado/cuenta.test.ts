@@ -30,6 +30,13 @@ import {
   totalFiado,
 } from './cuenta';
 import { anularVenta } from '@/ventas/anular';
+import {
+  devolucionesPendientes,
+  ErrorDevolucion,
+  historialDeDevoluciones,
+  marcarDevuelta,
+  totalADevolver,
+} from './devoluciones';
 
 let db: TestDb;
 let duenioId: string;
@@ -360,6 +367,148 @@ describe('anular una venta fiada', () => {
     // Debía $3.000; no se le puede sacar más que eso ni dejarle saldo a favor.
     expect(r.deudaBorradaCentavos).toBe(300_000);
     expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(0);
+
+    // Y los $7.000 que ya había pagado quedan anotados para devolverle: esa
+    // plata está en la caja y el cliente no se llevó nada.
+    expect(r.aDevolverCentavos).toBe(700_000);
+  });
+
+  /*
+   * El hallazgo 21 de la auditoría.
+   *
+   * Antes de esto, anular una venta fiada ya cobrada en parte dejaba la deuda
+   * en cero y la plata del cliente en la caja, sin ninguna pantalla donde eso
+   * se viera. El negocio se la quedaba.
+   */
+  describe('la plata que el cliente ya había pagado', () => {
+    it('queda anotada como devolución pendiente, con la venta y el monto', async () => {
+      const venta = await fiar(2); // $10.000
+      await cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 400_000,
+        medio: 'efectivo',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: 'dev-1',
+      });
+
+      await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Se arrepintió' });
+
+      const pendientes = await devolucionesPendientes(db);
+      expect(pendientes).toHaveLength(1);
+      expect(pendientes[0]!.montoCentavos).toBe(400_000);
+      expect(pendientes[0]!.customerId).toBe(clienteId);
+      expect(pendientes[0]!.numero).toBe(venta.numero);
+
+      expect(await totalADevolver(db)).toEqual({ totalCentavos: 400_000, cuantas: 1 });
+    });
+
+    it('si no había pagado nada, no hay nada que devolver', async () => {
+      const venta = await fiar(2);
+      const r = await anularVenta(db, {
+        ventaId: venta.id,
+        usuarioId: duenioId,
+        motivo: 'Mal cargada',
+      });
+
+      expect(r.aDevolverCentavos).toBe(0);
+      expect(await devolucionesPendientes(db)).toHaveLength(0);
+    });
+
+    it('una venta de contado anulada no genera devolución: la plata ya volvió sola', async () => {
+      const venta = await confirmarVenta(db, {
+        lineas: [{ productId: vidrioId, cantidad: 1 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 500_000, monetaryAccountId: cajaId }],
+        vendedorId: duenioId,
+        cashSessionId: sesionId,
+        terminal: 'T1',
+        idempotencyKey: 'contado-anulada',
+      });
+
+      const r = await anularVenta(db, {
+        ventaId: venta.id,
+        usuarioId: duenioId,
+        motivo: 'Mal cargada',
+      });
+
+      expect(r.aDevolverCentavos).toBe(0);
+      expect(await devolucionesPendientes(db)).toHaveLength(0);
+    });
+
+    it('marcarla devuelta la saca de la lista y deja quién la cerró', async () => {
+      const venta = await fiar(2);
+      await cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 400_000,
+        medio: 'efectivo',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: 'dev-2',
+      });
+      await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Anulada' });
+
+      const [pendiente] = await devolucionesPendientes(db);
+      await marcarDevuelta(db, {
+        id: pendiente!.id,
+        usuarioId: duenioId,
+        nota: 'En efectivo, del cajón',
+      });
+
+      expect(await devolucionesPendientes(db)).toHaveLength(0);
+      expect((await totalADevolver(db)).totalCentavos).toBe(0);
+
+      // Pero no se borra: queda en el historial del cliente.
+      const historial = await historialDeDevoluciones(db, clienteId);
+      expect(historial).toHaveLength(1);
+      expect(historial[0]!.resueltoEn).not.toBeNull();
+    });
+
+    it('no se puede marcar devuelta dos veces', async () => {
+      const venta = await fiar(2);
+      await cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 400_000,
+        medio: 'efectivo',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: 'dev-3',
+      });
+      await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Anulada' });
+
+      const [pendiente] = await devolucionesPendientes(db);
+      await marcarDevuelta(db, { id: pendiente!.id, usuarioId: duenioId });
+
+      await expect(
+        marcarDevuelta(db, { id: pendiente!.id, usuarioId: duenioId }),
+      ).rejects.toBeInstanceOf(ErrorDevolucion);
+    });
+
+    it('pagó de más de lo que esta venta dejó: solo se devuelve lo de esta venta', async () => {
+      // Dos ventas fiadas de $10.000 cada una y un pago de $15.000.
+      const primera = await fiar(2, 'dos-a');
+      await fiar(2, 'dos-b');
+      await cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 1_500_000,
+        medio: 'efectivo',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: 'dev-4',
+      });
+      expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(500_000);
+
+      // Se anula la primera: se le saca lo que queda ($5.000) y los otros
+      // $5.000 de esa venta ya estaban pagados.
+      const r = await anularVenta(db, {
+        ventaId: primera.id,
+        usuarioId: duenioId,
+        motivo: 'Anulada',
+      });
+
+      expect(r.deudaBorradaCentavos).toBe(500_000);
+      expect(r.aDevolverCentavos).toBe(500_000);
+      expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(0);
+    });
   });
 });
 

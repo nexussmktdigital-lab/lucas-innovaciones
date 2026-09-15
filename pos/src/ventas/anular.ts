@@ -33,6 +33,7 @@ import {
   syncQueue,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { anotarDevolucion } from '@/fiado/devoluciones';
 
 export class ErrorAnulacion extends Error {
   constructor(
@@ -65,6 +66,16 @@ export interface VentaAnulada {
   unidadesRepuestas: number;
   /** Cuánta deuda de cuenta corriente se le sacó al cliente. */
   deudaBorradaCentavos: number;
+  /**
+   * Plata del cliente que quedó en la caja sin venta detrás.
+   *
+   * Es la parte de esta venta fiada que el cliente ya había pagado antes de que
+   * se anulara. Queda anotada como devolución pendiente: el sistema no saca el
+   * efectivo del cajón solo, pero tampoco deja que se olvide.
+   */
+  aDevolverCentavos: number;
+  /** El cliente de la venta, si tenía. Sirve para enlazar su ficha. */
+  clienteId: string | null;
 }
 
 const MOTIVO_MINIMO = 4;
@@ -267,6 +278,7 @@ export async function anularVenta(
       );
 
     let deudaBorradaCentavos = 0;
+    let aDevolverCentavos = 0;
 
     if (fiado && venta.cliente_id) {
       deudaBorradaCentavos = await descontarDeuda(tx, {
@@ -275,6 +287,20 @@ export async function anularVenta(
         usuarioId: datos.usuarioId,
         motivo: `Anulación de la venta ${venta.numero}: ${motivo}`,
       });
+
+      // Lo que no se pudo descontar es lo que el cliente ya había pagado de
+      // esta venta. Esa plata está en la caja y él no se llevó nada.
+      aDevolverCentavos = fiado.montoCentavos - deudaBorradaCentavos;
+
+      if (aDevolverCentavos > 0) {
+        await anotarDevolucion(tx, {
+          customerId: venta.cliente_id,
+          saleId: datos.ventaId,
+          montoCentavos: aDevolverCentavos,
+          motivo: `Ya había pagado esta parte de la venta ${venta.numero}, que se anuló: ${motivo}`,
+          usuarioId: datos.usuarioId,
+        });
+      }
     }
 
     // 3. La venta queda anulada, con el motivo a la vista.
@@ -303,6 +329,7 @@ export async function anularVenta(
         revertidoCentavos,
         unidadesRepuestas,
         deudaBorradaCentavos,
+        aDevolverCentavos,
       },
     });
 
@@ -313,6 +340,8 @@ export async function anularVenta(
       revertidoCentavos,
       unidadesRepuestas,
       deudaBorradaCentavos,
+      aDevolverCentavos,
+      clienteId: venta.cliente_id ?? null,
     };
   });
 }

@@ -14,6 +14,7 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
+import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
@@ -240,12 +241,14 @@ export async function anularVentaAccion(
 
     revalidatePath('/ventas');
     revalidatePath('/caja');
+    revalidatePath('/fiado');
+    revalidatePath('/clientes');
 
     return {
       ok:
         `Venta ${r.numero} anulada. Se repusieron ${r.unidadesRepuestas} ` +
         `${r.unidadesRepuestas === 1 ? 'unidad' : 'unidades'} y salieron ` +
-        `${(r.revertidoCentavos / 100).toLocaleString('es-AR')} pesos de la caja.`,
+        `${formatearARS(r.revertidoCentavos)} de la caja.`,
     };
   } catch (error) {
     if (error instanceof ErrorAnulacion) return { error: error.message };

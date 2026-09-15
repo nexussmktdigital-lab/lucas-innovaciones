@@ -18,6 +18,7 @@ import { aCentavos, ErrorDinero, formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { crearCliente, editarCliente, ErrorCliente } from '@/clientes/clientes';
 import { cobrarFiado, ErrorFiado, migrarFichaDePapel, ponerLimite } from '@/fiado/cuenta';
+import { ErrorDevolucion, marcarDevuelta } from '@/fiado/devoluciones';
 
 export interface EstadoFiado {
   error?: string;
@@ -50,6 +51,45 @@ function refrescar() {
   revalidatePath('/clientes');
   revalidatePath('/fiado');
   revalidatePath('/vender');
+  revalidatePath('/');
+}
+
+/**
+ * Marca que se le devolvió al cliente la plata que había quedado en la caja.
+ *
+ * No mueve el cajón: sacar el efectivo es un acto de una persona y puede pasar
+ * en otro turno o por otro medio del que entró. Esto cierra el recordatorio y
+ * deja quién lo cerró.
+ *
+ * Lo puede hacer el vendedor: es el que está en el mostrador cuando el cliente
+ * viene a buscar su plata, y no poder cerrarlo sería peor que el control.
+ */
+export async function marcarDevueltaAccion(
+  _previo: EstadoFiado,
+  datos: FormData,
+): Promise<EstadoFiado> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+
+  const id = String(datos.get('devolucionId') ?? '');
+  if (!z.string().uuid().safeParse(id).success) {
+    return { error: 'No se reconoce esa devolución.' };
+  }
+
+  try {
+    const d = await marcarDevuelta(db, {
+      id,
+      usuarioId: sesion.user.id,
+      nota: String(datos.get('nota') ?? '').trim() || null,
+    });
+
+    refrescar();
+    return { ok: `Anotado: se le devolvieron ${formatearARS(d.montoCentavos)}.` };
+  } catch (error) {
+    if (error instanceof ErrorDevolucion) return { error: error.message };
+    console.error('[fiado] Falló al marcar la devolución:', error);
+    return { error: 'No se pudo registrar la devolución.' };
+  }
 }
 
 export async function crearClienteAccion(
