@@ -7,6 +7,7 @@ import { marcadorDeProductoReal, type MesDeFacturacion } from '@/catalogo/calida
 import { estadoDeLaCotizacion, productosEnDolares } from '@/cotizacion/cotizacion';
 import { formatearARS, formatearUSD, usdAPesos } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
+import { chequearProduccion, pendientes, type Chequeo } from '@/lib/produccion';
 import { pendientesDeSincronizar } from '@/woo/cola';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,10 @@ export default async function PaginaInicio() {
   const enDolares = await productosEnDolares(db);
   const marcador = await marcadorDeProductoReal(db, 8);
   const cola = await pendientesDeSincronizar(db);
+
+  // Lo que se configura afuera del repositorio y falla en silencio: si falta,
+  // lo reclama la pantalla que el dueño abre todos los días.
+  const porConfigurar = esDuenio ? pendientes(chequearProduccion()) : [];
 
   const total = resumen?.total ?? 0;
 
@@ -85,6 +90,8 @@ export default async function PaginaInicio() {
           ) : null}
         </p>
       ) : null}
+
+      {porConfigurar.length > 0 ? <PorConfigurar chequeos={porConfigurar} /> : null}
 
       <Marcador meses={marcador} />
 
@@ -151,6 +158,52 @@ export default async function PaginaInicio() {
         </p>
       </section>
     </div>
+  );
+}
+
+/**
+ * Lo que quedo sin configurar afuera del repositorio.
+ *
+ * Aparece solo cuando hay algo que arreglar y desaparece cuando se arregla: un
+ * panel permanentemente verde se vuelve invisible a la semana, y este tiene que
+ * llamar la atencion el dia que aparezca.
+ */
+function PorConfigurar({ chequeos }: { chequeos: Chequeo[] }) {
+  const hayFaltantes = chequeos.some((c) => c.gravedad === 'falta');
+
+  return (
+    <section
+      aria-labelledby="configuracion"
+      className={`rounded-(--radius-caja) border p-4 ${
+        hayFaltantes
+          ? 'border-(--color-error) bg-(--color-error)/8'
+          : 'border-(--color-alerta) bg-(--color-alerta)/8'
+      }`}
+    >
+      <h2 id="configuracion" className="text-sm font-semibold">
+        {hayFaltantes ? 'Falta configurar el despliegue' : 'Avisos de configuración'}
+      </h2>
+
+      <ul className="mt-2 flex flex-col gap-3">
+        {chequeos.map((c) => (
+          <li key={c.clave} className="text-sm">
+            <p className="font-medium">
+              {c.gravedad === 'falta' ? '✕' : '!'} {c.titulo}
+            </p>
+            <p className="text-(--color-tinta-media)">{c.detalle}</p>
+            {c.arreglo ? (
+              <p className="mt-0.5 text-(--color-tinta-suave)">→ {c.arreglo}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-3 border-t border-(--color-borde) pt-2 text-xs text-(--color-tinta-suave)">
+        Esto lo ve solo el dueño y se va solo cuando queda resuelto. El paso a paso está en
+        PRODUCCION.md, y se puede verificar antes de desplegar con{' '}
+        <code>npm run produccion:chequear</code>.
+      </p>
+    </section>
   );
 }
 

@@ -139,6 +139,27 @@ test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
   }
 });
 
+test('el dueño ve lo que quedó sin configurar, y el vendedor no', async ({ page }) => {
+  // Los tests corren sin credenciales de Woo, así que el panel tiene que estar.
+  await entrarComoDuenio(page);
+  const panel = page.getByRole('region', { name: /Avisos de configuración|Falta configurar/ });
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('WOO_URL');
+  // Dice qué hacer, no solo que algo falta.
+  await expect(panel).toContainText('→');
+
+  // Al vendedor no le sirve de nada y no es asunto suyo.
+  await page.goto('/ingresar');
+  await page.getByRole('tab', { name: 'Vendedor' }).click();
+  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await page.getByLabel('PIN').fill(PIN);
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: /Avisos de configuración|Falta configurar/ }),
+  ).toHaveCount(0);
+});
+
 test('la cola de WooCommerce se puede ver y destrabar', async ({ page }) => {
   // El contador «N sin sincronizar» no servía de nada si no había forma de
   // hacer algo con ese número.
