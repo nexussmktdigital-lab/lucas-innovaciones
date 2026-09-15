@@ -157,11 +157,22 @@ export async function confirmarVenta(
       .limit(1);
 
     if (existente) {
+      // El vuelto se recalcula desde los pagos guardados. Devolver cero acá
+      // hacía que un reintento —el navegador que reenvía, la conexión que se
+      // cortó— imprimiera un ticket sin el vuelto que realmente se dio: era el
+      // hallazgo 20 de la auditoría.
+      const pagados = await tx
+        .select({ medio: salePayments.medio, montoCentavos: salePayments.montoCentavos })
+        .from(salePayments)
+        .where(eq(salePayments.saleId, existente.id));
+
+      const cobrado = calcularCobro(existente.totalCentavos, pagados);
+
       return {
         id: existente.id,
         numero: existente.numero,
         totalCentavos: existente.totalCentavos,
-        vueltoCentavos: 0,
+        vueltoCentavos: cobrado.vueltoCentavos,
         tcAplicadoCentavos: existente.tcAplicadoCentavos,
         yaExistia: true,
       };

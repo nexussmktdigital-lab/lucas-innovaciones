@@ -212,6 +212,34 @@ describe('idempotencia', () => {
     const [cuenta] = await db.select().from(monetaryAccounts).where(eq(monetaryAccounts.id, cajaId));
     expect(cuenta!.saldoCentavos).toBe(1_000_000);
   });
+
+  /*
+   * Hallazgo 20 de la auditoría: el reintento devolvía vuelto cero y el ticket
+   * salía sin el vuelto que se había dado. Se recalcula desde los pagos.
+   */
+  it('el reintento devuelve el mismo vuelto que la venta original', async () => {
+    const s = solicitud({
+      idempotencyKey: 'paga-con-un-billete-grande',
+      pagos: [{ medio: 'efectivo', montoCentavos: 1_500_000, monetaryAccountId: cajaId }],
+    });
+
+    const a = await confirmarVenta(db, s);
+    const b = await confirmarVenta(db, s);
+
+    expect(a.vueltoCentavos).toBe(500_000);
+    expect(b.yaExistia).toBe(true);
+    expect(b.vueltoCentavos).toBe(500_000);
+  });
+
+  it('el reintento de una venta sin vuelto sigue sin vuelto', async () => {
+    const s = solicitud({ idempotencyKey: 'justo' });
+
+    await confirmarVenta(db, s);
+    const b = await confirmarVenta(db, s);
+
+    expect(b.yaExistia).toBe(true);
+    expect(b.vueltoCentavos).toBe(0);
+  });
 });
 
 describe('stock', () => {
