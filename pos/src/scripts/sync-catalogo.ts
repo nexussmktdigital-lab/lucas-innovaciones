@@ -18,6 +18,7 @@ import { diagnosticar } from '@/woo/diagnostico';
 import { cotizacionDesdeWoo } from '@/woo/cotizacion';
 import { sincronizarCatalogo } from '@/woo/sincronizar';
 import { formatearARS } from '@/lib/dinero';
+import { destinoDeWoo, dondeApuntaWoo } from '@/lib/produccion';
 
 function argumento(nombre: string): string | undefined {
   const i = process.argv.indexOf(`--${nombre}`);
@@ -50,6 +51,16 @@ async function main() {
   }
 
   const cliente = ClienteWoo.desdeEntorno();
+
+  // Contra qué tienda se está hablando, siempre y antes de tocar nada: las dos
+  // se llaman igual y la de producción tiene el stock del negocio.
+  const destino = destinoDeWoo(process.env.WOO_URL);
+  console.log(`\nTienda: ${dondeApuntaWoo(process.env.WOO_URL)} (${destino})`);
+  if (destino === 'produccion') {
+    console.warn('AVISO: es la tienda de VERDAD, no el staging.\n');
+  } else {
+    console.log('');
+  }
 
   if (process.argv.includes('--verificar')) {
     const r = await cliente.verificar();
@@ -98,16 +109,16 @@ async function main() {
         console.log(`  ${tipo.padEnd(20)} ${cantidad}`);
       }
 
-      const destino = argumento('avisos');
-      if (destino) {
+      const rutaAvisos = argumento('avisos');
+      if (rutaAvisos) {
         const csv = [
           'woo_id,nombre,tipo,detalle',
           ...informe.avisos.map(
             (a) => `${a.wooId},"${a.nombre.replace(/"/g, '""')}",${a.tipo},"${a.detalle.replace(/"/g, '""')}"`,
           ),
         ].join('\n');
-        await writeFile(destino, csv, 'utf8');
-        console.log(`\nAvisos guardados en ${destino}`);
+        await writeFile(rutaAvisos, csv, 'utf8');
+        console.log(`\nAvisos guardados en ${rutaAvisos}`);
       } else {
         console.log('\nPara el detalle: npm run woo:sync -- --avisos avisos.csv');
       }

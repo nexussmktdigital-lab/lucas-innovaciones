@@ -50,9 +50,14 @@ interface VariacionSemilla {
   stock: number;
 }
 
+/**
+ * El stock va holgado a propósito: el test de variaciones vende una unidad cada
+ * vez que corre y la base de desarrollo no se vacía entre corridas. Con stock 1
+ * la suite pasaba una sola vez y después fallaba sin motivo aparente.
+ */
 const VARIACIONES: VariacionSemilla[] = [
-  { wooIdPadre: 7100, wooId: 71001, sku: 'A17-128', nombre: '128GB', precio: 410000, stock: 2 },
-  { wooIdPadre: 7100, wooId: 71002, sku: 'A17-256', nombre: '256GB', precio: 550000, stock: 1 },
+  { wooIdPadre: 7100, wooId: 71001, sku: 'A17-128', nombre: '128GB', precio: 410000, stock: 20 },
+  { wooIdPadre: 7100, wooId: 71002, sku: 'A17-256', nombre: '256GB', precio: 550000, stock: 20 },
 ];
 
 /** Muestra real del catálogo: los de mayor rotación de los últimos 12 meses. */
