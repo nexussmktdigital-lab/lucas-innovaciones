@@ -26,6 +26,11 @@ export const CAMPOS: Record<TipoDeMensaje, { campo: string; ejemplo: string; que
     { campo: 'total', ejemplo: '$ 306.000,00', que: 'Total de la compra' },
     { campo: 'detalle', ejemplo: 'iPhone 11 64GB', que: 'Qué se llevó' },
     { campo: 'fecha', ejemplo: '12/09/2026', que: 'Fecha de la compra' },
+    {
+      campo: 'fiado',
+      ejemplo: 'Quedaste debiendo $ 7.000,00 de esta compra.',
+      que: 'Si se llevó algo fiado, lo dice. Si pagó todo, no sale nada',
+    },
   ],
   recordatorio_fiado: [
     { campo: 'cliente', ejemplo: 'Gaby', que: 'Nombre de pila del cliente' },
@@ -49,7 +54,8 @@ export const PLANTILLAS_POR_DEFECTO: Record<TipoDeMensaje, string> = {
     'Hola {cliente}! Gracias por tu compra en {local} 🙌\n\n' +
     'Comprobante {numero} del {fecha}\n' +
     '{detalle}\n' +
-    'Total: {total}\n\n' +
+    'Total: {total}\n' +
+    '{fiado}\n\n' +
     'Cualquier cosa escribinos por acá.',
   recordatorio_fiado:
     'Hola {cliente}, ¿cómo andás? Te escribo de {local}.\n\n' +
@@ -59,6 +65,27 @@ export const PLANTILLAS_POR_DEFECTO: Record<TipoDeMensaje, string> = {
 };
 
 export const LARGO_MAXIMO = 1500;
+
+/**
+ * Cuantos renglones de detalle entran antes de resumir.
+ *
+ * No es capricho: el texto viaja dentro de la URL de `wa.me` y algunos clientes
+ * de WhatsApp truncan pasados los 2.000 caracteres. Una venta de doce
+ * accesorios es rara pero existe, y es justo la que llegaria cortada.
+ */
+export const RENGLONES_MAXIMOS = 12;
+
+/** Recorta un detalle largo dejando dicho cuantos productos quedaron afuera. */
+export function acortarDetalle(detalle: string, maximo = RENGLONES_MAXIMOS): string {
+  const renglones = detalle.split('\n').filter((r) => r.trim().length > 0);
+  if (renglones.length <= maximo) return detalle;
+
+  const sobran = renglones.length - maximo;
+  return [
+    ...renglones.slice(0, maximo),
+    `y ${sobran} ${sobran === 1 ? 'producto más' : 'productos más'}`,
+  ].join('\n');
+}
 
 export class ErrorPlantilla extends Error {}
 

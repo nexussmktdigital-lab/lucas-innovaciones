@@ -7,11 +7,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  acortarDetalle,
   camposUsados,
   ErrorPlantilla,
   LARGO_MAXIMO,
   nombreDePila,
   PLANTILLAS_POR_DEFECTO,
+  RENGLONES_MAXIMOS,
   renderizar,
   validarPlantilla,
 } from './plantillas';
@@ -93,6 +95,77 @@ describe('renderizar', () => {
       detalle: '2 × Vidrio templado\nCargador tipo C',
     });
     expect(texto).toBe('Llevaste:\n2 × Vidrio templado\nCargador tipo C\nGracias');
+  });
+});
+
+describe('acortar el detalle', () => {
+  /*
+   * El texto viaja dentro de la URL de wa.me y algunos clientes truncan pasados
+   * los 2.000 caracteres. Una venta de muchos accesorios es rara pero existe, y
+   * es justo la que llegaría cortada por la mitad.
+   */
+  it('una venta corta queda tal cual', () => {
+    const detalle = 'Vidrio templado\n2 × Funda común';
+    expect(acortarDetalle(detalle)).toBe(detalle);
+  });
+
+  it('una venta larga se resume diciendo cuántos quedaron afuera', () => {
+    const detalle = Array.from({ length: 20 }, (_, i) => `Producto ${i + 1}`).join('\n');
+    const corto = acortarDetalle(detalle);
+
+    expect(corto.split('\n')).toHaveLength(RENGLONES_MAXIMOS + 1);
+    expect(corto).toContain('Producto 12');
+    expect(corto).not.toContain('Producto 13');
+    expect(corto).toContain('y 8 productos más');
+  });
+
+  it('cuando sobra uno solo, lo dice en singular', () => {
+    const detalle = Array.from({ length: 13 }, (_, i) => `Producto ${i + 1}`).join('\n');
+    expect(acortarDetalle(detalle)).toContain('y 1 producto más');
+  });
+
+  it('justo en el tope no se toca', () => {
+    const detalle = Array.from({ length: RENGLONES_MAXIMOS }, (_, i) => `P${i}`).join('\n');
+    expect(acortarDetalle(detalle)).toBe(detalle);
+  });
+});
+
+describe('el campo de fiado', () => {
+  it('está declarado en el comprobante y la plantilla de fábrica lo usa', () => {
+    expect(camposUsados(PLANTILLAS_POR_DEFECTO.comprobante)).toContain('fiado');
+    expect(() =>
+      validarPlantilla('comprobante', PLANTILLAS_POR_DEFECTO.comprobante),
+    ).not.toThrow();
+  });
+
+  it('en una venta pagada al contado no deja renglón vacío', () => {
+    const texto = renderizar(PLANTILLAS_POR_DEFECTO.comprobante, {
+      cliente: 'Gaby',
+      local: 'Lucas Innovaciones',
+      numero: 'T1-000123',
+      total: '$ 12.000,00',
+      detalle: 'Hidrogel premium',
+      fecha: '15/09/2026',
+      fiado: null,
+    });
+
+    expect(texto).not.toContain('debiendo');
+    expect(texto).not.toMatch(/\n{3,}/);
+    expect(texto).toContain('Total: $ 12.000,00\n\nCualquier cosa');
+  });
+
+  it('en una venta fiada lo dice', () => {
+    const texto = renderizar(PLANTILLAS_POR_DEFECTO.comprobante, {
+      cliente: 'Gaby',
+      local: 'Lucas Innovaciones',
+      numero: 'T1-000123',
+      total: '$ 12.000,00',
+      detalle: 'Hidrogel premium',
+      fecha: '15/09/2026',
+      fiado: 'Quedaste debiendo $ 7.000,00 de esta compra.',
+    });
+
+    expect(texto).toContain('Quedaste debiendo $ 7.000,00 de esta compra.');
   });
 });
 

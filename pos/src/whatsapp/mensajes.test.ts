@@ -154,6 +154,55 @@ describe('comprobante', () => {
   it('sin ventas no consulta nada', async () => {
     expect((await armarComprobantes(db, [])).size).toBe(0);
   });
+
+  /*
+   * Hallazgo 23 de la auditoría: el comprobante de una venta fiada decía
+   * «gracias por tu compra» y el total, sin mencionar que el cliente quedaba
+   * debiendo. Es el papel que se guarda para discutir después.
+   */
+  it('una venta fiada avisa en el mensaje cuánto quedó debiendo', async () => {
+    const v = await vender(conTelefono, { fiado: true });
+    const p = await armarComprobante(db, v.id);
+
+    expect(p.listo).toBe(true);
+    if (!p.listo) return;
+    expect(p.mensaje.texto).toContain(`Quedaste debiendo ${formatearARS(1_000_000)}`);
+  });
+
+  it('una venta al contado no menciona ninguna deuda', async () => {
+    const v = await vender(conTelefono);
+    const p = await armarComprobante(db, v.id);
+
+    if (!p.listo) throw new Error('debería estar listo');
+    expect(p.mensaje.texto).not.toContain('debiendo');
+  });
+
+  it('una venta de muchos productos no manda una URL interminable', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const [p] = await db
+        .insert(products)
+        .values({ nombre: `Accesorio número ${i}`, precioCentavos: 100_00, stock: 50 })
+        .returning();
+      ids.push(p!.id);
+    }
+
+    const v = await confirmarVenta(db, {
+      lineas: ids.map((id) => ({ productId: id, cantidad: 1 })),
+      pagos: [{ medio: 'efectivo', montoCentavos: 250_000, monetaryAccountId: cajaId }],
+      clienteId: conTelefono,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: 'muchos',
+    });
+
+    const p = await armarComprobante(db, v.id);
+    if (!p.listo) throw new Error('debería estar listo');
+
+    expect(p.mensaje.texto).toContain('productos más');
+    expect(p.mensaje.enlace.length).toBeLessThan(2000);
+  });
 });
 
 describe('recordatorio de deuda', () => {

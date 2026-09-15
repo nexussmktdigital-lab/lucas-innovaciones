@@ -23,7 +23,7 @@ import { formatearFecha } from '@/lib/fecha';
 import { NEGOCIO_POR_DEFECTO } from '@/ventas/ticket';
 import { ajustesDeWhatsApp, type AjustesDeWhatsApp } from './config';
 import { enlaceDeWhatsApp } from './enlace';
-import { nombreDePila, renderizar, type TipoDeMensaje } from './plantillas';
+import { acortarDetalle, nombreDePila, renderizar, type TipoDeMensaje } from './plantillas';
 
 export interface MensajePreparado {
   tipo: TipoDeMensaje;
@@ -78,6 +78,7 @@ interface FilaVenta {
   nombre: string | null;
   telefono: string | null;
   detalle: string | null;
+  fiado_centavos: string | number | null;
 }
 
 function ventasParaComprobante(db: BaseDatos, ventaIds: string[]) {
@@ -89,7 +90,10 @@ function ventasParaComprobante(db: BaseDatos, ventaIds: string[]) {
                           THEN i.cantidad || ' × ' || i.descripcion
                           ELSE i.descripcion END,
                      chr(10) ORDER BY i.descripcion)
-              FROM sale_items i WHERE i.sale_id = s.id) AS detalle
+              FROM sale_items i WHERE i.sale_id = s.id) AS detalle,
+           (SELECT COALESCE(SUM(p.monto_centavos), 0)
+              FROM sale_payments p
+             WHERE p.sale_id = s.id AND p.medio = 'cuenta_corriente') AS fiado_centavos
       FROM sales s
       LEFT JOIN customers c ON c.id = s.cliente_id
      WHERE s.id IN (${sql.join(
@@ -118,13 +122,21 @@ function comprobanteDe(v: FilaVenta, cfg: AjustesDeWhatsApp): Preparacion {
     };
   }
 
+  // Lo que se llevó fiado se dice en el mensaje: es el comprobante que el
+  // cliente guarda, y «gracias por tu compra» a secas esconde una deuda.
+  const fiadoCentavos = Number(v.fiado_centavos ?? 0);
+
   const texto = renderizar(cfg.comprobante, {
     cliente: nombreDePila(v.nombre),
     local: NEGOCIO_POR_DEFECTO.nombre,
     numero: v.numero,
     total: formatearARS(Number(v.total_centavos)),
-    detalle: v.detalle,
+    detalle: v.detalle === null ? null : acortarDetalle(v.detalle),
     fecha: formatearFecha(new Date(v.fecha)),
+    fiado:
+      fiadoCentavos > 0
+        ? `Quedaste debiendo ${formatearARS(fiadoCentavos)} de esta compra.`
+        : null,
   });
 
   return {

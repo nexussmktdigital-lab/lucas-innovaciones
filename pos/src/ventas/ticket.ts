@@ -139,6 +139,23 @@ export function generarTicket(
       ? `<div class="fila fuerte"><span>Vuelto</span><span class="monto">${escapar(formatearARS(datos.vueltoCentavos))}</span></div>`
       : '';
 
+  /*
+   * Lo que se llevó fiado, dicho con todas las letras.
+   *
+   * «Cuenta corriente $7.000» entre los medios de pago es correcto y no alcanza:
+   * este es el papel que el cliente guarda y con el que se discute después. Va
+   * el monto de ESTA compra y no el saldo total, que cambia con el tiempo y
+   * volvería mentiroso a un comprobante reimpreso el mes que viene.
+   */
+  const fiadoCentavos = datos.pagos
+    .filter((p) => p.medio === 'cuenta_corriente')
+    .reduce((n, p) => n + p.montoCentavos, 0);
+
+  const fiado =
+    fiadoCentavos > 0
+      ? `<div class="fila fuerte aviso"><span>Queda debiendo de esta compra</span><span class="monto">${escapar(formatearARS(fiadoCentavos))}</span></div>`
+      : '';
+
   const descuento =
     datos.descuentoCentavos > 0
       ? `<div class="fila"><span>Descuento</span><span class="monto">−${escapar(formatearARS(datos.descuentoCentavos))}</span></div>`
@@ -182,6 +199,9 @@ export function generarTicket(
   .fila { display: flex; justify-content: space-between; gap: 2mm; }
   .monto { white-space: nowrap; font-variant-numeric: tabular-nums; }
   .fuerte { font-weight: 700; }
+  /* La térmica imprime en blanco y negro: el aviso se marca con un recuadro,
+     no con color. */
+  .aviso { border: 1px solid #000; padding: 1mm; margin-top: 1mm; }
 
   .total {
     font-size: ${ancho === 58 ? '14px' : '17px'};
@@ -234,6 +254,7 @@ export function generarTicket(
 
   ${pagos}
   ${vuelto}
+  ${fiado}
 
   ${datos.nota ? `<hr><div class="chico">${escapar(datos.nota)}</div>` : ''}
 

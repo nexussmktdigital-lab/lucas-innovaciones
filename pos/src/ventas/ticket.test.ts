@@ -126,3 +126,31 @@ describe('nombreDelMedio', () => {
     expect(nombreDelMedio('cripto')).toBe('cripto');
   });
 });
+
+/*
+ * El comprobante de una venta fiada.
+ *
+ * «Cuenta corriente $7.000» entre los medios es correcto y no alcanza: este es
+ * el papel que el cliente guarda y con el que se discute después.
+ */
+describe('venta fiada', () => {
+  it('dice con todas las letras cuánto queda debiendo', () => {
+    const t = txt(
+      generarTicket({
+        ...BASE,
+        pagos: [
+          { medio: 'efectivo', montoCentavos: 300_000 },
+          { medio: 'cuenta_corriente', montoCentavos: 700_000 },
+        ],
+      }),
+    );
+
+    expect(t).toContain('Queda debiendo de esta compra');
+    expect(t).toContain('$ 7.000,00');
+  });
+
+  it('una venta pagada al contado no lo menciona', () => {
+    expect(generarTicket(BASE)).not.toContain('Queda debiendo');
+  });
+});
+
