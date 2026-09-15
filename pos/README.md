@@ -321,6 +321,54 @@ cuenta de negocio, sus plantillas aprobadas y su costo por conversación.
 
 ---
 
+## Gastos y cuentas monetarias
+
+Hasta la fase 6 el POS sabía todo lo que entraba y **nada de lo que salía**, así
+que el arqueo cerraba de casualidad: el alquiler, el flete y lo que se le paga
+al técnico salen del mismo cajón que las ventas, y si no se registran el conteo
+de la noche siempre da de menos y nadie sabe por qué.
+
+En **Gastos** (`F6`, solo el dueño) se carga lo que se paga, con su categoría, a
+quién y de qué cuenta salió. Tres reglas, todas en la transacción:
+
+- **Un gasto pagado mueve plata en el mismo momento en que se registra.** Sale
+  de una cuenta concreta y, si esa cuenta es el cajón del turno, el arqueo lo
+  descuenta y lo muestra como salida. No hay gasto pagado sin cuenta: lo impide
+  la restricción `expenses_pagado_ck` en la base, no solo el formulario.
+- **Un gasto pendiente no mueve nada.** Es una factura que llegó y todavía no se
+  pagó. Aparece en «falta pagar» con su vencimiento, y si se pasa de fecha lo
+  reclama la pantalla de inicio. Al pagarlo recién ahí sale la plata.
+- **Anular es poner el asiento contrario, no borrar.** La plata vuelve a la
+  cuenta de donde salió y el gasto queda anulado con el motivo, igual que una
+  venta (D29). Un gasto cargado y anulado en el mismo turno deja el arqueo como
+  estaba: las salidas van netas de anulación.
+
+### Dónde está la plata
+
+En **Cuentas** (solo el dueño) están los saldos del cajón, el banco y Mercado
+Pago, con el extracto de cada uno y el saldo que quedaba después de cada
+movimiento.
+
+Ahí también se pasa plata de una cuenta a otra, que es lo que pasa al depositar
+la recaudación: **la plata no entra ni sale del negocio, cambia de lugar**. Van
+dos asientos en la misma transacción, uno por cuenta, así que el total no se
+mueve; si se registrara uno solo, el negocio parecería haber ganado o perdido
+plata sin vender ni gastar nada. Si sale del cajón, el arqueo del turno la
+descuenta.
+
+El saldo de cada cuenta es una caché de la suma de sus movimientos. Si alguna
+vez se despegan, la pantalla lo dice en rojo y **manda el movimiento**.
+
+### Lo que no hace todavía
+
+Una compra a proveedores se registra como lo que es del lado de la plata, pero
+**no ingresa stock**: el ingreso de mercadería no existe en ninguna parte del
+POS —el stock viene de WooCommerce— y es su propia funcionalidad. El esquema ya
+tiene la tabla (`expense_items`) para cuando llegue. Los gastos recurrentes
+(`recurring_expenses`) tampoco se generan solos todavía.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -486,6 +534,14 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un cobro de fiado figura como plata que entró; lo fiado, no | `src/caja/sesion.test.ts` |
 | El comprobante de una venta fiada dice cuánto queda debiendo | `src/ventas/ticket.test.ts`, `src/whatsapp/mensajes.test.ts` |
 | Una venta de 25 accesorios no manda una URL que WhatsApp trunque | `src/whatsapp/mensajes.test.ts` |
+| Un gasto pagado sin cuenta lo rechaza la base, no solo el formulario | `src/gastos/gastos.test.ts` |
+| Un gasto en efectivo baja el efectivo esperado del arqueo | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| Un gasto pendiente no mueve un peso hasta que se paga | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| Anular un gasto devuelve la plata y deja el arqueo como estaba | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| Una transferencia entre cuentas no cambia el total del negocio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| No se transfiere más de lo que hay en la cuenta | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| El saldo guardado de cada cuenta coincide con sus movimientos | `src/gastos/gastos.test.ts` |
+| El vendedor no ve gastos ni cuentas, ni por URL | `e2e/gastos.spec.ts` |
 | Una vista previa de Vercel no se toma por producción, aunque `NODE_ENV` lo diga | `src/lib/produccion.test.ts` |
 | El staging se reconoce por ruta y por subdominio, y un dominio que empieza con «dev» no lo es | `src/lib/produccion.test.ts` |
 | Sin `CRON_SECRET` en producción el POS lo reclama; en desarrollo no molesta | `src/lib/produccion.test.ts` |
@@ -539,6 +595,8 @@ src/
       fiado/      Quién debe, cuánto y cobro a cuenta
       clientes/   Fichero y ficha con movimientos
       mensajes/   Textos de WhatsApp y lo que ya se preparó
+      gastos/     Lo que sale: cargar, pagar y anular
+      cuentas/    Saldos, extractos y transferencias
     ingresar/     Pantalla de ingreso
     ticket/       Comprobante imprimible
     api/          Buscador, Auth.js y webhooks de WooCommerce
@@ -551,6 +609,7 @@ src/
   ventas/         Carrito, buscador, confirmación de venta y ticket
   whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
   fiado/          Cuenta corriente y devoluciones pendientes
+  gastos/         Gastos, cuentas monetarias y transferencias
   woo/            Cliente REST, mapeo, sincronización, cola, webhooks
   scripts/        Comandos de consola
 drizzle/          Migraciones SQL versionadas
@@ -608,8 +667,8 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 3.7 | Lo que faltaba para producción: cola destrabable y programada, montos inmutables, el webhook deja de pisar el stock | **Hecha** |
 | 4 | Clientes y fiado, con la migración de las fichas de papel | **Hecha** |
 | 5 | WhatsApp: comprobantes y recordatorios | **Hecha** |
-| 6 | Gastos y cuentas monetarias | Siguiente |
-| 7 | Caja completa: arqueo y cierre | |
+| 6 | Gastos y cuentas monetarias | **Hecha** |
+| 7 | Caja completa: arqueo y cierre | Siguiente |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | |
 | 9 | Reportes y exportación | |
 | 10 | Devoluciones de turnos cerrados y migración del histórico | |
