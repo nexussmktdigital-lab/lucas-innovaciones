@@ -21,8 +21,26 @@ import { drenarCola, pendientesDeSincronizar } from '@/woo/cola';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Cuanto se le permite tardar a esta ruta.
+ *
+ * Sin esto corre con el limite por defecto de la plataforma —diez segundos en
+ * el plan Hobby— y una sola operacion contra un WooCommerce lento se lo come
+ * entero: la funcion muere a la mitad, cada diez minutos, sin que nadie se
+ * entere de que la cola no avanza.
+ */
+export const maxDuration = 60;
+
 /** Cuantas operaciones por corrida. Con el cron cada 10 minutos, sobra. */
 const TOPE = 50;
+
+/**
+ * Cuanto tiempo se le da al drenaje, dejando margen antes del corte duro.
+ *
+ * Lo que no entra queda en la cola y lo levanta la corrida siguiente. Cortar a
+ * tiempo y avisarlo es mejor que que la plataforma mate la funcion.
+ */
+const PRESUPUESTO_MS = 45_000;
 
 function autorizado(request: Request): boolean {
   const secreto = process.env.CRON_SECRET;
@@ -46,7 +64,10 @@ export async function GET(request: Request) {
 
   try {
     const cliente = ClienteWoo.desdeEntorno();
-    const informe = await drenarCola(db, cliente, { tope: TOPE });
+    const informe = await drenarCola(db, cliente, {
+      tope: TOPE,
+      presupuestoMs: PRESUPUESTO_MS,
+    });
     const cola = await pendientesDeSincronizar(db);
 
     return NextResponse.json({ ok: true, ...informe, cola });

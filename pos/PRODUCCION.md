@@ -144,6 +144,69 @@ siguiente.
 
 ---
 
+---
+
+## 4. Migraciones: primero la base, después el código
+
+Las migraciones **no corren solas al desplegar**, y es a propósito: una
+construcción en Vercel no tendría por qué poder escribir en la base de
+producción, y una vista previa terminaría migrándola sin que nadie lo pida.
+
+La contrapartida es que se puede desplegar código que espera una columna que
+todavía no existe. En el mostrador eso se ve como una pantalla rota sin
+explicación, que es la peor forma de enterarse.
+
+El orden es siempre el mismo:
+
+```bash
+npm run db:migrate                                          # 1. la base
+npm run produccion:chequear -- --env .env.produccion --produccion   # 2. confirmar
+git push                                                     # 3. el código
+```
+
+El chequeo compara las migraciones que el código trae contra las que la base
+tiene aplicadas y **falla si falta alguna**, así que alcanza con correrlo antes
+de cada despliegue. Cada migración va en su propia transacción: si una falla a
+la mitad, no queda nada aplicado y se puede volver a correr.
+
+---
+
+## 5. Si se pierde la base
+
+La base **es** el negocio: las ventas, la caja, el fiado y la bitácora viven
+solo ahí. El catálogo se puede volver a traer de WooCommerce con
+`npm run woo:sync`; lo demás, no.
+
+**Antes de abrir el local con esto, hay que saber dos cosas:**
+
+1. **Cuánto historial guarda el proveedor.** Neon guarda un historial de cambios
+   que permite abrir una copia de la base «como estaba» en un momento anterior.
+   En el plan gratuito son **24 horas**; en los planes pagos, más. Veinticuatro
+   horas alcanzan para el error de un rato, no para el que se descubre el lunes.
+2. **Cómo se restaura, probado una vez.** Un respaldo que nunca se restauró no
+   es un respaldo. La forma de probarlo sin tocar producción es crear una rama
+   de la base en el momento de ayer, apuntarle un `DATABASE_URL` local y ver que
+   el POS levante y los números estén.
+
+**Una copia que no depende del proveedor**, para tener el día anterior en un
+archivo propio:
+
+```bash
+pg_dump "$DATABASE_URL" --no-owner --format=custom --file=pos-$(date +%F).dump
+```
+
+Son unos pocos megabytes al año. Guardarla fuera del proveedor —la misma nube
+donde ya se guardan las fotos del local alcanza— cubre el caso que el historial
+de Neon no cubre: que se pierda la cuenta, no la base.
+
+**Volver atrás el código** es aparte y es fácil: Vercel guarda cada despliegue y
+se vuelve al anterior desde su panel, en segundos. Lo que no se vuelve atrás así
+es una migración: si un despliegue agregó una columna, volver al código anterior
+funciona igual, porque una columna de más no molesta a nadie. **Por eso las
+migraciones nunca borran ni renombran**: agregan.
+
+---
+
 ## Lista final
 
 Antes de que el mostrador empiece a usarlo:
@@ -162,5 +225,7 @@ Antes de que el mostrador empiece a usarlo:
 - [ ] El POS agregado a la pantalla de inicio de la tablet, y probado a pantalla completa
 - [ ] Probado un corte de verdad: modo avión, una venta, y que entre sola al volver
 - [ ] `npm run auditar` contra la base de producción, con los diecinueve invariantes dando
+- [ ] Una restauración probada de verdad: abrir la base de ayer y ver que el POS levante
+- [ ] Sabido cuánto historial guarda el plan de Neon que se está pagando
 - [ ] `curl https://<dominio>/manifest.webmanifest` devuelve el JSON y no un redirect
       al login: si redirige, el POS no se puede instalar en la tablet

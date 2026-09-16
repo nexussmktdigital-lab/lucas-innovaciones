@@ -496,7 +496,7 @@ el 25. La fase 7 cerró el 14 y el 20. Quedan cuatro, todos menores:
 |---|---|---|
 | 14 | *(cerrado en la fase 7: la justificación va en el cuerpo del reporte y de la lista de cierres)* | — |
 | 15 | *(absorbido por el 22, cerrado)* | — |
-| 16 | `npm run lint` no está configurado | Cuando se arme la integración continua |
+| 16 | *(corregido en la cuarta pasada, hallazgo 52)* | — |
 | 17 | El vendedor que topa con un precio sospechoso no sabe qué hacer | Cuando se haga el PIN del dueño en pantalla |
 | 18 | Inicio dice que sincronizó cuando el seed nunca sincronizó | Cualquier momento |
 | 19 | «Sin ningún problema: 0%» en Calidad del catálogo | Cualquier momento |
@@ -698,8 +698,8 @@ Ahora el título lo dice.
 | # | Qué | Por qué se deja | Cuándo conviene |
 |---|---|---|---|
 | 37 | El precio de mostrador de un producto nacido en el POS queda fijo para siempre: `precioLocalCentavos` se escribe siempre en el alta, así que los cambios de precio en WooCommerce no llegan nunca al mostrador. Dos productos vecinos se comportan al revés y nada en pantalla lo explica | Es una decisión de producto, no un error: hay que definir si el precio del alta es una fijación deliberada o solo el valor inicial | Con la próxima pasada sobre precios |
-| 38 | La importación corre en una acción de servidor y una planilla de 500 renglones sobre un catálogo grande puede pasarse del tiempo de la plataforma. Se midió 4 ms por renglón con 229 productos y se sacó la lectura de SKU del bucle, pero no se probó contra 800 | Falta un catálogo real para medirlo. El riesgo está acotado: si corta, los productos creados quedan y reintentar los marca como repetidos | Antes del primer despliegue con el catálogo entero |
-| 39 | El stock de la planilla se lee con `replace('.', '')`: una planilla en inglés con `1.5` unidades entra como 15 | El precio se parsea con cuidado y el stock no; hay que darle el mismo trato | Cualquier momento |
+| 38 | *(cerrado en la quinta pasada: medido contra 835 productos, 26 ms para 500 renglones)* | — |
+| 39 | *(corregido en la cuarta pasada, hallazgo 53)* | — |
 | 40 | No hay tope al período que se exporta: `desde=1970` arma la tabla entera en memoria | Es del dueño y autenticado, así que es un pie de plomo, no un ataque | Cualquier momento |
 
 ## Lo que se revisó y está bien
@@ -938,3 +938,133 @@ Además de los hallazgos 17, 18, 19, 37, 38, 40 y 44 a 47, que siguen en pie:
 |---|---|---|---|
 | 54 | Una devolución que descuenta deuda mueve el saldo de la cuenta corriente sin dejar asiento en la bitácora de `credit_accounts`. El dato está —la devolución lo guarda entero— pero la cadena de esa cuenta tiene un hueco | Reconstruir la deuda de un cliente hoy necesita mirar dos lugares en vez de uno. No hay plata mal contada: el invariante de deuda da | Cuando se arme la pantalla de «movimientos de la cuenta» |
 | 55 | La sesión dura doce horas. Un turno que arranca a las nueve y sigue a las diez de la noche obliga a volver a entrar en el medio | Volver a entrar es un PIN. Alargarla es aflojar la única barrera que tiene la tablet del mostrador | Si en la práctica molesta |
+
+---
+
+# Quinta pasada — cómo se comporta en producción
+
+La cuarta pasada miró los datos y la superficie expuesta. Esta mira lo otro:
+**a qué velocidad anda con el catálogo de verdad, cómo falla, y qué pasa en
+Vercel con Neon** — que es donde va a vivir, no en esta máquina.
+
+**Cuatro hallazgos, los cuatro corregidos.** Dos son de concurrencia, uno es lo
+que ve el mostrador cuando algo se rompe, y el último no es código.
+
+## A escala real no hay problema
+
+Se cargó el tamaño del catálogo de verdad —803 productos, 600 variaciones, 3.764
+pedidos históricos— y se midió lo que se usa todos los días:
+
+| Qué | Cuánto tarda |
+|---|---|
+| Buscar en el mostrador, cualquier término | **4 a 6 ms** |
+| Bajar el catálogo entero a la tablet | **7 ms**, 836 renglones, 392 kB |
+| Cualquier panel de Reportes | **0 a 3 ms** |
+| Revisar una planilla de 500 renglones contra el catálogo entero | **26 ms** |
+
+Eso cierra el hallazgo 38, que estaba abierto justamente por no haberlo medido:
+la importación entra mil veces en el tiempo de cualquier plataforma.
+
+## Dos corridas al mismo tiempo
+
+### 56. La cola se drenaba sin candado *(corregido)*
+
+`drenarCola` leía las operaciones pendientes con un `SELECT` suelto y después
+las procesaba. El drenaje corre desde dos lados —después de cada venta y cada
+diez minutos por la tarea programada— así que dos corridas simultáneas se
+llevaban las mismas filas.
+
+Para el ajuste de stock daba igual, y no por suerte: lo que se le escribe a Woo
+es el stock **absoluto** que el POS tiene ahora, así que escribirlo dos veces
+escribe el mismo número. Es la decisión de diseño de la fase 1 pagando sola.
+
+Pero **publicar un producto no es idempotente**. La guarda de `publicarProducto`
+es un `if (wooId === null)` leído antes del `POST`: las dos corridas la pasan y
+el producto queda **creado dos veces en la tienda online**.
+
+Ahora las operaciones se toman con un `UPDATE … SET estado = 'procesando' …
+FOR UPDATE SKIP LOCKED` antes de procesarlas. De paso, el estado `procesando`
+—que estaba en el esquema desde la fase 1 y no lo usaba nadie— pasa a significar
+algo, y una fila que quedó tomada por un proceso que ya no existe se retoma a
+los cinco minutos.
+
+El test comprueba lo que importa: que la fila esté en `procesando` **mientras**
+se la está procesando, mirándolo desde adentro del cliente de Woo. Un
+`Promise.all` de dos drenajes no habría probado nada, porque la base de los
+tests corre sobre una sola conexión y los serializa: pasaba igual sin el
+candado. Se verificó que los dos tests fallan si se saca el arreglo.
+
+### 57. El drenaje programado no entraba en el tiempo de la plataforma *(corregido)*
+
+La tarea programada drenaba hasta **50 operaciones** por corrida. Cada una son
+un `GET` y un `PUT` contra WooCommerce, que corre en un hosting compartido, y
+con el timeout de 20 s y tres reintentos del cliente **una sola puede tardar un
+minuto**. `vercel.json` no fijaba ningún `maxDuration`, así que la ruta corría
+con el límite por defecto —diez segundos en el plan Hobby— y con Woo lento la
+función moría a la mitad cada diez minutos sin que nadie se enterara de que la
+cola no avanzaba.
+
+Ahora el drenaje lleva **presupuesto de tiempo**: hace lo que entra, devuelve a
+la cola lo que tomó y no llegó a procesar, y lo informa. Es una cola: no hace
+falta vaciarla de un saque, hace falta que nunca se trabe. La ruta declara
+`maxDuration = 60` y usa 45 s de presupuesto; el drenaje que corre pegado a una
+venta usa 8 s, porque que el mostrador espere por WooCommerce es exactamente lo
+que la cola existe para evitar.
+
+## Lo que ve el mostrador cuando algo se rompe
+
+### 58. No había ninguna pantalla de error *(corregido)*
+
+Ni `error.tsx`, ni `global-error.tsx`, ni `not-found.tsx`. Cuando algo fallaba
+—la base que no responde, que es el caso real— aparecía la pantalla de Next: un
+fondo blanco que dice `Application error: a server-side exception has occurred`,
+en inglés, con un código y nada más. Es literalmente lo que pasó en la fase 9 y
+lo que va a pasar el día que Neon tenga un mal rato.
+
+A las siete de la tarde, con un cliente esperando, eso no contesta ninguna de
+las tres preguntas que importan. Las tres están ahora en la pantalla, en este
+orden:
+
+1. **Si se movió plata.** Es lo primero que uno piensa, y la respuesta es que
+   no: una pantalla que no carga no cobró nada, porque todo lo que toca plata
+   pasa por una transacción que entra completa o no entra.
+2. **Qué hacer.** Reintentar, y si no, seguir vendiendo.
+3. **Qué decirle a quien lo arregla**, con el código del registro.
+
+Se probó de verdad: se apagó PostgreSQL con el POS andando y se miró la pantalla
+en el navegador, desde afuera y desde adentro de la sesión. La de adentro
+conserva la navegación, así que quien atiende puede irse a otra pantalla.
+
+## Lo que no es código
+
+### 59. No había nada escrito sobre migraciones ni sobre respaldos *(corregido)*
+
+Dos huecos operativos que no se ven leyendo el código:
+
+**Las migraciones no corren solas al desplegar**, y está bien que así sea —una
+construcción en Vercel no tendría por qué escribir en la base de producción, y
+una vista previa terminaría migrándola— pero eso significa que se puede
+desplegar código que espera una columna que todavía no existe. Ahora
+`npm run produccion:chequear` compara las migraciones que el código trae contra
+las que la base tiene y **falla si falta alguna**, con el paso a correr. Se
+verificó borrando una del registro: la detecta por nombre.
+
+**Y no había una sola línea sobre respaldos.** La base *es* el negocio: el
+catálogo se puede volver a traer de WooCommerce, las ventas y el fiado no.
+`PRODUCCION.md` ahora dice cuánto historial guarda cada plan de Neon, cómo
+sacar una copia propia con `pg_dump`, y por qué volver atrás el código es fácil
+y volver atrás una migración no hace falta: las migraciones agregan, nunca
+borran ni renombran.
+
+## Lo que se revisó y está bien
+
+- **La conexión para un entorno sin servidor**: `max: 5` y `prepare: false`, que
+  es lo que pide el agrupador de conexiones de Neon. Se abre perezosamente, así
+  que la construcción no falla por no tener variables de entorno.
+- **El ajuste de stock hacia Woo es idempotente por diseño** y encima lee el
+  stock actual en vez del congelado al vender, así que dos escrituras seguidas
+  dejan el mismo número correcto.
+- **Cada migración corre en su propia transacción**: una que falla a la mitad no
+  deja nada aplicado y se puede volver a correr.
+- **La autorización de la tarea programada** compara el secreto en tiempo
+  constante y rechaza antes de tocar la base.

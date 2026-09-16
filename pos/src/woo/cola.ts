@@ -19,13 +19,27 @@
  * registrada en `sync_conflicts` para que se vea.
  */
 import { z } from 'zod';
-import { and, eq, lte, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { productVariants, products, sales, syncConflicts, syncQueue } from '@/db/schema';
-import type { BaseDatos } from '@/db/tipos';
+import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+// El driver de producción no acepta un `Date` como parámetro de una consulta
+// escrita a mano, aunque PGlite —el de los tests— lo acepte. Va como ISO.
+import { instante } from '@/reportes/periodo';
 import { ClienteWoo, ErrorWoo } from './cliente';
 
 /** Cuántas veces se reintenta antes de dar la operación por fallida. */
 export const MAXIMO_DE_INTENTOS = 6;
+
+/**
+ * Cuánto se espera antes de volver a tomar una operación que quedó tomada.
+ *
+ * Es el caso del proceso que se corta a la mitad: en un entorno sin servidor la
+ * función se apaga cuando la respuesta sale, y si eso pasa entre que se toma la
+ * fila y que se termina de procesarla, la fila queda en «procesando» sin nadie
+ * detrás. Cinco minutos son de sobra para el drenaje más lento y poco para que
+ * una venta se quede sin llegar a la tienda.
+ */
+export const MINUTOS_PARA_RETOMAR = 5;
 
 /** Espera entre reintentos: 1, 2, 4, 8, 16, 32 minutos. */
 export function esperaTrasIntento(intentos: number): number {
@@ -57,6 +71,8 @@ export interface InformeDeDrenaje {
   fallidas: number;
   conflictos: number;
   errores: string[];
+  /** True si se corto por tiempo y quedaron operaciones sin procesar. */
+  cortadoPorTiempo: boolean;
 }
 
 /**
@@ -68,7 +84,22 @@ export interface InformeDeDrenaje {
 export async function drenarCola(
   db: BaseDatos,
   cliente: ClienteWoo,
-  opciones: { tope?: number; ahora?: Date } = {},
+  opciones: {
+    tope?: number;
+    ahora?: Date;
+    /**
+     * Cuánto tiempo se le da al drenaje antes de cortar, en milisegundos.
+     *
+     * No es una optimización: es lo que evita que la función se muera a la
+     * mitad. Cada operación son un GET y un PUT contra WooCommerce, que corre
+     * en un hosting compartido; con el timeout y los reintentos del cliente,
+     * **una sola** puede tardar un minuto. Cincuenta de esas no entran en
+     * ninguna función sin servidor, así que se hace lo que entra y el resto
+     * queda para la próxima corrida. Es una cola: no hace falta vaciarla de un
+     * saque, hace falta que nunca se trabe.
+     */
+    presupuestoMs?: number;
+  } = {},
 ): Promise<InformeDeDrenaje> {
   const ahora = opciones.ahora ?? new Date();
   const informe: InformeDeDrenaje = {
@@ -77,16 +108,78 @@ export async function drenarCola(
     fallidas: 0,
     conflictos: 0,
     errores: [],
+    cortadoPorTiempo: false,
   };
 
-  const pendientes = await db
-    .select()
-    .from(syncQueue)
-    .where(and(eq(syncQueue.estado, 'pendiente'), lte(syncQueue.proximoIntento, ahora)))
-    .orderBy(syncQueue.createdAt)
-    .limit(opciones.tope ?? 25);
+  const hastaCuando = opciones.presupuestoMs
+    ? performance.now() + opciones.presupuestoMs
+    : Number.POSITIVE_INFINITY;
 
-  for (const operacion of pendientes) {
+  /*
+   * Las operaciones se **toman** antes de procesarlas, en un solo UPDATE
+   * atómico con `SKIP LOCKED`, y no se leen con un SELECT suelto.
+   *
+   * El drenaje corre desde dos lados a la vez: después de cada venta y cada
+   * diez minutos por la tarea programada. Con un SELECT, dos corridas
+   * simultáneas se llevan las mismas filas. Para el stock daba igual —lo que se
+   * le escribe a Woo es el stock que el POS tiene ahora, así que escribirlo dos
+   * veces escribe el mismo número— pero **publicar un producto no es
+   * idempotente**: la guarda de `publicarProducto` es un `if (wooId === null)`
+   * leído antes de hacer el POST, así que las dos corridas la pasan y el
+   * producto queda creado dos veces en la tienda.
+   *
+   * `SKIP LOCKED` hace que la segunda corrida no espere: se lleva otras filas o
+   * ninguna, que es lo que se quiere en un drenaje.
+   */
+  const limite = opciones.tope ?? 25;
+  // El tipo se escribe a mano con los nombres que devuelve la base: un
+  // `RETURNING *` de una consulta escrita a mano trae las columnas como estan
+  // en PostgreSQL, no como las nombra Drizzle.
+  const pendientes = filasDe<{
+    id: string;
+    operacion: string;
+    payload: unknown;
+    intentos: number;
+  }>(
+    await db.execute(sql`
+      UPDATE sync_queue
+         SET estado = 'procesando', updated_at = ${instante(ahora)}
+       WHERE id IN (
+         SELECT id FROM sync_queue
+          WHERE (estado = 'pendiente' AND proximo_intento <= ${instante(ahora)})
+             -- Una corrida que se murió a la mitad —el proceso que se corta
+             -- cuando la respuesta sale— deja la fila tomada para siempre. Se
+             -- vuelve a tomar pasado un rato: peor que reintentarla es que se
+             -- quede esperando a alguien que ya no existe.
+             OR (estado = 'procesando' AND updated_at < ${instante(new Date(ahora.getTime() - MINUTOS_PARA_RETOMAR * 60_000))})
+          ORDER BY created_at
+          LIMIT ${limite}
+            FOR UPDATE SKIP LOCKED
+       )
+      RETURNING *
+    `),
+  );
+
+  for (const [indice, operacion] of pendientes.entries()) {
+    if (performance.now() >= hastaCuando) {
+      /*
+       * Se acabó el tiempo. Lo que quedó tomado y sin procesar vuelve a
+       * «pendiente» ahora mismo, en vez de esperar los cinco minutos del
+       * rescate: se sabe que nadie lo está procesando porque el que lo tomó es
+       * este mismo código, y acá está, decidiendo cortar.
+       */
+      const sinProcesar = pendientes.slice(indice).map((o) => o.id);
+      await db.execute(sql`
+        UPDATE sync_queue SET estado = 'pendiente', updated_at = ${instante(new Date())}
+         WHERE id IN (${sql.join(
+           sinProcesar.map((id) => sql`${id}`),
+           sql`, `,
+         )})
+      `);
+      informe.cortadoPorTiempo = true;
+      break;
+    }
+
     informe.procesadas += 1;
     try {
       if (operacion.operacion === 'venta.descontar_stock') {
@@ -227,7 +320,10 @@ export async function pendientesDeSincronizar(
 export async function drenarEnSegundoPlano(db: BaseDatos): Promise<void> {
   try {
     const cliente = ClienteWoo.desdeEntorno();
-    await drenarCola(db, cliente, { tope: 10 });
+    // Corto a propósito: esto corre pegado a una venta y lo que no entre lo
+    // levanta la tarea programada. Que el mostrador espere por WooCommerce es
+    // exactamente lo que la cola existe para evitar.
+    await drenarCola(db, cliente, { tope: 10, presupuestoMs: 8_000 });
   } catch (error) {
     if (error instanceof ErrorWoo) {
       console.warn('[cola] WooCommerce no disponible, queda pendiente:', error.message);

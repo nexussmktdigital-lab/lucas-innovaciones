@@ -17,6 +17,7 @@ import {
   drenarCola,
   esperaTrasIntento,
   MAXIMO_DE_INTENTOS,
+  MINUTOS_PARA_RETOMAR,
   operacionesEnCola,
   pendientesDeSincronizar,
   reintentarFallidas,
@@ -29,11 +30,17 @@ let sesionId: string;
 let vidrioId: string;
 
 /** WooCommerce simulado con un stock por producto que se puede inspeccionar. */
-function wooSimulado(stockInicial: Record<number, number>, fallar = false) {
+function wooSimulado(
+  stockInicial: Record<number, number>,
+  fallar = false,
+  /** Corre en cada llamada, para poder mirar la base mientras se procesa. */
+  espiar?: () => Promise<void>,
+) {
   const stock = { ...stockInicial };
   const escrituras: { wooId: number; stock: number }[] = [];
 
   const fetchImpl = (async (entrada: string | URL, init?: RequestInit) => {
+    if (espiar) await espiar();
     if (fallar) return new Response('boom', { status: 503 });
 
     const url = new URL(String(entrada));
@@ -204,6 +211,108 @@ describe('drenarCola', () => {
 
     const woo = wooSimulado({ 6485: 40 });
     expect((await drenarCola(db, woo.cliente)).procesadas).toBe(0);
+  });
+});
+
+describe('dos drenajes a la vez', () => {
+  /*
+   * El drenaje corre desde dos lados: despues de cada venta y cada diez minutos
+   * por la tarea programada. Si los dos se llevan las mismas filas, el ajuste de
+   * stock da igual —se escribe el valor absoluto— pero publicar un producto no
+   * es idempotente y quedaria creado dos veces en la tienda.
+   */
+  /*
+   * La propiedad que importa es que la fila se **tome antes** de procesarla y
+   * no despues: si se marcara al final, el otro drenaje la agarraria en el
+   * medio y publicaria el producto dos veces.
+   *
+   * Se comprueba desde adentro: el cliente de Woo, mientras lo llaman, mira en
+   * que estado quedo la fila. Un `Promise.all` de dos drenajes no probaria
+   * nada, porque la base de los tests corre sobre una sola conexion y los
+   * serializa: pasaria igual sin el candado.
+   */
+  it('la operacion se toma antes de procesarla, no despues', async () => {
+    await venderDos('a');
+
+    let estadoMientrasSeProcesa: string | null = null;
+    const woo = wooSimulado({ 6485: 40 }, false, async () => {
+      if (estadoMientrasSeProcesa !== null) return;
+      const [fila] = await db.select().from(syncQueue);
+      estadoMientrasSeProcesa = fila?.estado ?? null;
+    });
+
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(estadoMientrasSeProcesa).toBe('procesando');
+  });
+
+  it('una operacion tomada no la agarra otro drenaje', async () => {
+    await venderDos('a');
+
+    await db.update(syncQueue).set({ estado: 'procesando', updatedAt: new Date() });
+
+    const woo = wooSimulado({ 6485: 40 });
+    const informe = await drenarCola(db, woo.cliente);
+    expect(informe.procesadas).toBe(0);
+  });
+
+  /*
+   * Salvo que haya quedado tomada por alguien que ya no existe: sin esto, un
+   * proceso que se corta a la mitad deja la venta sin llegar nunca a la tienda.
+   */
+  it('pero si quedo tomada hace rato, se retoma', async () => {
+    await venderDos('a');
+
+    const hace = new Date(Date.now() - (MINUTOS_PARA_RETOMAR + 1) * 60_000);
+    await db.update(syncQueue).set({ estado: 'procesando', updatedAt: hace });
+
+    const woo = wooSimulado({ 6485: 40 });
+    const informe = await drenarCola(db, woo.cliente);
+    expect(informe.procesadas).toBe(1);
+    expect(informe.exitosas).toBe(1);
+  });
+});
+
+describe('el presupuesto de tiempo', () => {
+  /*
+   * Cada operacion son un GET y un PUT contra un hosting compartido, y con el
+   * timeout y los reintentos del cliente una sola puede tardar un minuto. Sin
+   * cortar, la funcion sin servidor se muere a la mitad cada diez minutos y
+   * nadie se entera de que la cola no avanza.
+   */
+  it('corta cuando se acaba el tiempo y deja lo que falta para la proxima', async () => {
+    await venderDos('a');
+    await venderDos('b');
+    await venderDos('c');
+
+    // Un Woo que tarda: con presupuesto cero, ni la primera alcanza a empezar.
+    const woo = wooSimulado({ 6485: 40 }, false, async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    const informe = await drenarCola(db, woo.cliente, { presupuestoMs: 40 });
+
+    expect(informe.cortadoPorTiempo).toBe(true);
+    expect(informe.procesadas).toBeLessThan(3);
+
+    // Y sobre todo: lo que quedo sin procesar vuelve a estar disponible ya, sin
+    // esperar el rescate de los cinco minutos.
+    const cola = await db.select().from(syncQueue);
+    const trabadas = cola.filter((o) => o.estado === 'procesando');
+    expect(trabadas).toHaveLength(0);
+
+    const siguiente = await drenarCola(db, wooSimulado({ 6485: 40 }).cliente);
+    expect(informe.procesadas + siguiente.procesadas).toBe(3);
+  });
+
+  it('sin presupuesto, drena todo de una', async () => {
+    await venderDos('a');
+    await venderDos('b');
+
+    const informe = await drenarCola(db, wooSimulado({ 6485: 40 }).cliente);
+    expect(informe.procesadas).toBe(2);
+    expect(informe.cortadoPorTiempo).toBe(false);
   });
 });
 
