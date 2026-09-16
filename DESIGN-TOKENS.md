@@ -68,19 +68,28 @@ No es un default: es una paleta deliberada, con nomenclatura propia `LI *`. Se c
 
 ## Tipografía
 
-| Rol | Familia | Peso |
-|---|---|---|
-| Cuerpo | Inter | 400 |
-| Enlaces | Space Grotesk | 700 |
-| H1, H2 | Space Grotesk | 700 |
-| H3 – H6 | Inter | 400 |
-| Acento | **VT323-Regular** | 400 |
+**Lo que se implementó** (vigente, en `assets/css/theme.css`):
 
-- Interlineado del cuerpo: `1.55` · Espaciado entre letras: `0`
-- Familia genérica de reserva: `sans-serif`
-- **VT323-Regular es una fuente personalizada subida al sitio** (post `elementor_font` 7068). Es una tipográfica de píxeles/terminal — el único elemento realmente distintivo del sistema. Hay que recuperar el archivo de `uploads` antes de eliminar Elementor.
+| Rol | Familia | Token | Pesos en disco |
+|---|---|---|---|
+| Títulos e interfaz | **Montserrat** | `--f-titulo` (alias `--f-sans`) | 400 · 600 · 700 |
+| Cuerpo | **Lato** | `--f-cuerpo` | 400 · 700 |
+| Cifras: precios, códigos, especificaciones | **IBM Plex Mono** | `--f-mono` | 400 · 500 |
+| Acento | **VT323** (declarada como `"Pixel LI"`) | `--f-pixel` | 400 |
 
-> **Nota para la Fase 2:** los tamaños del Kit están todos en 50px, que es el valor por defecto de Elementor — no son una escala real. La escala tipográfica hay que definirla de cero. Además, **Inter es la tipografía más genérica del ecosistema**; conviene evaluar si se conserva para el cuerpo o se reemplaza por algo con más carácter, manteniendo Space Grotesk para títulos y VT323 como acento.
+- Interlineado: `--lh-normal: 1.55` en el cuerpo, `--lh-apretado: 1.15` en títulos
+- Escala de proporción 1.2 sobre base 16: `--t-xs` … `--t-3xl`, con `--t-base`, `--t-2xl` y `--t-3xl` redefinidos a partir de 900px
+- **Las siete fuentes se sirven locales desde `assets/fonts/`, en woff2, nunca desde Google Fonts.** Las tres que aparecen sobre la línea de flotación se precargan desde `li_precarga_fuentes()`
+- La monoespaciada no es decorativa: las cifras tabulares son lo que permite que los precios se alineen en columna en la grilla del catálogo
+
+### Por qué difiere del Kit de Elementor
+
+El Kit declaraba **Inter** para el cuerpo y **Space Grotesk** para títulos y enlaces. Se reemplazaron en los commits `2114ff0` y `08bb7f3`, por dos motivos:
+
+1. Inter es la tipografía más genérica del ecosistema, y el Kit no era una decisión de diseño sino un default heredado — sus tamaños estaban todos en 50px, que es el valor por defecto de Elementor.
+2. Al no haber fotos de producto, la tipografía carga con casi todo el peso visual del sitio. Necesitaba más carácter del que aportaba el par Inter/Space Grotesk.
+
+**VT323 sí sobrevivió.** Era la fuente personalizada subida al sitio (post `elementor_font` 7068) y el único elemento realmente distintivo del Kit. Se rescató de `uploads` antes de purgar Elementor, se convirtió a woff2 y hoy vive en el repositorio: retoma el cursor del isotipo.
 
 ---
 
@@ -160,6 +169,8 @@ Activos en el Kit: `mobile`, `tablet`, `widescreen`.
   --li-radius-button:  10px;
 }
 ```
+
+> ⚠️ **Este bloque es el borrador de agosto, no el código que corre.** Se conserva porque documenta el punto de partida. Los nombres definitivos están en `assets/css/theme.css` y difieren: los colores quedaron con sufijos en castellano (`--li-primary-oscuro`, `--li-border-fuerte`, `--li-text-mudo`, `--li-verde-suave`, `--li-peligro`…), la tipografía se renombró a `--f-titulo` / `--f-cuerpo` / `--f-mono` / `--f-pixel`, y el layout a `--li-contenedor` / `--li-radio`. **Al tocar el tema, la referencia es el CSS.**
 
 ---
 
