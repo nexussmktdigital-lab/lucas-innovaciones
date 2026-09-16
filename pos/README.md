@@ -76,6 +76,22 @@ npm run demo -- --reset
 Es solo para mirar y para desarrollar: PGlite corre dentro del proceso y no
 sirve para producción.
 
+### Probar el modo sin conexión
+
+La demo de arriba corre en modo desarrollo, y ahí **el service worker no se
+registra a propósito** —servir páginas guardadas mientras uno edita código es la
+forma más rápida de pasar una tarde mirando una versión vieja—. Para probar que
+se puede vender sin internet hace falta la versión construida:
+
+```bash
+npm run demo -- --produccion
+```
+
+Tarda unos treinta segundos más porque construye primero. Después, en el
+navegador: abrir **Vender**, recargar una vez (el service worker toma el control
+recién en la segunda carga), pasar por **Caja**, y recién ahí cortar la
+conexión desde las herramientas de desarrollo → Red → «Sin conexión».
+
 ### Si la demo no levanta
 
 PGlite es PostgreSQL compilado a WASM y no se comporta igual en todas las
@@ -90,6 +106,40 @@ datos limpia, después arranca en memoria— pero si aun así falla:
    ```bash
    npm run db:migrate && npm run db:seed && npm run dev
    ```
+
+---
+
+## Dónde vive cada cosa
+
+El POS **no se instala en WordPress**. Es un sitio aparte, con su propia
+dirección y su propia base. Esto es lo que suele confundir, así que conviene
+tenerlo a mano:
+
+| Dónde | Qué vive ahí | Cómo se actualiza |
+|---|---|---|
+| `lucasinnovaciones.com.ar` | La tienda: WordPress, WooCommerce, el tema y el plugin de cotización | Ferozo, como siempre |
+| `pos.lucasinnovaciones.com.ar` | El POS entero | Vercel, con `git push` |
+| Neon (o Supabase) | La base del POS: ventas, caja, fiado, bitácora | — |
+
+En el mostrador se abre esa segunda dirección en la tablet y se agrega a la
+pantalla de inicio: de ahí en más es un ícono que abre a pantalla completa.
+Nunca hace falta entrar a WordPress para vender.
+
+Lo único que se toca del lado de WordPress son dos cosas, una sola vez: generar
+una clave de la API REST y dar de alta los webhooks. Las dos están en
+[PRODUCCION.md](PRODUCCION.md).
+
+**Por qué no es un plugin de WordPress**, que era el plan original (D5) y se
+cambió con D23: si el POS viviera adentro de la tienda, un mal día del hosting
+compartido dejaría al local sin poder cobrar. Además las garantías de la plata
+—que una venta no se pueda borrar, que los montos no se puedan reescribir, que
+dos ventas de la última unidad no ganen las dos— son disparadores y
+restricciones de PostgreSQL que el MySQL de WordPress no tiene, y las ventas
+quedarían al lado de `wp_posts`, al alcance de cualquier plugin instalado.
+
+La parte que **sí** tenía que vivir adentro de WordPress es plugin y ya está
+hecha: `plugin/lucas-cotizacion`, que reescribe en pesos los precios cargados en
+dólares (D22).
 
 ---
 
@@ -909,6 +959,7 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor no llega a las pantallas del dueño ni por URL | `e2e/calidad.spec.ts` |
+| **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |
 | Fiar deja la deuda registrada y no mueve plata | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | El tope de fiado frena la venta antes de que entre | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | Cobrar el fiado baja la deuda y entra a la caja del turno | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |

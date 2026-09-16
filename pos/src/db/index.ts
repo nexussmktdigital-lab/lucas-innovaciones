@@ -25,7 +25,19 @@ function crear() {
     throw new Error('Falta la variable de entorno DATABASE_URL. Ver .env.example');
   }
 
-  const sql = global_.__liSql ?? postgres(urlDeConexion(url), { max: 5, prepare: false });
+  /*
+   * Cuántas conexiones abre el pool.
+   *
+   * Cinco contra un PostgreSQL de verdad. **Una sola contra el PostgreSQL
+   * embebido de la demo**: PGlite es el motor compilado a WASM y corre en un
+   * solo hilo, así que si el pool abre varias, dos consultas lanzadas en
+   * paralelo —las siete de Reportes, las dos del alta de productos— le resetean
+   * la conexión al cliente y la pantalla devuelve error. La demo lo avisa con
+   * `POS_BASE_EMBEBIDA`.
+   */
+  const max = process.env.POS_BASE_EMBEBIDA === 'true' ? 1 : 5;
+
+  const sql = global_.__liSql ?? postgres(urlDeConexion(url), { max, prepare: false });
   if (process.env.NODE_ENV !== 'production') global_.__liSql = sql;
 
   return drizzle(sql, { schema, casing: 'snake_case' });

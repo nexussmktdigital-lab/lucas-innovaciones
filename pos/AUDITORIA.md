@@ -1068,3 +1068,55 @@ borran ni renombran.
   deja nada aplicado y se puede volver a correr.
 - **La autorización de la tarea programada** compara el secreto en tiempo
   constante y rechaza antes de tocar la base.
+
+---
+
+# Sexta pasada — recorrer la demo como la va a recorrer el dueño
+
+La demo (`npm run demo`) es el camino por el que alguien prueba el sistema sin
+instalar nada. Se recorrió entera, pantalla por pantalla, antes de mandarlo a
+probarla.
+
+### 60. Reportes y el alta de productos devolvían error en la demo *(corregido)*
+
+Las dos pantallas daban **500** contra la demo, y andaban perfectas contra
+PostgreSQL de verdad. La batería de punta a punta no lo veía porque corre contra
+PostgreSQL; el recorrido a mano sí.
+
+La causa: **PGlite atiende de a una.** Es PostgreSQL compilado a WASM y corre en
+un solo hilo, pero el pool del driver abre hasta cinco conexiones. Las dos
+únicas pantallas que lanzan varias consultas **en paralelo** con `Promise.all`
+—las siete de Reportes y las dos del alta— eran exactamente las dos que fallaban,
+con `ECONNRESET`: el servidor de sockets de PGlite les cortaba la conexión.
+
+La demo ahora avisa con `POS_BASE_EMBEBIDA` y la conexión abre **una sola**.
+Contra una base de verdad siguen siendo cinco.
+
+Es la tercera vez que PGlite y el driver de producción se comportan distinto, y
+las tres en direcciones diferentes: un `Date` que uno acepta y el otro no (fase
+9), un `timestamptz` que vuelve como texto o como fecha (fase 10), y ahora la
+concurrencia. **La conclusión no cambia: lo que no se probó contra las dos, no
+está probado.**
+
+### 61. Ninguna prueba abría todas las pantallas *(corregido)*
+
+El hallazgo anterior salió de un recorrido a mano, no de la batería, y eso es lo
+que había que arreglar de fondo: cada archivo de tests entra a las pantallas que
+necesita para probar algo, y una pantalla que ningún test visita puede devolver
+error durante semanas sin que se note.
+
+`e2e/pantallas.spec.ts` abre las diecisiete del dueño y las seis del vendedor, y
+lo único que comprueba es que respondan 200 y que no haya saltado la pantalla de
+error. Es el test más tonto de la batería y es el que habría encontrado esto.
+
+### 62. La demo no permitía probar el modo sin conexión *(corregido)*
+
+`npm run demo` corre en modo desarrollo, y ahí el service worker no se registra
+—a propósito—, así que justo la novedad de la v1.1 era lo único que no se podía
+probar por el camino fácil. Ahora `npm run demo -- --produccion` construye y
+corre la versión de verdad.
+
+Se probó de punta a punta sobre la demo: se corta la conexión, la barra avisa,
+el buscador sigue encontrando contra el catálogo guardado, se cobra, la venta
+queda esperando, **Caja abre sin internet y frena el cierre del turno**, y al
+volver la conexión la venta entra sola y aparece marcada en Ventas.

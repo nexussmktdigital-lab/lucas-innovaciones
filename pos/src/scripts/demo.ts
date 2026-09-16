@@ -16,7 +16,7 @@
  */
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import 'dotenv/config';
 import { PGlite } from '@electric-sql/pglite';
@@ -32,21 +32,62 @@ const DATOS = resolve(CARPETA, 'pgdata');
 const PUERTO_BASE = 55433;
 const PUERTO_APP = Number(process.env.PORT ?? 3000);
 
-/** Arranca `next dev` contra la base indicada y devuelve el proceso. */
+/**
+ * Arranca el POS contra la base indicada y devuelve el proceso.
+ *
+ * Con `--produccion` construye primero y corre el resultado, en vez de `next
+ * dev`. Es la única forma de probar el modo sin conexión: el service worker no
+ * se registra en desarrollo a propósito —servir páginas guardadas mientras uno
+ * edita código es la forma más rápida de mirar una versión vieja— así que en la
+ * demo de todos los días no hay nada que sostenga la pantalla cuando se corta.
+ */
 function arrancarApp(url: string): ChildProcess {
-  return spawn('npx', ['next', 'dev', '--port', String(PUERTO_APP)], {
+  const comoEnProduccion = process.argv.includes('--produccion');
+
+  if (comoEnProduccion) {
+    console.log('Construyendo como en producción (tarda ~30 s)…\n');
+    const construccion = spawnSync('npx', ['next', 'build'], {
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      env: { ...process.env, DATABASE_URL: url, ...variables() },
+    });
+    if (construccion.status !== 0) {
+      console.error('Falló la construcción.');
+      process.exit(1);
+    }
+  }
+
+  const comando = comoEnProduccion
+    ? ['next', 'start', '--port', String(PUERTO_APP)]
+    : ['next', 'dev', '--port', String(PUERTO_APP)];
+
+  return spawn('npx', comando, {
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    env: {
-      ...process.env,
-      DATABASE_URL: url,
-      // Clave efímera: la demo no comparte sesión con nada.
-      AUTH_SECRET: process.env.AUTH_SECRET ?? randomBytes(32).toString('base64'),
-      AUTH_TRUST_HOST: 'true',
-      POS_TERMINAL: process.env.POS_TERMINAL ?? 'T1',
-    },
+    env: { ...process.env, DATABASE_URL: url, ...variables() },
   });
 }
+
+/** Lo que el POS necesita en el entorno para correr contra la base de la demo. */
+function variables(): Record<string, string> {
+  return {
+    // Clave efímera: la demo no comparte sesión con nada.
+    AUTH_SECRET: process.env.AUTH_SECRET ?? CLAVE_DE_LA_DEMO,
+    AUTH_TRUST_HOST: 'true',
+    POS_TERMINAL: process.env.POS_TERMINAL ?? 'T1',
+    /*
+     * Le avisa a la conexión que del otro lado hay PGlite y no un PostgreSQL de
+     * verdad, para que abra una sola conexión. PGlite es un único hilo: si el
+     * pool abre varias, dos consultas lanzadas en paralelo —las siete de
+     * Reportes, las dos del alta de productos— le cortan la conexión al cliente
+     * y la pantalla devuelve error.
+     */
+    POS_BASE_EMBEBIDA: 'true',
+  };
+}
+
+/** Una sola por corrida: si se generara dos veces, la sesión no sobreviviría al build. */
+const CLAVE_DE_LA_DEMO = randomBytes(32).toString('base64');
 
 function porQue(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
