@@ -31,13 +31,17 @@ No hay SSH, FTP ni panel compartido. El único acceso al servidor es el **MCP de
 
 ```
 Repositorio local (git)
-      ↓  empaquetado en ZIP
+      ↓  ./despliegue/empaquetar.sh        (git archive → dist/*.zip)
 novamira/create-upload-link
       ↓
 Instalación y activación por WP-CLI en STAGING
-      ↓  validación (ver checklist abajo)
+      ↓  ./despliegue/verificar.php        (90/90 contra manifest.md5)
 Mismo procedimiento contra PRODUCCIÓN, fuera de horario comercial
 ```
+
+**El procedimiento completo está en [`RUNBOOK-DESPLIEGUE.md`](RUNBOOK-DESPLIEGUE.md)** — incluye el rollback, y dos trampas que solo aparecen en producción: la verificación funcional hay que hacerla con sesión iniciada (el modo "próximamente" devuelve 200 sin mostrar nada del tema) y la caché de objetos solo se purga con `wp cache flush`, porque el plugin de LiteSpeed no está instalado.
+
+Un ZIP se descomprime **encima** de lo que había: los archivos que el repositorio ya no tiene no se borran solos, y WordPress usa las plantillas que encuentra. `despliegue/verificar.php` contrasta el servidor contra `despliegue/manifest.md5` y detecta las tres formas de divergencia: `FALTA`, `DIFIERE` y `SOBRA`. **Regenerar el manifiesto con `./despliegue/generar-manifiesto.sh` en el mismo commit que cambie el tema o el plugin**, o la próxima verificación falla sobre código que en realidad está bien.
 
 Restricciones verificadas en el servidor, no negociables:
 
@@ -90,7 +94,7 @@ Convenciones: todo prefijado `li_` / `LI_`, todo el código y los comentarios en
 
 `DESIGN-TOKENS.md` documenta la paleta rescatada del Kit de Elementor. Los tokens de color siguen vigentes y viven en `assets/css/theme.css` (`--li-*`).
 
-**La tipografía divergió del documento y el código manda:** el tema usa **Montserrat** (títulos e interfaz), **Lato** (cuerpo) e **IBM Plex Mono** (todo lo numérico), con **VT323** como acento de píxeles. `DESIGN-TOKENS.md` todavía dice Inter/Space Grotesk — está desactualizado. Las fuentes se sirven locales desde `assets/fonts/`, nunca desde Google Fonts.
+**La tipografía divergió del documento y el código manda:** el tema usa **Montserrat** (títulos e interfaz), **Lato** (cuerpo) e **IBM Plex Mono** (todo lo numérico), con **VT323** como acento de píxeles. `DESIGN-TOKENS.md` ya lo documenta y conserva el borrador de agosto marcado como histórico — pero los nombres de token de ese borrador (`--li-font-body`, `--li-primary-oscuro` como `--li-accent`, etc.) no son los que corren: **al tocar el tema, la referencia es `assets/css/theme.css`.** Las fuentes se sirven locales desde `assets/fonts/`, nunca desde Google Fonts.
 
 ## El plugin de cotización
 
@@ -105,7 +109,7 @@ Fases en `BASES.md` §9. Situación al último commit:
 - **Fase 0** (infraestructura): staging clonado y protegido; falta la contraseña de directorio (P18) y la corrección de HTTPS de producción.
 - **Fase 1** (higiene de datos): taxonomía migrada a producción (112 → 82 términos). **Los atributos `pa_*` están cargados en staging y en 0 de 807 productos de producción** — sin ellos los filtros del catálogo no muestran nada.
 - **Fase 2/3** (diseño y tienda): tema construido y verificado en staging. **Todavía no está activo en producción.**
-- **Bloqueante de lanzamiento:** faltan 143 fotos del top 150 (P6). Ninguna decisión de diseño lo resuelve, y `DESIGN-TOKENS.md` no es el camino crítico: las fotos sí.
+- **Bloqueante de lanzamiento:** faltan 143 fotos del top 150 (P6). Ninguna decisión de diseño lo resuelve: las fotos son el camino crítico.
 
 Antes de tocar producción, releer `RUNBOOK-LIMPIEZA.md`: contiene la trampa del `str_replace` secuencial (que corrompió 39 filas en el ensayo) y el orden exacto de purga de Elementor. **Su requisito previo #2 es que el tema propio esté terminado y activo**, porque al purgar Elementor la Home queda con contenido de longitud 0.
 
@@ -119,6 +123,7 @@ Tres interruptores quedan en `no`/`0` hasta el día del lanzamiento: `woocommerc
 | `RUNBOOK-LIMPIEZA.md` | Procedimiento exacto y ensayado para purgar Elementor |
 | `MIGRACION-TAXONOMIA.md` | Mapa y resultado de la reestructuración de categorías |
 | `MAPA-ATRIBUTOS.md` | Taxonomía de atributos `pa_*` y su carga |
-| `DESIGN-TOKENS.md` | Paleta y layout (tipografía desactualizada, ver arriba) |
+| `DESIGN-TOKENS.md` | Paleta, tipografía y layout |
 | `RESCATE-PRE-LIMPIEZA.md` | Código y assets recuperados antes de purgar |
+| `RUNBOOK-DESPLIEGUE.md` | Cómo se sube el código al servidor y cómo se verifica |
 | `catalogo-prioridad-fotos.csv` | Los 200 productos ordenados por rotación real — el cronograma del lanzamiento |
