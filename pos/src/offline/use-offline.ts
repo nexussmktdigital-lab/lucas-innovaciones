@@ -23,7 +23,7 @@ import {
   anotarFalla,
   ventasEnCola,
 } from './almacen';
-import { convieneReintentar, type VentaEnCola } from './cola';
+import { convieneReintentar, TOPE_DE_INTENTOS, type VentaEnCola } from './cola';
 import { estaVieja, type Instantanea } from './catalogo';
 
 /** Cada cuánto se vuelve a preguntar si el servidor volvió. */
@@ -53,7 +53,14 @@ export interface EstadoOffline {
   descartarAvisos: () => void;
 }
 
-export function usarOffline(): EstadoOffline {
+/*
+ * Se llama `useOffline` y no `usarOffline`, que es lo que pediría el resto del
+ * código, porque el prefijo `use` no es una convención de nombres: es el
+ * contrato por el que React —y el linter— reconocen un hook. Con el nombre en
+ * castellano, las reglas de hooks no miran este archivo, y este es justo el que
+ * más efectos y más dependencias tiene de todo el proyecto.
+ */
+export function useOffline(): EstadoOffline {
   const [hayConexion, setHayConexion] = useState(true);
   const [catalogo, setCatalogo] = useState<Instantanea | null>(null);
   const [enCola, setEnCola] = useState(0);
@@ -119,7 +126,7 @@ export function usarOffline(): EstadoOffline {
         }
 
         await anotarFalla(venta.idempotencyKey, r.error);
-        if (!convieneReintentar(r.error)) {
+        if (!convieneReintentar(r.error) || venta.intentos + 1 >= TOPE_DE_INTENTOS) {
           trabo = r.error;
           break;
         }

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 /**
  * Reportes y exportación, de punta a punta.
@@ -49,7 +49,7 @@ async function asegurarCajaAbierta(page: Page) {
 }
 
 /** Vende un vidrio templado al contado. Devuelve lo que salió. */
-async function venderUnVidrio(page: Page, context: { addInitScript: Function }) {
+async function venderUnVidrio(page: Page, context: BrowserContext) {
   await page.goto('/vender');
   const buscador = page.getByPlaceholder('Buscar por nombre');
   await buscador.fill('vidrio templado');

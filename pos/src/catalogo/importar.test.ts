@@ -147,6 +147,28 @@ describe('lo que la revisión rechaza', () => {
     expect(r.renglones[0]!.motivo).toMatch(/no es una cantidad/);
   });
 
+  /*
+   * El punto de «1.500» separa miles y el de «1.5» es decimal, y los dos vienen
+   * en planillas reales. Sacarlo siempre convertia una unidad y media en quince
+   * unidades: stock inventado, sin que nada lo avisara.
+   */
+  it('«1.5» unidades se rechaza en vez de entrar como quince', async () => {
+    const r = await revisarPlanilla(db, 'nombre;precio;stock\nCable;1200;1.5');
+    expect(r.rechazados).toBe(1);
+    expect(r.renglones[0]!.motivo).toMatch(/no es una cantidad/);
+  });
+
+  it('«1,5» tampoco, escrito a la argentina', async () => {
+    const r = await revisarPlanilla(db, 'nombre;precio;stock\nCable;1200;1,5');
+    expect(r.rechazados).toBe(1);
+  });
+
+  it('un stock entero entra como está', async () => {
+    const r = await revisarPlanilla(db, 'nombre;precio;stock\nCable;1200;150');
+    expect(r.renglones[0]!.destino).toBe('alta');
+    expect(r.renglones[0]!.stock).toBe(150);
+  });
+
   it('el renglón rechazado dice en qué línea está', async () => {
     const r = await revisarPlanilla(db, 'nombre;precio\nCable;1200\n;900');
     const malo = r.renglones.find((x) => x.destino === 'rechazado')!;

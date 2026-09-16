@@ -28,7 +28,7 @@
  * hay que terminar. La columna ya existía en el esquema desde la fase 1.
  */
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { auditLog, products, syncQueue } from '@/db/schema';
+import { auditLog, products } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
 import { limpiarTitulo, sugerirSku } from './alta';
 import { CATEGORIAS_SERVICIO } from '@/woo/mapear';

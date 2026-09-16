@@ -137,8 +137,17 @@ export async function cerrarCajaAccion(
   redirect(`/caja/${abierta.id}`);
 }
 
-/** Cuentas monetarias activas, para elegir sobre cuál se abre el turno. */
+/**
+ * Cuentas monetarias activas, para elegir sobre cuál se abre el turno.
+ *
+ * Pide sesión aunque solo devuelva nombres: todo lo que se exporta de un
+ * archivo `'use server'` es un punto de entrada al que se le puede pegar desde
+ * afuera, y los nombres de las cuentas dicen en qué banco trabaja el local.
+ */
 export async function cuentasActivas() {
+  const sesion = await auth();
+  if (!sesion?.user) return [];
+
   return db
     .select({ id: monetaryAccounts.id, nombre: monetaryAccounts.nombre, tipo: monetaryAccounts.tipo })
     .from(monetaryAccounts)

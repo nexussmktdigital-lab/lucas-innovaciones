@@ -16,7 +16,7 @@
  *    de comprar.
  */
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import { customers, sales, whatsappMessages } from '@/db/schema';
+import { whatsappMessages } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';

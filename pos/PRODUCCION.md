@@ -161,3 +161,6 @@ Antes de que el mostrador empiece a usarlo:
       nada guardado y un corte deja la pantalla en blanco
 - [ ] El POS agregado a la pantalla de inicio de la tablet, y probado a pantalla completa
 - [ ] Probado un corte de verdad: modo avión, una venta, y que entre sola al volver
+- [ ] `npm run auditar` contra la base de producción, con los diecinueve invariantes dando
+- [ ] `curl https://<dominio>/manifest.webmanifest` devuelve el JSON y no un redirect
+      al login: si redirige, el POS no se puede instalar en la tablet

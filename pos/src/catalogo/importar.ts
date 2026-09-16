@@ -257,7 +257,24 @@ export async function revisarPlanilla(
     }
 
     const stockCrudo = leer('stock');
-    const stock = stockCrudo === '' ? 0 : Number(stockCrudo.replace(/\./g, ''));
+    /*
+     * El stock son unidades enteras: el punto de «1.500» es separador de miles
+     * y el de «1.5» es decimal, y los dos vienen en planillas reales. Sacarlo
+     * siempre convertia «1.5 unidades» en quince, que es stock inventado. Se
+     * lee con la misma funcion que el precio y se exige entero.
+     */
+    let stock = 0;
+    if (stockCrudo !== '') {
+      try {
+        // `aCentavos` ya distingue el punto de miles del decimal, que es
+        // justamente lo que hay que distinguir: «1.500» son mil quinientas
+        // unidades y «1.5» no es una cantidad de unidades. Dividir por cien
+        // devuelve las unidades, y si no da entero el renglon se rechaza.
+        stock = aCentavos(stockCrudo) / 100;
+      } catch {
+        stock = Number.NaN;
+      }
+    }
 
     if (!Number.isInteger(stock) || stock < 0 || stock > TECHO_STOCK_ALTA) {
       renglones.push({

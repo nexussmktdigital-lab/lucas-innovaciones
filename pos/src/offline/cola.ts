@@ -73,6 +73,16 @@ export function resumirVenta(lineas: readonly LineaResumible[]): string {
 }
 
 /**
+ * Cuántas veces se reintenta una venta antes de pedir que alguien la mire.
+ *
+ * Sin tope, una venta que falla siempre por un motivo que el filtro de abajo no
+ * reconoce golpea el servidor cada quince segundos hasta que alguien apague la
+ * tablet, y el aviso de «hay plata esperando» se vuelve parte del paisaje. Seis
+ * intentos son un minuto y medio: si en ese rato no entró, no va a entrar sola.
+ */
+export const TOPE_DE_INTENTOS = 6;
+
+/**
  * ¿Vale la pena reintentar este error, o hay que mirarlo?
  *
  * Un corte de red se reintenta solo; una venta rechazada por el dominio —sin

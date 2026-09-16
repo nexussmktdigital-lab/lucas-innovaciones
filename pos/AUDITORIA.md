@@ -796,3 +796,145 @@ encontró el test de punta a punta. Va con la plata que entró, que es lo que es
 | 45 | La copia de pantalla que guarda el service worker lleva adentro el nombre y el rol de quien la abrió. Si el vendedor recarga sin conexión justo después de que salió el dueño, ve por un momento la navegación del dueño | Al salir se le pide al worker que borre lo guardado, así que solo pasa si el navegador se cierra sin usar «Salir». Y no habilita nada: todo permiso se comprueba en el servidor (D28) | Si alguna vez hay más de dos personas usando la misma tablet |
 | 46 | El catálogo guardado se refresca cada diez minutos con la pantalla de venta abierta. Si la tablet pasa la mañana en otra pantalla y se corta internet, lo guardado puede tener horas | La pantalla avisa cuántas horas tiene y marca en rojo si pasó el refresco del dólar, que es el único precio que cambia solo | Si en la práctica se nota que llega viejo seguido |
 | 47 | No hay tope a cuántas ventas pueden quedar en la cola. Un corte de un día entero llenaría IndexedDB con las ventas del día | No es un problema de tamaño —una venta son unos kilobytes— sino de que nadie mire el aviso. El cierre de turno ya lo frena | Cualquier momento |
+
+---
+
+# Cuarta pasada — control previo a producción
+
+Control de todo lo construido, de la fase 1 a la v1.1, antes de que el mostrador
+lo use. Tres frentes: los **datos** —que las cuentas cierren sobre una base con
+un día de uso encima—, la **superficie expuesta** —qué contesta el servidor sin
+sesión— y una lectura adversarial de lo último, que es lo menos rodado.
+
+**Ocho hallazgos, seis corregidos en esta misma pasada.** Ninguno de los que
+quedan abiertos frena la salida.
+
+## Los números cierran
+
+Lo primero fue dejar de leer código y preguntarle a la base. `npm run auditar`
+corre **diecinueve invariantes** contra el PostgreSQL de verdad, después del
+seed y de la batería de punta a punta: el saldo de cada cuenta contra sus
+movimientos, el stock contra sus asientos, el total de cada venta contra sus
+renglones, la deuda de cada cliente contra lo que la movió, el efectivo esperado
+de cada turno, los correlativos sin huecos, que ninguna devolución supere lo
+vendido, que no haya un solo importe guardado como coma flotante.
+
+**Los diecinueve dan.** El script queda en el repositorio: es de solo lectura y
+se corre cuando haga falta, también contra producción.
+
+Dos de los tres problemas que aparecieron al escribirlo eran del script y no del
+sistema, y los dos valen como advertencia:
+
+- Una subconsulta correlacionada sumaba **todos** los cobros de fiado de la base
+  en vez de los del cliente: `WHERE customer_id = a.customer_id` con una tabla
+  que no tiene esa columna resuelve contra la de afuera y PostgreSQL no se
+  queja. Daba una diferencia que parecía un agujero de plata.
+- Reconstruir la deuda filtrando `estado = 'completed'` descontaba dos veces una
+  venta fiada anulada. Anular no borra el asiento: le saca la deuda al cliente
+  aparte (D41), y hay que restar esa y no la venta.
+
+## Lo que contestaba sin sesión
+
+### 48. El POS no se podía instalar en la tablet *(corregido)*
+
+`/manifest.webmanifest` no estaba entre las rutas públicas, y el navegador baja
+el manifiesto **sin la cookie de sesión** salvo que se le pida lo contrario. El
+portero devolvía un redirect a `/ingresar`, así que «agregar a la pantalla de
+inicio» no funcionaba: toda la parte de la v1.1 que el README describe como
+aplicación instalable estaba muerta y ningún test lo miraba.
+
+Se comprobó con `curl` contra el build de producción, que es la única forma de
+ver esto: el navegador falla en silencio.
+
+Con el mismo arreglo salieron dos más del mismo lugar:
+
+- **`/sw.js` detrás de sesión.** Funcionaba, porque el registro sí manda la
+  cookie, pero es frágil: el día que devuelva el HTML del login, el navegador
+  rechaza el registro por el tipo de contenido y el modo sin conexión desaparece
+  sin que nadie se entere.
+- **`/api/latido` detrás de sesión**, que era exactamente lo que su propio
+  comentario decía que había que evitar: con un token vencido, el redirect al
+  login contesta 200 y la pantalla lee «volvió internet».
+
+Las tres son públicas ahora y ninguna devuelve un dato del negocio: dos archivos
+estáticos y un 204 vacío. Se verificó de nuevo con `curl` que todo lo demás
+—`/caja`, `/reportes`, `/api/buscar`— sigue devolviendo 307 sin sesión.
+
+### 49. `cuentasActivas()` leía las cuentas sin pedir sesión *(corregido)*
+
+Todo lo que se exporta de un archivo `'use server'` es un punto de entrada al
+que se le puede pegar desde afuera. Era la única de las treinta y tres acciones
+sin control, y devolvía los nombres de las cuentas monetarias, que dicen en qué
+banco trabaja el local.
+
+## Lo que se rompía sin conexión
+
+### 50. Sin conexión y con la ventana bloqueada, la venta se quedaba sin comprobante *(corregido)*
+
+Con conexión, si el navegador bloquea la ventana del ticket queda un enlace a
+`/ticket/<id>` en pantalla. Sin conexión no hay id ni servidor al que pedírselo:
+el único lugar donde el comprobante existe es el navegador, y se descartaba. El
+cliente se iba sin papel y no había forma de reimprimirlo.
+
+Ahora el HTML del comprobante se guarda en la pantalla y el aviso ofrece
+abrirlo. Es la misma lección de siempre en otra forma: **el camino sin conexión
+necesita su propia salida, no la del camino con conexión.**
+
+### 51. La cola reintentaba para siempre *(corregido)*
+
+Un error que el filtro de reintentos no reconoce hacía que la venta se
+reintentara cada quince segundos hasta que alguien apagara la tablet. Dos
+problemas en uno: el servidor recibiendo el mismo pedido fallido sin parar, y el
+aviso de «hay plata esperando» volviéndose parte del paisaje. Ahora son seis
+intentos —un minuto y medio— y después pide que alguien la mire.
+
+## Lo que ya estaba anotado y se cerró
+
+### 52. `npm run lint` abría un asistente interactivo *(corregido — era el hallazgo 16)*
+
+`next lint` quedó deprecado: el script preguntaba qué configuración usar y se
+quedaba esperando una tecla. En una terminal se ve raro; en integración continua
+se cuelga para siempre.
+
+Se configuró ESLint con el conjunto de Next y TypeScript, y **encontró algo real
+en la primera corrida**: el hook del modo sin conexión se llamaba `usarOffline`,
+y como el prefijo `use` es el contrato por el que React reconoce un hook, las
+reglas de hooks no miraban ese archivo — justo el que más efectos y más
+dependencias tiene de todo el proyecto. Renombrado a `useOffline`, las reglas lo
+revisan y no encontraron nada más. También salieron cinco importaciones muertas.
+
+### 53. El stock de la planilla convertía «1.5» en quince *(corregido — era el hallazgo 39)*
+
+El precio se parseaba con cuidado y el stock con `replace('.', '')`. El punto de
+«1.500» separa miles y el de «1.5» es decimal, y los dos vienen en planillas
+reales: una unidad y media entraba como quince unidades de stock inventado. Se
+lee con la misma función que el precio y un decimal se rechaza con su motivo.
+
+## Lo que se revisó y está bien
+
+- **Secretos**: ninguno en el repositorio. Lo que parecía serlo son marcadores
+  de `.env.example` y valores de test. `.env` está ignorado y nunca se versionó.
+- **Nada secreto llega al navegador**: no hay una sola variable `NEXT_PUBLIC_`.
+- **Nada secreto se registra**: los `console.error` nombran la variable que
+  falta, nunca su valor.
+- **Permisos**: las treinta y tres acciones de servidor comprueban sesión y rol
+  en el servidor, no en la pantalla (D28). Las tres sin `puede()` son las de
+  ingreso, y las tres de fiado sin rol son decisiones documentadas.
+- **Inyección**: limpia. Todo pasa por plantillas de Drizzle. El único
+  `sql.raw` es el `TRUNCATE` del seed, con una lista de tablas escrita a mano.
+- **XSS**: ni un `dangerouslySetInnerHTML`. El ticket escapa, también el
+  provisorio sin conexión, que pasa por la misma función.
+- **Los reportes contra la base**: el total y la cantidad del período coinciden
+  con el SQL crudo, y el desglose por medio da exactamente el neto de vuelto de
+  las ventas no anuladas. Que no incluya los cobros de deudas viejas es
+  deliberado y la pantalla lo dice.
+- **El chequeo de producción** reconoce bien el entorno y reclama lo que falta.
+
+## Lo que queda abierto
+
+Además de los hallazgos 17, 18, 19, 37, 38, 40 y 44 a 47, que siguen en pie:
+
+| # | Qué | Por qué se deja | Cuándo conviene |
+|---|---|---|---|
+| 54 | Una devolución que descuenta deuda mueve el saldo de la cuenta corriente sin dejar asiento en la bitácora de `credit_accounts`. El dato está —la devolución lo guarda entero— pero la cadena de esa cuenta tiene un hueco | Reconstruir la deuda de un cliente hoy necesita mirar dos lugares en vez de uno. No hay plata mal contada: el invariante de deuda da | Cuando se arme la pantalla de «movimientos de la cuenta» |
+| 55 | La sesión dura doce horas. Un turno que arranca a las nueve y sigue a las diez de la noche obliga a volver a entrar en el medio | Volver a entrar es un PIN. Alargarla es aflojar la única barrera que tiene la tablet del mostrador | Si en la práctica molesta |

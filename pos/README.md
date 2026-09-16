@@ -6,7 +6,7 @@ que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
 **Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
 
-Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
+El sistema pasó **cuatro auditorías**, anotadas en [AUDITORIA.md](AUDITORIA.md): las fases 3.5 a 3.7 salieron de la primera, y la última es el control previo a producción, con los diecinueve invariantes de plata dando sobre la base de verdad.
 
 ---
 
@@ -855,6 +855,18 @@ producto en dólares.
 npm test          # unitarios y de integración (Vitest)
 npm run test:e2e  # de punta a punta (Playwright)
 npm run typecheck # TypeScript en modo estricto
+npm run lint      # ESLint con el conjunto de Next
+npm run auditar   # invariantes de plata contra la base de verdad
+```
+
+`npm run auditar` es distinto de todo lo demás: no prueba código, prueba **los
+datos**. Son diecinueve preguntas con una sola respuesta correcta —el saldo de
+cada cuenta contra sus movimientos, el stock contra sus asientos, la deuda de
+cada cliente contra lo que la movió, los correlativos sin huecos— y se corre
+después de un rato de uso, también contra producción. Es de solo lectura.
+
+```bash
+npm run db:seed -- --reset && npm run build && npm run test:e2e && npm run auditar
 ```
 
 Los tests de base **no necesitan un PostgreSQL levantado**: usan PGlite

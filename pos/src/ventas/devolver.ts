@@ -36,7 +36,6 @@ import {
   products,
   returnItems,
   returns,
-  saleItems,
   sales,
   stockMovements,
   syncQueue,

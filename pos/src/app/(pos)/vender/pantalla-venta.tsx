@@ -16,7 +16,7 @@ import type { ResultadoBusqueda } from '@/ventas/buscar';
 import { generarTicket } from '@/ventas/ticket';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { registrarVenta } from '@/app/acciones-venta';
-import { usarOffline } from '@/offline/usar-offline';
+import { useOffline } from '@/offline/use-offline';
 import { resumirVenta } from '@/offline/cola';
 import Buscador from './buscador';
 import Carrito from './carrito';
@@ -85,7 +85,7 @@ export default function PantallaVenta({
   cashSessionId,
 }: Props) {
   const router = useRouter();
-  const offline = usarOffline();
+  const offline = useOffline();
   const [lineas, setLineas] = useState<LineaEnPantalla[]>([]);
   const [descuentoGlobal, setDescuentoGlobal] = useState<Descuento | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
@@ -93,6 +93,8 @@ export default function PantallaVenta({
   const [aviso, setAviso] = useState<string | null>(null);
   /** Solo se usa si el navegador bloqueó la ventana del comprobante. */
   const [ultimoTicket, setUltimoTicket] = useState<{ id: string; numero: string } | null>(null);
+  /** Lo mismo, pero sin conexión: el comprobante ya armado, que no vive en ningún servidor. */
+  const [ticketSinConexion, setTicketSinConexion] = useState<string | null>(null);
   const enfocarBuscador = useRef<() => void>(() => {});
 
   const totales = useMemo(() => calcularTotales(lineas, descuentoGlobal), [lineas, descuentoGlobal]);
@@ -243,40 +245,45 @@ export default function PantallaVenta({
       };
     }
 
+    const comprobante = generarTicket({
+      numero: 'Pendiente',
+      fecha: capturadaEn,
+      vendedor,
+      cliente: clientes.find((c) => c.id === clienteId)?.nombre ?? null,
+      lineas: lineas.map((l) => ({
+        descripcion: l.descripcion,
+        cantidad: l.cantidad,
+        precioUnitarioCentavos: l.precioUnitarioCentavos,
+        descuentoCentavos: l.descuentoCentavos,
+        totalCentavos: Math.max(0, l.precioUnitarioCentavos * l.cantidad - l.descuentoCentavos),
+        monedaOriginal: l.monedaOriginal,
+        precioUsdCentavos: l.precioUsdCentavos,
+      })),
+      subtotalCentavos: totales.subtotalCentavos,
+      descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
+      totalCentavos: totales.totalCentavos,
+      pagos: datos.pagos.map((p) => ({
+        medio: p.medio,
+        montoCentavos: p.montoCentavos,
+        marcaTarjeta: p.marcaTarjeta ?? null,
+        cuotas: p.cuotas ?? null,
+      })),
+      vueltoCentavos: cobro.vueltoCentavos,
+      tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
+      provisional: true,
+    });
+
     if (ventana) {
-      ventana.document.write(
-        generarTicket({
-          numero: 'Pendiente',
-          fecha: capturadaEn,
-          vendedor,
-          cliente: clientes.find((c) => c.id === clienteId)?.nombre ?? null,
-          lineas: lineas.map((l) => ({
-            descripcion: l.descripcion,
-            cantidad: l.cantidad,
-            precioUnitarioCentavos: l.precioUnitarioCentavos,
-            descuentoCentavos: l.descuentoCentavos,
-            totalCentavos: Math.max(
-              0,
-              l.precioUnitarioCentavos * l.cantidad - l.descuentoCentavos,
-            ),
-            monedaOriginal: l.monedaOriginal,
-            precioUsdCentavos: l.precioUsdCentavos,
-          })),
-          subtotalCentavos: totales.subtotalCentavos,
-          descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
-          totalCentavos: totales.totalCentavos,
-          pagos: datos.pagos.map((p) => ({
-            medio: p.medio,
-            montoCentavos: p.montoCentavos,
-            marcaTarjeta: p.marcaTarjeta ?? null,
-            cuotas: p.cuotas ?? null,
-          })),
-          vueltoCentavos: cobro.vueltoCentavos,
-          tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
-          provisional: true,
-        }),
-      );
+      ventana.document.write(comprobante);
       ventana.document.close();
+    } else {
+      /*
+       * El navegador bloqueó la ventana. Con conexión esto se resuelve con un
+       * enlace a `/ticket/<id>`, pero esta venta todavía no tiene id ni
+       * servidor al que pedírselo: el único lugar donde existe el comprobante
+       * es acá. Se guarda el HTML armado para poder abrirlo desde el aviso.
+       */
+      setTicketSinConexion(comprobante);
     }
 
     vaciar();
@@ -392,6 +399,31 @@ export default function PantallaVenta({
             >
               Abrir el ticket
             </a>
+          </p>
+        ) : null}
+
+        {/* Sin conexión no hay ticket que pedirle al servidor: el comprobante
+            se armó acá y se vuelve a escribir en una ventana nueva. */}
+        {ticketSinConexion ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          >
+            La venta quedó cobrada y guardada, pero el navegador bloqueó la ventana del
+            comprobante.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                const v = window.open('', '_blank', 'width=420,height=760');
+                if (!v) return;
+                v.document.write(ticketSinConexion);
+                v.document.close();
+                setTicketSinConexion(null);
+              }}
+              className="font-semibold underline underline-offset-2"
+            >
+              Abrir el comprobante
+            </button>
           </p>
         ) : null}
 

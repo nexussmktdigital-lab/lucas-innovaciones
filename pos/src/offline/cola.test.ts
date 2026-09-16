@@ -7,7 +7,7 @@
  * de punta a punta.
  */
 import { describe, expect, it } from 'vitest';
-import { convieneReintentar, resumirVenta, tieneAvisos } from './cola';
+import { convieneReintentar, resumirVenta, tieneAvisos, TOPE_DE_INTENTOS } from './cola';
 
 describe('como se nombra una venta en la cola', () => {
   it('con un solo renglon, ese renglon', () => {
@@ -50,6 +50,29 @@ describe('que se reintenta solo y que no', () => {
     ).toBe(false);
     expect(convieneReintentar('No tenés permiso para vender.')).toBe(false);
     expect(convieneReintentar('Se cerró la sesión. Volvé a entrar.')).toBe(false);
+  });
+});
+
+describe('cuando se deja de insistir', () => {
+  /*
+   * Sin tope, una venta que falla siempre por un motivo que el filtro no
+   * reconoce golpea el servidor cada quince segundos hasta que alguien apague
+   * la tablet, y el aviso de «hay plata esperando» se vuelve parte del paisaje.
+   */
+  it('el tope es corto: si no entro en un minuto y medio, no entra sola', () => {
+    expect(TOPE_DE_INTENTOS).toBeGreaterThan(1);
+    expect(TOPE_DE_INTENTOS).toBeLessThanOrEqual(10);
+  });
+
+  it('la regla que aplica la cola: se corta al llegar al tope', () => {
+    const seSigue = (intentos: number, error: string) =>
+      convieneReintentar(error) && intentos + 1 < TOPE_DE_INTENTOS;
+
+    expect(seSigue(0, 'Failed to fetch')).toBe(true);
+    expect(seSigue(TOPE_DE_INTENTOS - 2, 'Failed to fetch')).toBe(true);
+    expect(seSigue(TOPE_DE_INTENTOS - 1, 'Failed to fetch')).toBe(false);
+    // Y lo que no se arregla reintentando se corta en el primer intento.
+    expect(seSigue(0, 'No hay una caja abierta.')).toBe(false);
   });
 });
 

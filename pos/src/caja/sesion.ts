@@ -17,7 +17,6 @@ import {
   cashMovements,
   cashSessions,
   monetaryAccounts,
-  sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 // El driver de producción no acepta un `Date` como parámetro de una consulta
