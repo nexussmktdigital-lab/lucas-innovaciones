@@ -105,7 +105,8 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
       {resumen.porMedio.length > 0 ||
       resumen.fiadoCentavos > 0 ||
       resumen.gastosCentavos > 0 ||
-      resumen.retirosCentavos > 0 ? (
+      resumen.retirosCentavos > 0 ||
+      resumen.devolucionesCentavos > 0 ? (
         <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
           <h2 className="mb-1 text-sm font-semibold text-(--color-tinta-suave)">
             Plata que entró, por medio
@@ -129,7 +130,9 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
 
           {/* Lo que salió del cajón: sin esto el conteo da de menos y nadie
               sabe por qué. */}
-          {resumen.gastosCentavos > 0 || resumen.retirosCentavos > 0 ? (
+          {resumen.gastosCentavos > 0 ||
+          resumen.retirosCentavos > 0 ||
+          resumen.devolucionesCentavos > 0 ? (
             <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm">
               {resumen.gastosCentavos > 0 ? (
                 <div className="flex justify-between">
@@ -144,6 +147,14 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
                   <dt>Salidas a otra cuenta</dt>
                   <dd className="tabular font-medium text-(--color-error)">
                     −{formatearARS(resumen.retirosCentavos)}
+                  </dd>
+                </div>
+              ) : null}
+              {resumen.devolucionesCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Devuelto por ventas de otros turnos</dt>
+                  <dd className="tabular font-medium text-(--color-error)">
+                    −{formatearARS(resumen.devolucionesCentavos)}
                   </dd>
                 </div>
               ) : null}

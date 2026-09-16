@@ -882,6 +882,102 @@ export const auditLog = pgTable(
  * Historico del POS anterior. Solo lectura: se consulta en reportes pero no se
  * mezcla con las ventas del sistema nuevo ni afecta stock ni caja.
  */
+/**
+ * Devoluciones de ventas de turnos cerrados.
+ *
+ * Anular es para el error de carga y solo dentro del turno abierto (D29). Esto
+ * es lo otro: el cliente que vuelve el jueves con el cargador que no anda.
+ *
+ * La venta original **no se toca**: se hizo, se cobro y quedo en el arqueo de
+ * aquel turno. El movimiento cae en el turno de hoy, que es cuando la plata sale
+ * del cajon de verdad y cuando la mercaderia vuelve al local.
+ */
+export const returns = pgTable(
+  'returns',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** Correlativo propio con prefijo: `DEV-T1-000001`. No es una venta. */
+    numero: text().notNull(),
+    saleId: uuid()
+      .notNull()
+      .references(() => sales.id, { onDelete: 'restrict' }),
+    fecha: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    terminal: text().notNull(),
+    /** El turno en el que se devuelve, no el de la venta. */
+    cashSessionId: uuid().references(() => cashSessions.id),
+    usuarioId: uuid()
+      .notNull()
+      .references(() => users.id),
+    clienteId: uuid().references(() => customers.id),
+    motivo: text().notNull(),
+    totalCentavos: bigint({ mode: 'number' }).notNull(),
+    /** Plata que salio del cajon. */
+    devueltoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /** Lo que se le descuento de lo que todavia debia de esa venta. */
+    descontadoDeDeudaCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    medio: medioPagoEnum(),
+    monetaryAccountId: uuid().references(() => monetaryAccounts.id),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('returns_numero_uq').on(t.numero),
+    index('returns_sale_idx').on(t.saleId),
+    index('returns_fecha_idx').on(t.fecha),
+    index('returns_sesion_idx').on(t.cashSessionId),
+    check('returns_total_ck', sql`${t.totalCentavos} > 0`),
+    check(
+      'returns_partes_ck',
+      sql`${t.devueltoCentavos} >= 0 AND ${t.descontadoDeDeudaCentavos} >= 0`,
+    ),
+    // Lo devuelto mas lo descontado de la deuda es lo que valia lo devuelto.
+    check(
+      'returns_suma_ck',
+      sql`${t.devueltoCentavos} + ${t.descontadoDeDeudaCentavos} = ${t.totalCentavos}`,
+    ),
+    // Si salio plata, hay que decir por donde. Igual que un gasto pagado (D43).
+    check(
+      'returns_medio_ck',
+      sql`${t.devueltoCentavos} = 0 OR (${t.medio} IS NOT NULL AND ${t.monetaryAccountId} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const returnItems = pgTable(
+  'return_items',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    returnId: uuid()
+      .notNull()
+      .references(() => returns.id, { onDelete: 'restrict' }),
+    /** La linea original: con esto se sabe cuanto queda por devolver. */
+    saleItemId: uuid()
+      .notNull()
+      .references(() => saleItems.id, { onDelete: 'restrict' }),
+    productId: uuid()
+      .notNull()
+      .references(() => products.id, { onDelete: 'restrict' }),
+    variantId: uuid().references(() => productVariants.id, { onDelete: 'restrict' }),
+    descripcion: text().notNull(),
+    cantidad: integer().notNull(),
+    /**
+     * Lo que se cobro por unidad de verdad, con el descuento global prorrateado:
+     * devolver el precio de lista de una venta hecha con descuento es devolver
+     * mas plata de la que entro.
+     */
+    precioUnitarioCentavos: bigint({ mode: 'number' }).notNull(),
+    totalCentavos: bigint({ mode: 'number' }).notNull(),
+    /** Un cargador fallado no vuelve al stock vendible. Lo decide quien atiende. */
+    vuelveAlStock: boolean().notNull().default(true),
+  },
+  (t) => [
+    index('return_items_return_idx').on(t.returnId),
+    index('return_items_sale_item_idx').on(t.saleItemId),
+    index('return_items_product_idx').on(t.productId),
+    check('return_items_cantidad_ck', sql`${t.cantidad} > 0`),
+    check('return_items_precio_ck', sql`${t.precioUnitarioCentavos} >= 0`),
+  ],
+);
+
 export const legacySales = pgTable(
   'legacy_sales',
   {

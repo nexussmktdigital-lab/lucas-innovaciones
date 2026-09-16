@@ -94,6 +94,13 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
               rojo
             />
           ) : null}
+          {r.devolucionesCentavos > 0 ? (
+            <Renglon
+              termino="Devuelto por ventas de otros turnos"
+              valor={`−${formatearARS(r.devolucionesCentavos)}`}
+              rojo
+            />
+          ) : null}
 
           <div className="mt-1 flex justify-between border-t border-(--color-borde) pt-2 font-semibold">
             <dt>Efectivo esperado</dt>

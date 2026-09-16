@@ -717,3 +717,32 @@ Ahora el título lo dice.
 - **Las columnas del POS que la sincronización no pisa**: `costoCentavos`,
   `precioEditable`, `precioLocalCentavos` y `stockComprometido` se preservan
   bien. `fichaIncompleta` era la excepción y es el hallazgo 28.
+
+---
+
+# Fase 10 — la otra mitad de la diferencia de driver
+
+No fue una auditoría sino un hallazgo en construcción, y va acá porque es la
+continuación exacta de la lección de la fase 9.
+
+La pantalla de devoluciones tiraba `RangeError: Invalid time value` al listar lo
+devuelto. La causa es la misma diferencia entre PGlite y el driver de
+producción, pero **en la dirección contraria**: en la fase 9 el problema era
+mandar un `Date` como parámetro; acá es recibirlo. Una consulta escrita a mano
+que devuelve un `timestamptz` da un `Date` con PGlite y una **cadena** con
+`postgres`. El tipo de TypeScript decía `Date` —se lo había escrito a mano— y
+el compilador no tenía cómo desmentirlo: `new Intl.DateTimeFormat().format()`
+recibía un string y explotaba en el navegador.
+
+Lo peor es que el código de anular ya hacía el `new Date(...)` desde la fase
+3.5. La corrección ya existía en el repositorio y se omitió al escribir código
+parecido.
+
+Dos reglas que quedan:
+
+- **El tipo de una fila de SQL a mano se escribe con lo que llega de verdad, no
+  con lo que uno quiere que llegue.** Si el driver devuelve texto, el campo se
+  declara `string` y se convierte en un solo lugar, a la vista.
+- **Un test que trae la fecha no alcanza: tiene que formatearla.** Leer el campo
+  y compararlo pasa con las dos formas; el que falla es el que hace con el valor
+  lo mismo que hace la pantalla. Ese test se agregó.

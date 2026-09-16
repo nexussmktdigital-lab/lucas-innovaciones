@@ -322,7 +322,10 @@ export async function sembrar(
         const sinProducto = Math.round((m.totalCentavos * m.sinProductoPorc) / 100);
         return [
           {
-            origen: 'yith',
+            // Origen propio y no «yith»: el importador del histórico real usa
+            // ese, y los reportes suman los dos. Con el mismo origen, una base
+            // sembrada y después importada mostraría el mes por duplicado.
+            origen: 'demo',
             referenciaExterna: `resumen-${m.mes}-sin-producto`,
             fecha: new Date(`${m.mes}-15T15:00:00Z`),
             totalCentavos: sinProducto,
@@ -330,7 +333,7 @@ export async function sembrar(
             detalle: { nota: 'Agregado mensual de la auditoría, no pedidos individuales' },
           },
           {
-            origen: 'yith',
+            origen: 'demo',
             referenciaExterna: `resumen-${m.mes}-con-producto`,
             fecha: new Date(`${m.mes}-15T15:00:00Z`),
             totalCentavos: m.totalCentavos - sinProducto,

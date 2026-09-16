@@ -93,6 +93,26 @@ muda no hay que tocar código.
 
 ---
 
+## 2.5. El histórico de pedidos, una sola vez
+
+Los 3.764 pedidos del sistema anterior entran con un script, contra la **tienda
+de verdad** y no contra el staging: lo que interesa es la facturación real.
+
+```bash
+npm run woo:historico -- --ensayo   # cuenta y muestra el período, sin escribir
+npm run woo:historico               # lo importa
+```
+
+Va a `legacy_sales`, que es de solo lectura: no toca stock, ni caja, ni la
+numeración de ventas. Repetirlo es seguro —lo que ya está se saltea— así que si
+corta a la mitad se vuelve a correr y retoma.
+
+Lo único que hay que mirar del informe es que las cuentas cierren: si avisa que
+leyó más pedidos de los que procesó, hay pedidos que WooCommerce devolvió en un
+formato que el importador no pudo leer y **esa facturación falta**.
+
+---
+
 ## 3. El drenaje programado de la cola
 
 Cada venta descuenta el stock en el POS y deja el ajuste en una cola hacia
@@ -134,4 +154,5 @@ Antes de que el mostrador empiece a usarlo:
 - [ ] El `.env` local apunta al staging
 - [ ] La tarea programada contestó `{"ok":true}`
 - [ ] Los webhooks de WooCommerce dados de alta con `WOO_WEBHOOK_SECRET`
+- [ ] `npm run woo:historico` corrido contra la tienda real, con las cuentas cerrando
 - [ ] Sin panel rojo en **Estado del sistema**

@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 9 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: Fase 10 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -160,7 +160,8 @@ obligatorio, y le avisa a WooCommerce por la misma cola de siempre.
 
 Solo el dueño, y solo dentro del turno abierto: la plata volvió al cajón de ese
 turno, y revertir contra una caja ya cerrada descuadraría dos arqueos. Una venta
-de ayer se resuelve con una devolución, que es otra cosa.
+de ayer se resuelve con una [devolución](#devoluciones-de-ventas-de-otro-turno),
+que es otra cosa.
 
 ### Tres decisiones que conviene conocer
 
@@ -584,6 +585,90 @@ un `<a href>` baja el archivo sin una línea de JavaScript, y además funciona c
 
 ---
 
+## Devoluciones de ventas de otro turno
+
+Anular es para el error de carga y solo dentro del turno abierto: revertir
+contra una caja cerrada descuadra dos arqueos, el de aquel día y el de hoy.
+Pero el cliente que vuelve el jueves con el cargador que no anda es real, y
+hasta acá el sistema no tenía nada para él.
+
+**Devoluciones** (solo el dueño) resuelve eso, y la diferencia con anular es lo
+que sostiene todo el diseño:
+
+- **La venta original no se toca.** Se hizo, se cobró y quedó en el arqueo de
+  aquel turno. Sigue exactamente como estaba, y ese arqueo no cambia. La
+  devolución es un documento aparte, con su propia numeración `DEV-T1-000001`.
+- **El movimiento cae en el turno de hoy**, que es cuando la plata sale del
+  cajón de verdad y cuando la mercadería vuelve al local.
+- **Puede ser parcial**: de tres cosas se devuelve una, y de dos unidades una
+  sola. Lo ya devuelto se descuenta, así que la misma unidad no vuelve dos
+  veces.
+
+Hay dos cosas que el sistema no puede decidir solo, y por eso pregunta:
+
+**Si vuelve al stock.** Un cargador fallado no se vuelve a vender. Se decide
+producto por producto, con una casilla por renglón.
+
+**Si sale plata o baja la deuda.** Cuando el cliente todavía debe de esa misma
+venta, devolverle efectivo y dejarle la deuda entera es equivocarse dos veces.
+Lo que el formulario propone es descontar de la deuda primero y devolver el
+resto, pero quien atiende puede escribir otro reparto. La base exige que las dos
+partes sumen el total devuelto (`returns_suma_ck`): no hay forma de que quede
+plata sin explicar.
+
+El precio que se devuelve es el que **se cobró**, con el descuento global de
+aquella venta ya prorrateado en el renglón. Devolver el precio de lista de algo
+que salió con 20% de descuento es regalar la diferencia.
+
+### Qué explica el arqueo
+
+Que baje el efectivo no alcanza: si nada lo explica, al cerrar el turno falta
+plata sin motivo y quien cuenta tiene que inventar una justificación. El
+desglose de la caja y el reporte del turno tienen su propia línea, **«Devuelto
+por ventas de otros turnos»**, separada de las anulaciones del día.
+
+## El histórico del sistema anterior
+
+El negocio no empezó con este POS: hay **3.764 pedidos** hechos con YITH desde
+WooCommerce. Sin ellos el reporte mensual arranca el día que se instaló el
+sistema nuevo y no sirve para comparar con nada.
+
+```bash
+npm run woo:historico -- --ensayo   # mira qué entraría, sin escribir
+npm run woo:historico               # lo importa de verdad
+```
+
+Va como script de consola y no como pantalla a propósito: son varios minutos de
+paginación contra un hosting que corta a los 30 segundos, una acción de servidor
+se moriría en la mitad, y esto se corre una sola vez en la vida del sistema, con
+alguien mirando.
+
+Tres decisiones definen todo lo demás:
+
+**El histórico no se mezcla con las ventas.** Va a `legacy_sales`, que es solo de
+lectura y no toca stock, ni caja, ni numeración. Meterlos en `sales` sería
+inventar 3.764 movimientos de stock que ya pasaron y 243 arqueos que nadie va a
+cuadrar. Los reportes lo suman aparte, en **Mes a mes**.
+
+**Se importa una vez y no se pisa.** `legacy_sales` bloquea el `UPDATE` y el
+`DELETE` con un disparador, y tiene un índice único por `(origen,
+referencia_externa)`. Volver a correrlo no duplica nada: lo que ya está se
+saltea, y el informe de esa segunda corrida no cuenta como facturación nueva lo
+que no escribió. Es la misma guarda que la migración de las fichas de papel,
+donde sumar dos veces la misma deuda era el error a evitar.
+
+**Lo que no se puede leer se cuenta y se informa.** El cliente de WooCommerce
+descarta en silencio la fila que no cumple el esquema, y sobre 3.764 pedidos eso
+es perder facturación sin que nadie se entere. El script compara lo leído contra
+lo procesado y avisa fuerte si las cuentas no cierran.
+
+Lo cancelado y lo reembolsado **no se importa**: no es facturación. Y cada
+pedido viejo queda marcado según haya tenido un producto detrás o un ítem
+genérico, que es de donde sale el dato del marcador de calidad: en el sistema
+anterior más de la mitad de la facturación se cargaba sin producto.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -792,6 +877,20 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Los montos de una venta cerrada no se pueden reescribir ni por SQL | `src/db/esquema.test.ts` |
 | Una operación que agotó los reintentos se puede devolver a la cola | `src/woo/cola.test.ts` |
 | Reintentar dos veces no descuenta stock de más | `src/woo/cola.test.ts` |
+| Una venta de un turno cerrado se devuelve, y la venta original no cambia | `src/ventas/devolver.test.ts`, `e2e/devoluciones.spec.ts` |
+| La devolución sale del cajón de hoy, no del turno en que se vendió | `src/ventas/devolver.test.ts`, `e2e/devoluciones.spec.ts` |
+| La misma unidad no se devuelve dos veces | `src/ventas/devolver.test.ts`, `e2e/devoluciones.spec.ts` |
+| Se devuelve el precio cobrado, con el descuento global ya prorrateado | `src/ventas/devolver.test.ts` |
+| A quien todavía debe de esa venta se le baja la deuda antes de darle plata | `src/ventas/devolver.test.ts` |
+| Una devolución registrada no se puede editar ni por SQL | `src/ventas/devolver.test.ts` |
+| Una devolución rechazada no deja nada a medias | `src/ventas/devolver.test.ts` |
+| Un producto fallado se devuelve sin volver al stock, y la plata sale igual | `src/ventas/devolver.test.ts` |
+| El arqueo dice por qué falta esa plata, aparte de las anulaciones | `src/ventas/devolver.test.ts`, `e2e/devoluciones.spec.ts` |
+| El vendedor no registra devoluciones, ni por URL | `e2e/devoluciones.spec.ts` |
+| Importar el histórico dos veces no duplica la facturación | `src/woo/historico.test.ts` |
+| En un lote a medias, se suma solo lo que entró de verdad | `src/woo/historico.test.ts` |
+| Un pedido histórico ilegible se descarta y el informe no cierra | `src/woo/historico.test.ts` |
+| El histórico importado aparece en el reporte mes a mes | `src/woo/historico.test.ts` |
 | La ruta del cron no se abre sin el secreto | `e2e/calidad.spec.ts` |
 | Ingreso por PIN y por contraseña, y los permisos por rol | `e2e/ingreso.spec.ts` |
 
@@ -812,6 +911,8 @@ src/
       mensajes/   Textos de WhatsApp y lo que ya se preparó
       gastos/     Lo que sale: cargar, pagar y anular
       cuentas/    Saldos, extractos y transferencias
+      reportes/   Cuánto se vendió, de qué y con qué margen
+      devoluciones/ Devolver una venta de un turno ya cerrado
     ingresar/     Pantalla de ingreso
     ticket/       Comprobante imprimible
     api/          Buscador, Auth.js y webhooks de WooCommerce
@@ -821,11 +922,12 @@ src/
   cotizacion/     Tipo de cambio: historial, guardas y vencimiento
   db/             Esquema Drizzle, migraciones, seed, base de test
   lib/            Dinero en centavos, fechas, texto, auditoría, chequeos de despliegue
-  ventas/         Carrito, buscador, confirmación de venta y ticket
+  reportes/       Períodos, agregados de venta y armado de planillas
+  ventas/         Carrito, buscador, confirmación, ticket, anulación y devolución
   whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
   fiado/          Cuenta corriente y devoluciones pendientes
   gastos/         Gastos, cuentas monetarias y transferencias
-  woo/            Cliente REST, mapeo, sincronización, cola, webhooks
+  woo/            Cliente REST, mapeo, sincronización, cola, webhooks, histórico
   scripts/        Comandos de consola
 drizzle/          Migraciones SQL versionadas
 e2e/              Tests de Playwright
@@ -841,6 +943,8 @@ Vercel, con la raíz del proyecto en `pos/`. Antes del primer despliegue:
 2. Cargar las variables de entorno en Vercel.
 3. Correr `npm run woo:sync` una vez, apuntando al staging.
 4. Dar de alta los webhooks en WooCommerce.
+5. Correr `npm run woo:historico -- --ensayo` y después sin `--ensayo`, para que
+   los reportes no arranquen vacíos.
 
 **El paso a paso completo está en [PRODUCCION.md](PRODUCCION.md)**, con lo que se
 configura afuera del repositorio: la rotación de credenciales, a qué tienda
@@ -886,5 +990,5 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 7 | Caja completa: arqueo y cierre | **Hecha** |
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | **Hecha** |
 | 9 | Reportes y exportación | **Hecha** |
-| 10 | Devoluciones de turnos cerrados y migración del histórico | Siguiente |
-| v1.1 | Offline acotado: caché de catálogo y cola de venta | |
+| 10 | Devoluciones de turnos cerrados y migración del histórico | **Hecha** |
+| v1.1 | Offline acotado: caché de catálogo y cola de venta | Siguiente |

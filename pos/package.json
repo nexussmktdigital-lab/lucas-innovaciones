@@ -17,6 +17,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
     "woo:sync": "tsx src/scripts/sync-catalogo.ts",
+    "woo:historico": "tsx --env-file=.env src/scripts/importar-historico.ts",
     "produccion:chequear": "tsx src/scripts/chequear-produccion.ts",
     "test": "vitest run",
     "test:watch": "vitest",

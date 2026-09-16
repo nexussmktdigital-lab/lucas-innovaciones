@@ -154,6 +154,8 @@ export interface ResumenDeSesion {
    */
   gastosCentavos: number;
   retirosCentavos: number;
+  /** Lo devuelto a clientes por ventas de turnos anteriores. */
+  devolucionesCentavos: number;
 }
 
 export async function resumenDeSesion(
@@ -284,13 +286,23 @@ export async function resumenDeSesion(
    * dos asientos que se cancelan, y contar solo el primero diría que salieron
    * $12.000 del cajón que siguen estando adentro.
    */
-  const [salidas] = filasDe<{ gastos: string | number; retiros: string | number }>(
+  const [salidas] = filasDe<{
+    gastos: string | number;
+    retiros: string | number;
+    devoluciones: string | number;
+  }>(
     await db.execute(sql`
       SELECT COALESCE(-SUM(monto_centavos) FILTER (
                WHERE tipo = 'gasto'
                   OR (tipo = 'anulacion' AND referencia_tipo = 'expenses')
              ), 0) AS gastos,
-             COALESCE(-SUM(monto_centavos) FILTER (WHERE tipo = 'retiro'), 0) AS retiros
+             COALESCE(-SUM(monto_centavos) FILTER (WHERE tipo = 'retiro'), 0) AS retiros,
+             -- Lo que se le devolvió a un cliente por una venta de otro turno.
+             -- Sin este renglón el efectivo esperado baja y nada lo explica, que
+             -- es justo el descuadre sin motivo que el arqueo vino a eliminar.
+             COALESCE(-SUM(monto_centavos) FILTER (
+               WHERE tipo = 'anulacion' AND referencia_tipo = 'returns'
+             ), 0) AS devoluciones
         FROM cash_movements
        WHERE cash_session_id = ${sesionId}
     `),
@@ -313,6 +325,7 @@ export async function resumenDeSesion(
     cobrosDeFiadoCentavos: Number(cobros?.total ?? 0),
     gastosCentavos: Number(salidas?.gastos ?? 0),
     retirosCentavos: Number(salidas?.retiros ?? 0),
+    devolucionesCentavos: Number(salidas?.devoluciones ?? 0),
   };
 }
 
