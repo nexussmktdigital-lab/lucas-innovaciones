@@ -95,6 +95,26 @@ export default function PantallaVenta({
   const [ultimoTicket, setUltimoTicket] = useState<{ id: string; numero: string } | null>(null);
   /** Lo mismo, pero sin conexión: el comprobante ya armado, que no vive en ningún servidor. */
   const [ticketSinConexion, setTicketSinConexion] = useState<string | null>(null);
+  /**
+   * Clientes cargados desde esta misma pantalla, sin recargarla.
+   *
+   * La lista que llega del servidor se arma al abrir Vender; uno cargado en el
+   * medio no está ahí hasta la próxima carga. Se guarda acá y se muestra junto
+   * con los demás, para poder elegirlo en el acto.
+   */
+  const [clientesNuevos, setClientesNuevos] = useState<Cliente[]>([]);
+
+  const todosLosClientes = useMemo(
+    () => [...clientesNuevos, ...clientes.filter((c) => !clientesNuevos.some((n) => n.id === c.id))],
+    [clientes, clientesNuevos],
+  );
+
+  const agregarCliente = useCallback((c: Cliente) => {
+    setClientesNuevos((previos) =>
+      previos.some((x) => x.id === c.id) ? previos : [c, ...previos],
+    );
+    setClienteId(c.id);
+  }, []);
   const enfocarBuscador = useRef<() => void>(() => {});
 
   const totales = useMemo(() => calcularTotales(lineas, descuentoGlobal), [lineas, descuentoGlobal]);
@@ -249,7 +269,7 @@ export default function PantallaVenta({
       numero: 'Pendiente',
       fecha: capturadaEn,
       vendedor,
-      cliente: clientes.find((c) => c.id === clienteId)?.nombre ?? null,
+      cliente: todosLosClientes.find((c) => c.id === clienteId)?.nombre ?? null,
       lineas: lineas.map((l) => ({
         descripcion: l.descripcion,
         cantidad: l.cantidad,
@@ -360,7 +380,7 @@ export default function PantallaVenta({
           totales={totales}
           descuentoGlobal={descuentoGlobal}
           puedeDescontar={esDuenio}
-          clientes={clientes}
+          clientes={todosLosClientes}
           clienteId={clienteId}
           puedeFiar={esDuenio}
           tcCentavos={tcCentavos}
@@ -369,6 +389,7 @@ export default function PantallaVenta({
           onDescuentoDeLinea={cambiarDescuentoDeLinea}
           onDescuentoGlobal={setDescuentoGlobal}
           onCliente={setClienteId}
+          onClienteCreado={agregarCliente}
           onQuitar={quitar}
           onVaciar={vaciar}
           onCobrar={() => setCobrando(true)}
@@ -459,7 +480,7 @@ export default function PantallaVenta({
           lineas={lineas}
           descuentoGlobal={descuentoGlobal}
           clienteId={clienteId}
-          cliente={clientes.find((c) => c.id === clienteId) ?? null}
+          cliente={todosLosClientes.find((c) => c.id === clienteId) ?? null}
           puedeFiar={esDuenio}
           cuentas={cuentas}
           onCerrar={() => setCobrando(false)}

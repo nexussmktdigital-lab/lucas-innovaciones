@@ -230,6 +230,45 @@ describe('problemasDelCobro', () => {
     expect(problemasDelCobro(calcularTotales([]), [])).toContain('El carrito está vacío.');
   });
 
+  /*
+   * El campo del monto queda vacío cada vez que alguien borra para reescribirlo,
+   * y eso es un pago en cero. `calcularCobro` levanta excepción ante eso —bien,
+   * es una cuenta de plata— pero esta función es la que explica qué falta y no
+   * puede tirar nada: reventaba la pantalla de cobro en medio de una venta.
+   */
+  it('un pago sin monto se explica, no revienta', () => {
+    expect(() =>
+      problemasDelCobro(totales, [{ medio: 'cuenta_corriente', montoCentavos: 0 }]),
+    ).not.toThrow();
+
+    expect(problemasDelCobro(totales, [{ medio: 'cuenta_corriente', montoCentavos: 0 }])).toEqual([
+      'Hay un pago sin monto. Escribilo o quitá ese renglón.',
+    ]);
+  });
+
+  it('con varios sin monto, lo dice en plural', () => {
+    expect(
+      problemasDelCobro(totales, [
+        { medio: 'efectivo', montoCentavos: 0 },
+        { medio: 'transferencia', montoCentavos: 0 },
+      ]),
+    ).toEqual(['Hay 2 pagos sin monto. Escribilos o quitá esos renglones.']);
+  });
+
+  it('uno cargado y otro vacío también se explica', () => {
+    const r = problemasDelCobro(totales, [
+      { medio: 'efectivo', montoCentavos: 3_000_000 },
+      { medio: 'transferencia', montoCentavos: 0 },
+    ]);
+    expect(r).toEqual(['Hay un pago sin monto. Escribilo o quitá ese renglón.']);
+  });
+
+  it('un monto negativo cae en el mismo aviso', () => {
+    expect(() =>
+      problemasDelCobro(totales, [{ medio: 'efectivo', montoCentavos: -100 }]),
+    ).not.toThrow();
+  });
+
   it('avisa que falta plata', () => {
     expect(
       problemasDelCobro(totales, [{ medio: 'efectivo', montoCentavos: 1_000_000 }]),

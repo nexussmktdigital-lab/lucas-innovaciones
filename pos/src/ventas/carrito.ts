@@ -325,6 +325,25 @@ export function problemasDelCobro(
     return problemas;
   }
 
+  /*
+   * Un renglón de pago en cero es lo más común del mundo: el campo queda vacío
+   * mientras alguien borra para reescribir el monto. `calcularCobro` levanta
+   * excepción ante eso —y está bien que lo haga, es una cuenta de plata— pero
+   * esta función es la que EXPLICA qué falta, así que no puede tirar nada. Lo
+   * comprueba antes y lo cuenta, que es su trabajo.
+   *
+   * Antes reventaba la pantalla de cobro en medio de una venta.
+   */
+  const enCero = pagos.filter((p) => p.montoCentavos <= 0).length;
+  if (enCero > 0) {
+    problemas.push(
+      enCero === 1
+        ? 'Hay un pago sin monto. Escribilo o quitá ese renglón.'
+        : `Hay ${enCero} pagos sin monto. Escribilos o quitá esos renglones.`,
+    );
+    return problemas;
+  }
+
   const cobro = calcularCobro(totales.totalCentavos, pagos);
   if (!cobro.alcanza) problemas.push('El pago no cubre el total.');
 

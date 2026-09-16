@@ -296,3 +296,82 @@ test('anular una venta fiada ya cobrada en parte deja anotada la devolución', a
   await expect(page.getByRole('alert').filter({ hasText: 'Devolvele' })).toHaveCount(0);
 });
 
+/*
+ * El caso de todos los días: se armó el carrito, se va a fiar, y el cliente no
+ * está cargado. Antes había que abrir Clientes en otra pestaña, cargarlo y
+ * volver — y el carrito quedaba a merced de lo que pasara en el medio.
+ *
+ * Lo que este test cuida no es que el alta funcione, sino que **el carrito siga
+ * ahí**: crear un cliente revalida /vender, y si eso desmontara la pantalla, el
+ * pedido armado se perdería con un cliente esperando del otro lado.
+ */
+test('se carga un cliente desde la pantalla de venta sin perder el carrito', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+
+  // Dos renglones distintos, para que se note si se pierde alguno.
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  for (const termino of ['vidrio templado', 'funda común']) {
+    await buscador.fill(termino);
+    await page.getByRole('button', { name: new RegExp(termino.split(' ')[0]!, 'i') }).first().waitFor();
+    await buscador.press('Enter');
+  }
+
+  const carrito = page.getByRole('complementary', { name: 'Carrito' });
+  await expect(carrito).toContainText('2 unidades');
+  const totalAntes = await carrito.locator('dl').innerText();
+
+  // Se carga el cliente sin salir de acá.
+  const nombre = `Cliente del mostrador ${SUFIJO}`;
+  await carrito.getByRole('button', { name: '+ Nuevo' }).click();
+
+  const alta = page.getByRole('form', { name: 'Cargar un cliente' });
+  await expect(alta).toBeVisible();
+  await alta.getByLabel('Nombre').fill(nombre);
+  await alta.getByLabel(/Teléfono/).fill(`3573 40${SUFIJO}`);
+  await alta.getByRole('button', { name: 'Cargar y elegir' }).click();
+
+  // Queda elegido solo, sin tener que buscarlo en la lista.
+  await expect(page.getByLabel(/^Cliente/)).toHaveValue(/.+/, { timeout: 15_000 });
+  await expect(carrito).toContainText(nombre);
+
+  // Y lo que importa: el carrito quedó intacto.
+  await expect(carrito).toContainText('2 unidades');
+  expect(await carrito.locator('dl').innerText()).toBe(totalAntes);
+
+  // Y se puede fiar, que es para lo que se cargó.
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toBeVisible();
+});
+
+/*
+ * El campo del monto queda vacío cada vez que alguien borra para reescribirlo.
+ * Eso reventaba la pantalla de cobro en medio de una venta.
+ */
+test('un pago sin monto lo explica en vez de romper la pantalla', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await buscador.press('Enter');
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+
+  // Se borra el monto, como cuando se va a reescribir.
+  await cobro.getByLabel('Monto en Efectivo').fill('');
+
+  await expect(cobro.getByText('Hay un pago sin monto. Escribilo o quitá ese renglón.')).toBeVisible();
+  await expect(cobro).toBeVisible();
+  await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
+
+  // Y al escribirlo, sigue todo en pie.
+  await cobro.getByLabel('Monto en Efectivo').fill('5000');
+  await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeEnabled();
+});

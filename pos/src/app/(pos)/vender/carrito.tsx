@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { aCentavos, formatearARS, formatearUSD } from '@/lib/dinero';
 import type { Descuento, TotalesCarrito } from '@/ventas/carrito';
 import type { Cliente, LineaEnPantalla } from './pantalla-venta';
+import NuevoCliente from './nuevo-cliente';
 
 interface Props {
   lineas: LineaEnPantalla[];
@@ -19,6 +21,8 @@ interface Props {
   onDescuentoDeLinea: (clave: string, centavos: number) => void;
   onDescuentoGlobal: (d: Descuento | null) => void;
   onCliente: (id: string | null) => void;
+  /** Un cliente recién cargado desde acá, para agregarlo a la lista y elegirlo. */
+  onClienteCreado: (cliente: Cliente) => void;
   onQuitar: (clave: string) => void;
   onVaciar: () => void;
   onCobrar: () => void;
@@ -41,12 +45,14 @@ export default function Carrito({
   onDescuentoDeLinea,
   onDescuentoGlobal,
   onCliente,
+  onClienteCreado,
   onQuitar,
   onVaciar,
   onCobrar,
 }: Props) {
   const vacio = lineas.length === 0;
   const elegido = clientes.find((c) => c.id === clienteId) ?? null;
+  const [cargandoCliente, setCargandoCliente] = useState(false);
 
   return (
     <div className="flex flex-col gap-3 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-3">
@@ -166,14 +172,15 @@ export default function Carrito({
               <label htmlFor="cliente" className="text-xs text-(--color-tinta-suave)">
                 Cliente (opcional en contado, obligatorio para fiar)
               </label>
-              <a
-                href="/clientes"
-                target="_blank"
-                rel="noopener"
+              {/* Abre el alta acá mismo. Antes esto llevaba a otra pestaña, y
+                  volver con el carrito armado dependía de la suerte. */}
+              <button
+                type="button"
+                onClick={() => setCargandoCliente((x) => !x)}
                 className="text-xs underline underline-offset-2"
               >
-                + Nuevo
-              </a>
+                {cargandoCliente ? 'Cerrar' : '+ Nuevo'}
+              </button>
             </div>
             <select
               id="cliente"
@@ -189,6 +196,16 @@ export default function Carrito({
                 </option>
               ))}
             </select>
+
+            {cargandoCliente ? (
+              <NuevoCliente
+                onCreado={(c) => {
+                  onClienteCreado(c);
+                  setCargandoCliente(false);
+                }}
+                onCancelar={() => setCargandoCliente(false)}
+              />
+            ) : null}
 
             {puedeFiar && elegido && elegido.saldoCentavos > 0 ? (
               <p className="mt-1 text-xs text-(--color-alerta)">
