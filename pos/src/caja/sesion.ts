@@ -20,6 +20,9 @@ import {
   sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+// El driver de producción no acepta un `Date` como parámetro de una consulta
+// escrita a mano, aunque PGlite —el de los tests— lo acepte. Va como ISO.
+import { instante as instanteDe } from '@/reportes/periodo';
 
 export class ErrorCaja extends Error {}
 
@@ -156,6 +159,17 @@ export interface ResumenDeSesion {
   retirosCentavos: number;
   /** Lo devuelto a clientes por ventas de turnos anteriores. */
   devolucionesCentavos: number;
+  /** Ventas que se cobraron sin conexión y entraron en este turno (D56). */
+  ventasDiferidas: number;
+  ventasDiferidasCentavos: number;
+  /**
+   * De esas, las que se cobraron antes de que este turno abriera.
+   *
+   * Es el caso incómodo: la plata entró al cajón del turno anterior, que ya se
+   * contó. El arqueo de hoy las suma porque es donde el sistema se enteró, y lo
+   * dice en vez de dejar una diferencia sin explicación.
+   */
+  ventasDeOtroTurno: number;
 }
 
 export async function resumenDeSesion(
@@ -181,6 +195,9 @@ export async function resumenDeSesion(
     cantidad: string | number;
     total: string | number;
     unidades: string | number;
+    diferidas: string | number;
+    diferidas_centavos: string | number;
+    de_otro_turno: string | number;
   }>(
     await db.execute(sql`
       SELECT count(*) AS cantidad,
@@ -189,7 +206,15 @@ export async function resumenDeSesion(
                          FROM sale_items i
                          JOIN sales s2 ON s2.id = i.sale_id
                         WHERE s2.cash_session_id = ${sesionId}
-                          AND s2.estado = 'completed'), 0) AS unidades
+                          AND s2.estado = 'completed'), 0) AS unidades,
+             -- Las que se cobraron sin conexión y entraron después (D56).
+             count(*) FILTER (WHERE s.offline) AS diferidas,
+             COALESCE(SUM(s.total_centavos) FILTER (WHERE s.offline), 0) AS diferidas_centavos,
+             -- Y de esas, las que se cobraron antes de que este turno abriera:
+             -- la plata entró a otro cajón y esto lo tiene que explicar.
+             count(*) FILTER (
+               WHERE s.offline AND s.offline_capturada_en < ${instanteDe(sesion.abiertaEn)}
+             ) AS de_otro_turno
         FROM sales s
        WHERE s.cash_session_id = ${sesionId} AND s.estado = 'completed'
     `),
@@ -326,6 +351,9 @@ export async function resumenDeSesion(
     gastosCentavos: Number(salidas?.gastos ?? 0),
     retirosCentavos: Number(salidas?.retiros ?? 0),
     devolucionesCentavos: Number(salidas?.devoluciones ?? 0),
+    ventasDiferidas: Number(ventas?.diferidas ?? 0),
+    ventasDiferidasCentavos: Number(ventas?.diferidas_centavos ?? 0),
+    ventasDeOtroTurno: Number(ventas?.de_otro_turno ?? 0),
   };
 }
 

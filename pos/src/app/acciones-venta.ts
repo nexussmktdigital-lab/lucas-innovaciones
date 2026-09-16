@@ -17,6 +17,7 @@ import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
+import { calcularTotales } from '@/ventas/carrito';
 import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
 import { ErrorFiado } from '@/fiado/cuenta';
 import { drenarEnSegundoPlano } from '@/woo/cola';
@@ -198,6 +199,169 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       ok: false,
       error: 'No se pudo confirmar la venta. No se cobró nada: probá de nuevo.',
     };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ventas cobradas sin conexión                                               */
+/* -------------------------------------------------------------------------- */
+
+const esquemaDiferida = esquemaVenta.extend({
+  /** Cuándo se cobró de verdad, en ISO. */
+  capturadaEn: z.string().datetime({ offset: true }),
+  /** El turno que estaba abierto en ese momento. */
+  cashSessionId: z.string().uuid(),
+  /** Lo cobrado por unidad en cada línea, en el orden de `lineas`. */
+  preciosCobradosCentavos: z.array(z.number().int().min(0)).min(1),
+  /** El total que se le cobró al cliente. Se comprueba contra las líneas. */
+  totalCobradoCentavos: z.number().int().min(0),
+});
+
+export type DatosDeVentaDiferida = z.input<typeof esquemaDiferida>;
+
+export type ResultadoDiferida =
+  | {
+      ok: true;
+      ventaId: string;
+      numero: string;
+      /** Lo cobrado menos lo que el catálogo dice hoy. Cero es lo normal. */
+      desvioCentavos: number;
+      /** True si esta venta dejó algún stock en negativo. */
+      dejoStockEnRojo: boolean;
+      /** True si ya había entrado antes: se reintentó la misma clave. */
+      yaEstaba: boolean;
+    }
+  | { ok: false; error: string; motivo?: string };
+
+/**
+ * Sube una venta que se cobró sin conexión.
+ *
+ * Va por una acción aparte de `registrarVenta` a propósito. Las reglas no son
+ * las mismas —el precio lo pone la pantalla, el stock puede quedar en negativo,
+ * la guarda de precios no bloquea— y meter todo eso en la acción de siempre
+ * significaría que cualquier venta normal pudiera pedir esas excepciones con
+ * una bandera. Acá quedan a la vista, en un solo lugar.
+ */
+export async function subirVentaDiferida(
+  datos: DatosDeVentaDiferida,
+): Promise<ResultadoDiferida> {
+  const sesion = await auth();
+  if (!sesion?.user) return { ok: false, error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'venta.crear')) {
+    return { ok: false, error: 'No tenés permiso para vender.' };
+  }
+
+  const validado = esquemaDiferida.safeParse(datos);
+  if (!validado.success) {
+    return { ok: false, error: validado.error.issues[0]?.message ?? 'Datos inválidos.' };
+  }
+  const d = validado.data;
+
+  if (d.preciosCobradosCentavos.length !== d.lineas.length) {
+    return { ok: false, error: 'Los precios cobrados no coinciden con los renglones.' };
+  }
+
+  // Los mismos permisos que la venta de siempre. Que sin conexión la pantalla
+  // no ofrezca descontar ni fiar no es una guarda: lo que llega acá es lo que
+  // el navegador quiera mandar, y esto se comprueba en el servidor (D28).
+  const hayDescuento =
+    Boolean(d.descuentoGlobal) || d.lineas.some((l) => (l.descuentoCentavos ?? 0) > 0);
+  if (hayDescuento && !puede(sesion.user.rol, 'venta.descuento')) {
+    return { ok: false, error: 'Los descuentos los tiene que autorizar el dueño.' };
+  }
+
+  const hayFiado = d.pagos.some((p) => p.medio === 'cuenta_corriente');
+  if (hayFiado && !puede(sesion.user.rol, 'fiado.crear')) {
+    return { ok: false, error: 'Fiar lo tiene que autorizar el dueño.' };
+  }
+  if (hayFiado && !d.clienteId) {
+    return { ok: false, error: 'Para fiar hace falta elegir un cliente.' };
+  }
+
+  /*
+   * Que el total cobrado sea el que sale de los renglones se comprueba acá, con
+   * los números que mandó la pantalla. No es una guarda contra un navegador
+   * manipulado —sin conexión ese dato no se puede verificar contra nada— sino
+   * contra el error honesto: una cola guardada a medias, un renglón que se
+   * perdió al serializar. Lo que sale de la cuenta es lo que tiene que estar en
+   * el cajón, y si no coincide es mejor no subirla que subirla mal.
+   *
+   * La cuenta la hace `calcularTotales`, la misma que usó la pantalla al
+   * cobrar. Rehacerla a mano acá seria tener dos aritmeticas que se despegan en
+   * el primer redondeo, y el sintoma serian ventas legitimas rechazadas.
+   */
+  const totales = calcularTotales(
+    d.lineas.map((l, i) => ({
+      productId: l.productId,
+      variantId: l.variantId ?? null,
+      descripcion: '',
+      cantidad: l.cantidad,
+      precioUnitarioCentavos: d.preciosCobradosCentavos[i] ?? 0,
+      monedaOriginal: 'ARS' as const,
+      precioUsdCentavos: null,
+      descuentoCentavos: l.descuentoCentavos ?? 0,
+    })),
+    d.descuentoGlobal ?? null,
+  );
+
+  if (totales.totalCentavos !== d.totalCobradoCentavos) {
+    return {
+      ok: false,
+      error: 'Los renglones de esta venta no suman lo que se cobró. Revisala con el dueño.',
+      motivo: 'no_cuadra',
+    };
+  }
+
+  const terminal = config().POS_TERMINAL;
+
+  try {
+    const venta = await confirmarVenta(db, {
+      lineas: d.lineas.map((l) => ({
+        productId: l.productId,
+        variantId: l.variantId ?? null,
+        cantidad: l.cantidad,
+        precioManualCentavos: l.precioManualCentavos ?? null,
+        descuentoCentavos: l.descuentoCentavos ?? 0,
+      })),
+      pagos: d.pagos.map((p) => ({
+        medio: p.medio,
+        montoCentavos: p.montoCentavos,
+        monetaryAccountId: p.monetaryAccountId ?? null,
+        marcaTarjeta: p.marcaTarjeta ?? null,
+        cuotas: p.cuotas ?? null,
+        ultimos4: p.ultimos4 ?? null,
+      })),
+      descuentoGlobal: d.descuentoGlobal ?? null,
+      clienteId: d.clienteId ?? null,
+      vendedorId: sesion.user.id,
+      cashSessionId: d.cashSessionId,
+      terminal,
+      idempotencyKey: d.idempotencyKey,
+      nota: d.nota ?? null,
+      diferida: {
+        capturadaEn: new Date(d.capturadaEn),
+        preciosCobradosCentavos: d.preciosCobradosCentavos,
+      },
+    });
+
+    after(() => drenarEnSegundoPlano(db));
+
+    revalidatePath('/caja');
+    revalidatePath('/ventas');
+
+    return {
+      ok: true,
+      ventaId: venta.id,
+      numero: venta.numero,
+      desvioCentavos: venta.desvioCentavos ?? 0,
+      dejoStockEnRojo: venta.dejoStockEnRojo ?? false,
+      yaEstaba: venta.yaExistia,
+    };
+  } catch (error) {
+    if (error instanceof ErrorVenta) return { ok: false, error: error.message, motivo: error.motivo };
+    if (error instanceof ErrorFiado) return { ok: false, error: error.message, motivo: error.motivo };
+    console.error('[venta] Falló una venta diferida:', error);
+    return { ok: false, error: 'No se pudo subir la venta. Sigue guardada: probá de nuevo.' };
   }
 }
 

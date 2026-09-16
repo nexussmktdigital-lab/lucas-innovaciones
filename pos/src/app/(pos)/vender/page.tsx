@@ -45,6 +45,7 @@ export default async function PaginaVender() {
       cuentas={cuentas}
       clientes={clientes}
       pendientesDeSync={cola.pendientes + cola.fallidas}
+      cashSessionId={caja.id}
       puedeCargarProductos={
         sesion?.user ? puede(sesion.user.rol, 'producto.alta_rapida') : false
       }

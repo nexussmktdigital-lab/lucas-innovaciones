@@ -746,3 +746,53 @@ Dos reglas que quedan:
 - **Un test que trae la fecha no alcanza: tiene que formatearla.** Leer el campo
   y compararlo pasa con las dos formas; el que falla es el que hace con el valor
   lo mismo que hace la pantalla. Ese test se agregó.
+
+---
+
+# v1.1 — lo que el offline deja abierto
+
+No es una auditoría: son las cosas que se saben al terminar de construir el modo
+sin conexión y que conviene tener anotadas antes de que alguien las descubra en
+el mostrador.
+
+## Lo que se encontró construyendo
+
+### 41. El catálogo guardado no encontraba una variación por el SKU del padre *(corregido)*
+
+El test que compara las dos búsquedas —la del servidor y la de lo guardado—
+falló en el término `531`. Con conexión el `LIKE` corre contra el SKU del
+producto **y** el de la variación, así que tipear el del padre encuentra la
+variación; sin conexión el renglón guardado solo llevaba `COALESCE(v.sku,
+p.sku)` y el del padre se perdía.
+
+Es exactamente el tipo de diferencia que este modo no puede tener: el lector de
+código de barras agrega el primer resultado, y un orden distinto vende otro
+producto. Se agregó `skuProducto` al renglón, que no se muestra en ninguna
+parte y existe solo para que las dos búsquedas coincidan.
+
+La lección es sobre el test, no sobre el bug: **probar las dos búsquedas por
+separado no habría encontrado nada**, porque cada una hacía lo que su propio
+test esperaba. Lo que lo encontró fue compararlas contra la misma base.
+
+### 42. `exacto` marcaba medio catálogo al bajar la instantánea *(corregido)*
+
+La instantánea usa el mismo buscador con un término vacío, y la expresión de
+coincidencia exacta comparaba contra la cadena vacía: todo producto sin código
+de barras cargado quedaba marcado como exacto. Ese campo es el que decide qué
+agrega el lector. Con término vacío ahora es `false` y no se calcula.
+
+### 43. El aviso del arqueo estaba dentro de la lista equivocada *(corregido)*
+
+«De eso, cobrado sin conexión» se había puesto dentro del bloque de salidas del
+cajón, que solo se renderiza cuando hay gastos, retiros o devoluciones. Con un
+turno donde lo único distinto era una venta diferida, el aviso no aparecía. Lo
+encontró el test de punta a punta. Va con la plata que entró, que es lo que es.
+
+## Lo que queda abierto
+
+| # | Qué | Por qué se deja | Cuándo conviene |
+|---|---|---|---|
+| 44 | Una venta que se cobró sin conexión y se sube después de que otra persona inició sesión queda atribuida a quien la subió, no a quien la cobró. La cola no guarda el vendedor —guardarlo y creerle sería dejar que el navegador elija a quién atribuir una venta— así que el servidor usa la sesión que la sube | Son dos usuarios en una sola terminal y la venta queda registrada igual, con la hora del cobro. Lo que se pierde es a quién atribuirla | Cuando haya más de un vendedor por turno |
+| 45 | La copia de pantalla que guarda el service worker lleva adentro el nombre y el rol de quien la abrió. Si el vendedor recarga sin conexión justo después de que salió el dueño, ve por un momento la navegación del dueño | Al salir se le pide al worker que borre lo guardado, así que solo pasa si el navegador se cierra sin usar «Salir». Y no habilita nada: todo permiso se comprueba en el servidor (D28) | Si alguna vez hay más de dos personas usando la misma tablet |
+| 46 | El catálogo guardado se refresca cada diez minutos con la pantalla de venta abierta. Si la tablet pasa la mañana en otra pantalla y se corta internet, lo guardado puede tener horas | La pantalla avisa cuántas horas tiene y marca en rojo si pasó el refresco del dólar, que es el único precio que cambia solo | Si en la práctica se nota que llega viejo seguido |
+| 47 | No hay tope a cuántas ventas pueden quedar en la cola. Un corte de un día entero llenaría IndexedDB con las ventas del día | No es un problema de tamaño —una venta son unos kilobytes— sino de que nadie mire el aviso. El cierre de turno ya lo frena | Cualquier momento |

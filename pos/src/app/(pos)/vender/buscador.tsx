@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
+import { buscarEnCache, type Instantanea } from '@/offline/catalogo';
 
 interface Props {
   onAgregar: (r: ResultadoBusqueda) => void;
@@ -11,12 +12,23 @@ interface Props {
   tcCentavos: number | null;
   /** True si quien atiende puede dar de alta lo que no encuentra. */
   puedeCargar: boolean;
+  /** False cuando el servidor no contesta: se busca en lo guardado. */
+  hayConexion: boolean;
+  /** El catálogo guardado en la tablet, para buscar sin conexión. */
+  catalogo: Instantanea | null;
 }
 
 /** Espera antes de consultar, para no pedir una búsqueda por tecla. */
 const ESPERA_MS = 120;
 
-export default function Buscador({ onAgregar, registrarFoco, tcCentavos, puedeCargar }: Props) {
+export default function Buscador({
+  onAgregar,
+  registrarFoco,
+  tcCentavos,
+  puedeCargar,
+  hayConexion,
+  catalogo,
+}: Props) {
   const [texto, setTexto] = useState('');
   const [consulta, setConsulta] = useState('');
   const [sinStock, setSinStock] = useState(false);
@@ -38,7 +50,7 @@ export default function Buscador({ onAgregar, registrarFoco, tcCentavos, puedeCa
 
   const { data, isFetching } = useQuery({
     queryKey: ['buscar', consulta, sinStock],
-    enabled: consulta.length > 0,
+    enabled: consulta.length > 0 && hayConexion,
     queryFn: async ({ signal }) => {
       const url = `/api/buscar?q=${encodeURIComponent(consulta)}${sinStock ? '&sinStock=1' : ''}`;
       const r = await fetch(url, { signal });
@@ -47,7 +59,14 @@ export default function Buscador({ onAgregar, registrarFoco, tcCentavos, puedeCa
     },
   });
 
-  const resultados = data?.resultados ?? [];
+  /*
+   * Sin conexión se busca en el catálogo guardado, con el mismo criterio de
+   * orden que usa el servidor: el lector de código de barras agrega el primero,
+   * y si offline el primero fuera otro, el mismo gesto vendería otro producto.
+   */
+  const resultados = hayConexion
+    ? (data?.resultados ?? [])
+    : buscarEnCache(catalogo?.productos ?? [], consulta, { incluirSinStock: sinStock });
 
   useEffect(() => setResaltado(0), [consulta, sinStock]);
 
@@ -122,7 +141,17 @@ export default function Buscador({ onAgregar, registrarFoco, tcCentavos, puedeCa
             No hay nada que coincida con «{consulta}».
             {!sinStock ? ' Probá marcando «incluir sin stock».' : ''}
           </p>
-          {puedeCargar ? (
+          {/* Sin conexión no se puede dar de alta un producto: necesita escribir
+              en el catálogo, que es del servidor. Se dice, en vez de ofrecer un
+              botón que no va a hacer nada. */}
+          {!hayConexion ? (
+            <p className="mt-2 text-(--color-alerta)">
+              Se está buscando en el catálogo guardado
+              {catalogo ? '' : ', que todavía está vacío'}. Cargar un producto nuevo necesita
+              conexión.
+            </p>
+          ) : null}
+          {puedeCargar && hayConexion ? (
             <a
               href={`/catalogo/nuevo?q=${encodeURIComponent(consulta)}`}
               className="mt-3 inline-block min-h-11 rounded-(--radius-caja) border-2 border-(--color-marca) px-4 leading-[2.75rem] font-semibold"

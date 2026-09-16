@@ -106,7 +106,8 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
       resumen.fiadoCentavos > 0 ||
       resumen.gastosCentavos > 0 ||
       resumen.retirosCentavos > 0 ||
-      resumen.devolucionesCentavos > 0 ? (
+      resumen.devolucionesCentavos > 0 ||
+      resumen.ventasDiferidas > 0 ? (
         <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
           <h2 className="mb-1 text-sm font-semibold text-(--color-tinta-suave)">
             Plata que entró, por medio
@@ -127,6 +128,30 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
               </div>
             ))}
           </dl>
+
+          {/* No es un renglón aparte sino una aclaración de lo de arriba: esa
+              plata ya está contada en su medio. Lo que agrega es que se cobró
+              en otro momento, y sin eso quien cuenta el cajón ve números que no
+              cuadran con la hora de las ventas y no tiene cómo saber por qué. */}
+          {resumen.ventasDiferidas > 0 ? (
+            <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm">
+              <div className="flex justify-between">
+                <dt>
+                  De eso, cobrado sin conexión ({resumen.ventasDiferidas})
+                  {resumen.ventasDeOtroTurno > 0 ? (
+                    <span className="block text-xs font-medium text-(--color-alerta)">
+                      {resumen.ventasDeOtroTurno} se{' '}
+                      {resumen.ventasDeOtroTurno === 1 ? 'cobró' : 'cobraron'} antes de que abriera
+                      este turno
+                    </span>
+                  ) : null}
+                </dt>
+                <dd className="tabular font-medium">
+                  {formatearARS(resumen.ventasDiferidasCentavos)}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
 
           {/* Lo que salió del cajón: sin esto el conteo da de menos y nadie
               sabe por qué. */}

@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: Fase 10 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar.
+**Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
 
 Las fases 3.5 a 3.7 salieron de una auditoría de uso del sistema completo, anotada en [AUDITORIA.md](AUDITORIA.md): veinte hallazgos reproducidos, trece corregidos, ninguno de los que quedan bloquea salir a producción.
 
@@ -22,6 +22,7 @@ mandan sobre este código:
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
+| **D56** | **Sin conexión el POS sigue vendiendo.** El catálogo vive guardado en la tablet y la venta cobrada va a una cola que se sube sola. El precio de esa venta lo pone la pantalla —única excepción a que el servidor no le cree al navegador— porque sin catálogo que consultar es el único dato que existe de lo que el cliente pagó. Lo que reemplaza a la guarda es el **desvío** anotado contra el catálogo. |
 | **D31** | **El mostrador y la tienda cobran distinto, y el número que se guarda es el de la tienda.** En la web cobra Mercado Pago y esa comisión no la paga el local. WooCommerce guarda el precio de la tienda —que es el que la web cobra de verdad— y el POS le descuenta un recargo global para llegar al de mostrador. Un producto por producto queda con un precio de mostrador escrito a mano cuando el porcentaje no aplica. |
 
 ### Reglas que no se negocian
@@ -669,6 +670,85 @@ anterior más de la mitad de la facturación se cargaba sin producto.
 
 ---
 
+## Vender sin internet
+
+El POS es online: sin servidor no hay catálogo, no hay stock y no hay número de
+venta. Pero en Villa Santa Rosa la conexión se corta, y lo que pasa de verdad
+cuando se corta es que se vende igual y se anota en un papel. Un papel no
+descuenta stock ni entra al arqueo.
+
+La v1.1 no convierte el POS en una aplicación offline: resuelve exactamente eso
+y nada más. Tres piezas.
+
+**La pantalla abre sin servidor.** Un service worker guarda la última copia de
+cada pantalla y la sirve cuando la red no contesta. Es lo primero que hay que
+resolver: la tablet se recarga sola cada tanto, y sin esto aparece el dinosaurio
+del navegador y se terminó el día. Las rutas de API nunca se guardan —una
+respuesta vieja del buscador sería stock inventado— y las páginas van por red
+primero, así que con internet se ve siempre lo de ahora.
+
+**El catálogo vive en la tablet.** Se baja entero al abrir la pantalla de venta
+y se refresca cada diez minutos; son unos pocos cientos de kilobytes. Sin
+conexión el buscador cae ahí, **con el mismo criterio de orden que usa el
+servidor**. Eso no es un detalle estético: el lector de código de barras termina
+con Enter y agrega el primer resultado, así que si offline el primero fuera otro,
+el mismo gesto vendería otro producto y nadie lo notaría hasta el arqueo. Hay un
+test que corre las dos búsquedas contra la misma base y compara el orden.
+
+**La venta cobrada va a una cola**, con la misma clave de idempotencia que usa el
+servidor, y **se guarda antes de intentar subirla**. Al revés —intentar primero,
+guardar si falla— un error en el medio deja una venta cobrada que no existe en
+ninguna parte. Cuando el servidor vuelve a contestar, la cola se sube sola, sin
+que nadie toque nada; la misma clave garantiza que subirla dos veces no la cobre
+dos veces.
+
+### Las tres cosas que se pagan
+
+Ninguna se puede evitar. Las tres se muestran en vez de esconderse.
+
+**El comprobante sale sin número.** El correlativo lo asigna el servidor, y el
+servidor no está. El ticket se imprime igual —el cliente se lleva su papel— con
+un recuadro que dice `SIN CONEXIÓN` y que lo cobrado sí es definitivo, para que
+nadie lo busque en el sistema y crea que se perdió.
+
+**El stock puede quedar en negativo.** Sin conexión el POS no puede reservar
+nada, así que dos ventas pueden llevarse la última unidad. Rechazar la venta al
+subirla no devuelve el producto que el cliente ya se llevó: solo esconde que
+faltan dos. Entra, el stock queda en el número que de verdad quedó, y la pantalla
+avisa.
+
+**El precio lo pone la pantalla.** Es la única excepción a que el servidor no le
+crea al navegador, y no es por comodidad: sin catálogo que consultar, lo que se
+cobró es el único dato que existe de esa venta. Recalcularlo al subirla
+cambiaría lo que el cliente pagó y el cajón no cerraría. Lo que reemplaza a la
+guarda es el **desvío**: cada venta diferida guarda cuánto se apartó del precio
+de catálogo, y la lista de ventas lo muestra en el cuerpo, no en un tooltip.
+
+### Lo que el arqueo dice
+
+Dos cosas que sin decirlas dejarían a quien cuenta el cajón inventando
+justificaciones:
+
+- **El turno no se cierra con ventas esperando.** Esa plata está en el cajón y el
+  sistema todavía no la cuenta, así que el efectivo esperado está mal justo en
+  eso. La pantalla de caja lo frena y dice qué hacer.
+- **El arqueo separa lo cobrado sin conexión.** Y si alguna se cobró antes de que
+  este turno abriera —se cortó a las ocho, se cerró el turno a las nueve, volvió a
+  las diez— lo dice aparte: esa plata entró a otro cajón, y la venta cae en el
+  turno abierto porque es donde el sistema se enteró.
+
+### Instalarlo en la tablet
+
+El POS trae manifiesto, así que desde el navegador se puede «agregar a la
+pantalla de inicio». Abre a pantalla completa y sin barra de navegador, que de
+paso evita que alguien toque «atrás» en el medio de un cobro.
+
+El service worker **no se registra en desarrollo**, a propósito: servir páginas
+guardadas mientras se edita código es la forma más rápida de pasar una tarde
+mirando una versión vieja de lo que uno acaba de cambiar.
+
+---
+
 ## Dólares y calidad de datos
 
 El proyecto nace de un error concreto: en agosto se cargaron nueve iPhones a
@@ -781,7 +861,9 @@ Los tests de base **no necesitan un PostgreSQL levantado**: usan PGlite
 (PostgreSQL compilado a WASM) con las migraciones reales aplicadas, así que
 prueban el esquema de verdad — mismas restricciones, mismos disparadores.
 
-Los de Playwright sí necesitan la base migrada y sembrada:
+Los de Playwright sí necesitan la base migrada, sembrada **y un build de
+producción**: el test de venta sin conexión depende del service worker, que a
+propósito no se registra en desarrollo.
 
 ```bash
 npm run db:migrate && npm run db:seed -- --reset && npm run build && npm run test:e2e
@@ -891,6 +973,20 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | En un lote a medias, se suma solo lo que entró de verdad | `src/woo/historico.test.ts` |
 | Un pedido histórico ilegible se descarta y el informe no cierra | `src/woo/historico.test.ts` |
 | El histórico importado aparece en el reporte mes a mes | `src/woo/historico.test.ts` |
+| Sin conexión, el buscador devuelve lo mismo y en el mismo orden que el servidor | `src/offline/catalogo.test.ts` |
+| Una variación se encuentra por el SKU del producto padre, también sin conexión | `src/offline/catalogo.test.ts` |
+| El catálogo guardado avisa cuando tiene más horas que el refresco del dólar | `src/offline/catalogo.test.ts` |
+| Una venta cobrada sin conexión entra con la fecha del cobro, no la de la carga | `src/ventas/diferida.test.ts` |
+| Se cobra el precio que se cobró, y la diferencia con el catálogo queda anotada | `src/ventas/diferida.test.ts` |
+| Una venta diferida entra aunque no haya stock, y lo deja en negativo | `src/ventas/diferida.test.ts` |
+| La venta de siempre sigue frenando sin stock y con precios sospechosos | `src/ventas/diferida.test.ts` |
+| Si el turno del cobro ya cerró, cae en el abierto y el arqueo lo explica | `src/ventas/diferida.test.ts` |
+| Subir dos veces la misma venta no la cobra ni descuenta stock dos veces | `src/ventas/diferida.test.ts` |
+| Una venta ya confirmada con conexión no se convierte en diferida al reintentarla | `src/ventas/diferida.test.ts` |
+| La base rechaza una venta marcada offline sin decir cuándo se cobró | `src/ventas/diferida.test.ts` |
+| Lo que se reintenta solo y lo que tiene que ver una persona | `src/offline/cola.test.ts` |
+| Se corta internet, se vende, y la venta entra sola cuando vuelve | `e2e/offline.spec.ts` |
+| El turno no se cierra con una venta cobrada esperando | `e2e/offline.spec.ts` |
 | La ruta del cron no se abre sin el secreto | `e2e/calidad.spec.ts` |
 | Ingreso por PIN y por contraseña, y los permisos por rol | `e2e/ingreso.spec.ts` |
 
@@ -922,6 +1018,7 @@ src/
   cotizacion/     Tipo de cambio: historial, guardas y vencimiento
   db/             Esquema Drizzle, migraciones, seed, base de test
   lib/            Dinero en centavos, fechas, texto, auditoría, chequeos de despliegue
+  offline/        Catálogo guardado en la tablet y cola de ventas cobradas
   reportes/       Períodos, agregados de venta y armado de planillas
   ventas/         Carrito, buscador, confirmación, ticket, anulación y devolución
   whatsapp/       Plantillas, armado de mensajes y enlace de wa.me
@@ -929,6 +1026,7 @@ src/
   gastos/         Gastos, cuentas monetarias y transferencias
   woo/            Cliente REST, mapeo, sincronización, cola, webhooks, histórico
   scripts/        Comandos de consola
+public/           Service worker, manifiesto e íconos de la app instalable
 drizzle/          Migraciones SQL versionadas
 e2e/              Tests de Playwright
 ```
@@ -991,4 +1089,4 @@ Orden de construcción, con el offline corrido a la v1.1 por D25:
 | 8 | Alta asistida de productos: rápida, con IA, importación masiva | **Hecha** |
 | 9 | Reportes y exportación | **Hecha** |
 | 10 | Devoluciones de turnos cerrados y migración del histórico | **Hecha** |
-| v1.1 | Offline acotado: caché de catálogo y cola de venta | Siguiente |
+| v1.1 | Offline acotado: caché de catálogo y cola de venta | **Hecha** |

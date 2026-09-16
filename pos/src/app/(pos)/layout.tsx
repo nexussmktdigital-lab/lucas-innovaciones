@@ -3,6 +3,8 @@ import { auth } from '@/auth';
 import { salir } from '../acciones-auth';
 import { Proveedores } from '../proveedores';
 import Navegacion from './navegacion';
+import RegistroSW from './registro-sw';
+import BotonSalir from './boton-salir';
 
 export default async function LayoutPos({ children }: { children: React.ReactNode }) {
   const sesion = await auth();
@@ -10,6 +12,7 @@ export default async function LayoutPos({ children }: { children: React.ReactNod
 
   return (
     <Proveedores>
+      <RegistroSW />
       <div className="flex min-h-dvh flex-col">
         <header className="sin-imprimir flex items-center gap-4 border-b border-(--color-borde) bg-(--color-panel) px-4 py-2">
           <span className="font-bold tracking-tight">Lucas Innovaciones</span>
@@ -21,14 +24,7 @@ export default async function LayoutPos({ children }: { children: React.ReactNod
                 {sesion.user.rol === 'owner' ? 'Dueño' : 'Vendedor'}
               </span>
             </span>
-            <form action={salir}>
-              <button
-                type="submit"
-                className="min-h-9 rounded-(--radius-caja) border border-(--color-borde) px-3 font-medium"
-              >
-                Salir
-              </button>
-            </form>
+            <BotonSalir salir={salir} />
           </div>
         </header>
         <main className="flex-1 p-4">{children}</main>

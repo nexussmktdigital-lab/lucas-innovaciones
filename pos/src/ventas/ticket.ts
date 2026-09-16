@@ -52,6 +52,15 @@ export interface DatosDelTicket {
   vueltoCentavos: number;
   tcAplicadoCentavos: number | null;
   nota?: string | null;
+  /**
+   * El ticket de una venta cobrada sin conexión (D56).
+   *
+   * Todavía no tiene número: el correlativo lo asigna el servidor y el servidor
+   * no está. Lo que se cobró sí es definitivo, así que el comprobante sale
+   * igual —el cliente se lleva su papel— pero dice en la cara que el número
+   * llega después, para que nadie lo busque en el sistema y crea que se perdió.
+   */
+  provisional?: boolean;
 }
 
 /** Datos por defecto del local, hasta que se carguen en configuración. */
@@ -234,6 +243,16 @@ export function generarTicket(
   </div>
 
   <hr>
+
+  ${
+    datos.provisional
+      ? `<div class="aviso centro fuerte">
+    SIN CONEXIÓN<br>
+    <span class="chico">El número de comprobante se asigna cuando vuelve internet.
+    Lo cobrado es definitivo.</span>
+  </div>`
+      : ''
+  }
 
   <div class="fila"><span>Comprobante</span><span class="fuerte">${escapar(datos.numero)}</span></div>
   <div class="fila"><span>Fecha</span><span>${escapar(formatearFechaHora(datos.fecha))}</span></div>

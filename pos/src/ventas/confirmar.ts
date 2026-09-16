@@ -71,6 +71,24 @@ export class ErrorVenta extends Error {
   }
 }
 
+/**
+ * Una venta que se cobró sin conexión y entra después (D56).
+ *
+ * Es la única parte del sistema donde el precio lo pone la pantalla, y no por
+ * comodidad: sin conexión no hay catálogo que consultar, así que lo que se
+ * cobró es el único dato que existe de esa venta. Reconstruir el precio al
+ * entrar cambiaría lo que el cliente ya pagó y el cajón no cerraría.
+ *
+ * Lo que la guarda hace en vez de bloquear es **dejar anotada la diferencia**
+ * contra el catálogo, para que el dueño la vea en vez de que se pierda.
+ */
+export interface CobroDiferido {
+  /** Cuándo se cobró de verdad. Es la fecha que lleva la venta. */
+  capturadaEn: Date;
+  /** Lo cobrado por unidad en cada línea, en el mismo orden que `lineas`. */
+  preciosCobradosCentavos: readonly number[];
+}
+
 /** Lo que pide el cliente. El precio NO viene de acá: lo pone el servidor. */
 export interface LineaSolicitada {
   productId: string;
@@ -96,6 +114,8 @@ export interface SolicitudDeVenta {
   autorizadaPorId?: string | null;
   /** El dueño vio el cartel de precio sospechoso y decidió vender igual. */
   confirmarPreciosSospechosos?: boolean;
+  /** Presente solo si la venta se cobró sin conexión y entra ahora. */
+  diferida?: CobroDiferido | null;
   ip?: string | null;
 }
 
@@ -107,6 +127,10 @@ export interface VentaConfirmada {
   tcAplicadoCentavos: number | null;
   /** True si la venta ya existía: se reintentó con la misma clave. */
   yaExistia: boolean;
+  /** Diferencia entre lo cobrado sin conexión y lo que dice el catálogo hoy. */
+  desvioCentavos?: number;
+  /** True si al entrar dejó algún stock en negativo: se vendió lo que no había. */
+  dejoStockEnRojo?: boolean;
 }
 
 /** Cuenta monetaria que corresponde a cada medio de pago. */
@@ -187,8 +211,30 @@ export async function confirmarVenta(
       )
       .limit(1);
 
+    /*
+     * Una venta diferida puede llegar con el turno en el que se cobró ya
+     * cerrado: se cortó internet a las ocho, se contó el cajón a las nueve y la
+     * conexión volvió a las diez. Esa plata está en el cajón igual, así que la
+     * venta entra en el turno que esté abierto ahora y el arqueo la explica en
+     * su propia línea, igual que una devolución (D54). Rechazarla dejaría la
+     * venta en el navegador para siempre, que es la única forma de perderla.
+     */
+    let cashSessionId = solicitud.cashSessionId;
     if (!sesion) {
-      throw new ErrorVenta('No hay una caja abierta. Abrí la caja antes de vender.', 'sin_caja');
+      const [abierta] = solicitud.diferida
+        ? await tx
+            .select({ id: cashSessions.id })
+            .from(cashSessions)
+            .where(
+              and(eq(cashSessions.terminal, solicitud.terminal), sql`${cashSessions.cerradaEn} IS NULL`),
+            )
+            .limit(1)
+        : [];
+
+      if (!abierta) {
+        throw new ErrorVenta('No hay una caja abierta. Abrí la caja antes de vender.', 'sin_caja');
+      }
+      cashSessionId = abierta.id;
     }
 
     // 3. Cotización vigente, congelada en esta venta.
@@ -296,8 +342,12 @@ export async function confirmarVenta(
     const lineas: LineaCarrito[] = [];
     const pedidoPorProducto = new Map<string, number>();
     const pedidoPorVariante = new Map<string, number>();
+    /** Lo cobrado sin conexión menos lo que el catálogo dice ahora. */
+    let desvioCentavos = 0;
+    /** El precio que habría puesto el catálogo, antes de pisarlo con lo cobrado. */
+    const preciosDeCatalogo: number[] = [];
 
-    for (const solicitada of solicitud.lineas) {
+    for (const [indice, solicitada] of solicitud.lineas.entries()) {
       const p = catalogo.get(solicitada.productId);
       if (!p) {
         throw new ErrorVenta(
@@ -336,6 +386,24 @@ export async function confirmarVenta(
         );
       }
 
+      /*
+       * Sin conexión el precio que vale es el que se cobró: es lo que el
+       * cliente pagó y lo que hay en el cajón. El del catálogo se calculó
+       * igual, unas líneas más arriba, y la diferencia queda anotada.
+       */
+      if (solicitud.diferida) {
+        const cobrado = solicitud.diferida.preciosCobradosCentavos[indice];
+        if (cobrado === undefined || !Number.isInteger(cobrado) || cobrado < 0) {
+          throw new ErrorVenta(
+            `Falta lo que se cobró por "${linea.descripcion}".`,
+            'datos_invalidos',
+          );
+        }
+        preciosDeCatalogo.push(linea.precioUnitarioCentavos);
+        desvioCentavos += (cobrado - linea.precioUnitarioCentavos) * solicitada.cantidad;
+        linea.precioUnitarioCentavos = cobrado;
+      }
+
       linea.descuentoCentavos = Math.max(0, Math.round(solicitada.descuentoCentavos ?? 0));
       lineas.push(linea);
 
@@ -361,7 +429,12 @@ export async function confirmarVenta(
     //
     //    En los dos casos no se bloquea de forma definitiva: se avisa y lo
     //    confirma el dueño, que es el único que puede saltear la guarda.
-    if (!solicitud.confirmarPreciosSospechosos) {
+    //
+    //    Una venta diferida no pasa por acá: ya se cobró, el cliente se fue con
+    //    el producto y frenarla ahora no deshace nada, solo la deja trabada en
+    //    el navegador. Lo que la reemplaza es el desvío anotado arriba, que el
+    //    dueño ve en la lista de ventas cargadas después.
+    if (!solicitud.confirmarPreciosSospechosos && !solicitud.diferida) {
       const sospechas = [
         ...revisarVenta(
           lineas.map((l) => {
@@ -395,15 +468,26 @@ export async function confirmarVenta(
 
     // 7. Stock. Se valida el total pedido por producto y por variación, no
     //    línea por línea: el mismo artículo puede estar en dos renglones.
+    //
+    //    Tampoco frena a una venta diferida, y por el mismo motivo: sin
+    //    conexión el POS no puede reservar nada, así que dos terminales pueden
+    //    haber vendido la última unidad. Rechazarla no devuelve el producto que
+    //    el cliente ya se llevó; lo único que hace es esconder que faltan dos.
+    //    El stock queda en negativo, que es exactamente lo que pasó, y se avisa.
+    let dejoStockEnRojo = false;
+
     for (const [productId, pedido] of pedidoPorProducto) {
       if (pedido === 0) continue;
       const p = catalogo.get(productId)!;
       const disponible = stockDisponible(p);
       if (pedido > disponible) {
-        throw new ErrorVenta(
-          `No hay stock de "${p.nombre}": quedan ${Math.max(0, disponible)} y se piden ${pedido}.`,
-          'sin_stock',
-        );
+        if (!solicitud.diferida) {
+          throw new ErrorVenta(
+            `No hay stock de "${p.nombre}": quedan ${Math.max(0, disponible)} y se piden ${pedido}.`,
+            'sin_stock',
+          );
+        }
+        dejoStockEnRojo = true;
       }
     }
 
@@ -412,10 +496,13 @@ export async function confirmarVenta(
       const v = variantes.get(variantId)!;
       const p = catalogo.get(v.productId)!;
       if (pedido > v.stock) {
-        throw new ErrorVenta(
-          `No hay stock de "${p.nombre} — ${v.nombre}": quedan ${Math.max(0, v.stock)} y se piden ${pedido}.`,
-          'sin_stock',
-        );
+        if (!solicitud.diferida) {
+          throw new ErrorVenta(
+            `No hay stock de "${p.nombre} — ${v.nombre}": quedan ${Math.max(0, v.stock)} y se piden ${pedido}.`,
+            'sin_stock',
+          );
+        }
+        dejoStockEnRojo = true;
       }
     }
 
@@ -447,7 +534,7 @@ export async function confirmarVenta(
         terminal: solicitud.terminal,
         vendedorId: solicitud.vendedorId,
         clienteId: solicitud.clienteId ?? null,
-        cashSessionId: solicitud.cashSessionId,
+        cashSessionId,
         canal: 'local',
         estado: 'completed',
         tipo: solicitud.pagos.some((p) => p.medio === 'cuenta_corriente') ? 'fiado' : 'contado',
@@ -459,6 +546,16 @@ export async function confirmarVenta(
         syncedToWoo: false,
         nota: solicitud.nota ?? null,
         autorizadaPorId: solicitud.autorizadaPorId ?? null,
+        // La fecha de una venta diferida es la del cobro y no la de la carga:
+        // es cuando ocurrió, y todo reporte se recorta por el día del local.
+        ...(solicitud.diferida
+          ? {
+              fecha: solicitud.diferida.capturadaEn,
+              offline: true,
+              offlineCapturadaEn: solicitud.diferida.capturadaEn,
+              offlineDesvioCentavos: desvioCentavos,
+            }
+          : {}),
       })
       .returning({ id: sales.id });
 
@@ -586,7 +683,7 @@ export async function confirmarVenta(
 
       await tx.insert(cashMovements).values({
         monetaryAccountId: cuentaId,
-        cashSessionId: solicitud.cashSessionId,
+        cashSessionId,
         tipo: 'venta',
         montoCentavos: monto,
         referenciaTipo: 'sale',
@@ -652,6 +749,23 @@ export async function confirmarVenta(
         medios: solicitud.pagos.map((p) => p.medio),
         autorizadaPor: solicitud.autorizadaPorId ?? null,
         preciosSospechososConfirmados: solicitud.confirmarPreciosSospechosos ?? false,
+        // Lo que hace falta para reconstruir qué pasó con una venta diferida.
+        ...(solicitud.diferida
+          ? {
+              offline: true,
+              capturadaEn: solicitud.diferida.capturadaEn.toISOString(),
+              desvioCentavos,
+              dejoStockEnRojo,
+              turnoDelCobro: solicitud.cashSessionId,
+              turnoDondeEntro: cashSessionId,
+              // Lo cobrado contra lo que el catálogo dice hoy, renglón por renglón.
+              precios: lineas.map((l, i) => ({
+                descripcion: l.descripcion,
+                cobradoCentavos: l.precioUnitarioCentavos,
+                catalogoCentavos: preciosDeCatalogo[i] ?? l.precioUnitarioCentavos,
+              })),
+            }
+          : {}),
         // Qué precios escribió a mano quien vendió, contra los del catálogo.
         preciosEscritos: lineas
           .map((l, i) => ({ l, solicitada: solicitud.lineas[i]! }))
@@ -675,6 +789,8 @@ export async function confirmarVenta(
       vueltoCentavos: cobro.vueltoCentavos,
       tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
       yaExistia: false,
+      desvioCentavos: solicitud.diferida ? desvioCentavos : 0,
+      dejoStockEnRojo,
     };
   });
 }

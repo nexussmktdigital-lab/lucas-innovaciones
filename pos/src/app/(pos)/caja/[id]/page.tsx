@@ -101,6 +101,16 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
               rojo
             />
           ) : null}
+          {r.ventasDiferidas > 0 ? (
+            <Renglon
+              termino={
+                r.ventasDeOtroTurno > 0
+                  ? `De eso, cobrado sin conexión (${r.ventasDeOtroTurno} de antes de este turno)`
+                  : 'De eso, cobrado sin conexión'
+              }
+              valor={formatearARS(r.ventasDiferidasCentavos)}
+            />
+          ) : null}
 
           <div className="mt-1 flex justify-between border-t border-(--color-borde) pt-2 font-semibold">
             <dt>Efectivo esperado</dt>

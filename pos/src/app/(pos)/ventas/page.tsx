@@ -101,6 +101,14 @@ export default async function PaginaVentas() {
                       Anulada
                     </span>
                   ) : null}
+                  {/* La fecha que se muestra arriba es la del cobro, no la de
+                      la carga: por eso hay que decir que esta venta entró
+                      después, o parece que el correlativo está desordenado. */}
+                  {v.offline ? (
+                    <span className="rounded bg-(--color-alerta)/15 px-1.5 py-0.5 text-xs font-semibold text-(--color-alerta)">
+                      Cobrada sin conexión
+                    </span>
+                  ) : null}
                   <span
                     className={`tabular ml-auto text-lg font-bold ${
                       anulada ? 'text-(--color-tinta-suave) line-through' : ''
@@ -124,6 +132,17 @@ export default async function PaginaVentas() {
                 {anulada && v.motivoAnulacion ? (
                   <p className="mt-2 rounded-(--radius-caja) bg-(--color-papel) p-2 text-sm">
                     <span className="font-medium">Motivo:</span> {v.motivoAnulacion}
+                  </p>
+                ) : null}
+
+                {/* Lo único de una venta diferida que pide una decisión: se
+                    cobró un precio y el catálogo dice otro. Se muestra siempre,
+                    no en un tooltip, porque hay que hacer algo con eso. */}
+                {v.offlineDesvioCentavos !== 0 ? (
+                  <p className="mt-2 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-2 text-sm">
+                    Se cobró {formatearARS(Math.abs(v.offlineDesvioCentavos))}{' '}
+                    {v.offlineDesvioCentavos > 0 ? 'más' : 'menos'} de lo que decía el catálogo
+                    cuando entró. Lo que vale es lo cobrado: es lo que está en el cajón.
                   </p>
                 ) : null}
 

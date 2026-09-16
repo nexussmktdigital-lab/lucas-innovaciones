@@ -402,6 +402,12 @@ export interface VentaDelTurno {
   medios: string[];
   unidades: number;
   detalle: string;
+  /** True si se cobró sin conexión y entró después (D56). */
+  offline: boolean;
+  /** Cuándo se cobró de verdad, si fue sin conexión. */
+  offlineCapturadaEn: Date | null;
+  /** Lo cobrado menos lo que decía el catálogo al entrar. Cero es lo normal. */
+  offlineDesvioCentavos: number;
 }
 
 export async function ventasDelTurno(
@@ -419,6 +425,9 @@ export async function ventasDelTurno(
     medios: string[] | null;
     unidades: string | number | null;
     detalle: string | null;
+    offline: boolean;
+    offline_capturada_en: string | Date | null;
+    offline_desvio_centavos: string | number;
   }>(
     await db.execute(sql`
       SELECT s.id,
@@ -427,6 +436,9 @@ export async function ventasDelTurno(
              s.total_centavos,
              s.estado,
              s.motivo_anulacion,
+             s.offline,
+             s.offline_capturada_en,
+             s.offline_desvio_centavos,
              u.nombre AS vendedor,
              (SELECT array_agg(DISTINCT p.medio::text)
                 FROM sale_payments p WHERE p.sale_id = s.id)          AS medios,
@@ -452,5 +464,11 @@ export async function ventasDelTurno(
     medios: f.medios ?? [],
     unidades: Number(f.unidades ?? 0),
     detalle: f.detalle ?? '',
+    offline: Boolean(f.offline),
+    // El driver de produccion devuelve `timestamptz` como texto desde una
+    // consulta escrita a mano; PGlite lo devuelve como Date. Se convierte aca.
+    offlineCapturadaEn:
+      f.offline_capturada_en === null ? null : new Date(f.offline_capturada_en),
+    offlineDesvioCentavos: Number(f.offline_desvio_centavos ?? 0),
   }));
 }

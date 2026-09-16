@@ -408,6 +408,18 @@ export const sales = pgTable(
     syncedToWoo: boolean().notNull().default(false),
     wooOrderId: integer(),
     nota: text(),
+    /** True si se cobró sin conexión y entró después (D56). */
+    offline: boolean().notNull().default(false),
+    /** Cuándo se cobró de verdad. `fecha` también, pero esto lo deja explícito. */
+    offlineCapturadaEn: timestamp({ withTimezone: true }),
+    /**
+     * Lo cobrado menos lo que el catálogo dice al entrar.
+     *
+     * Sin conexión el precio lo pone la pantalla, que es el único dato que
+     * existe. Se guarda lo que el cliente pagó y queda anotada la diferencia
+     * para que el dueño la vea. En una venta normal es cero.
+     */
+    offlineDesvioCentavos: bigint({ mode: 'number' }).notNull().default(0),
     /** Si esta venta anula a otra, apunta a la original. Nada se borra. */
     anulaVentaId: uuid(),
     motivoAnulacion: text(),
@@ -422,6 +434,11 @@ export const sales = pgTable(
     index('sales_vendedor_idx').on(t.vendedorId),
     index('sales_canal_idx').on(t.canal),
     check('sales_total_ck', sql`${t.totalCentavos} >= 0`),
+    check(
+      'sales_offline_ck',
+      sql`(${t.offline} AND ${t.offlineCapturadaEn} IS NOT NULL)
+       OR (NOT ${t.offline} AND ${t.offlineCapturadaEn} IS NULL AND ${t.offlineDesvioCentavos} = 0)`,
+    ),
   ],
 );
 

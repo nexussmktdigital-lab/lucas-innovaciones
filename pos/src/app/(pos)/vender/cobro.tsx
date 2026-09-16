@@ -12,7 +12,12 @@ import {
 } from '@/ventas/carrito';
 import { nombreDelMedio } from '@/ventas/ticket';
 import type { registrarVenta } from '@/app/acciones-venta';
-import type { Cliente, Cuenta, LineaEnPantalla } from './pantalla-venta';
+import type {
+  Cliente,
+  Cuenta,
+  LineaEnPantalla,
+  ResultadoDelCobro,
+} from './pantalla-venta';
 
 interface Props {
   totales: TotalesCarrito;
@@ -25,9 +30,7 @@ interface Props {
   puedeFiar: boolean;
   cuentas: Cuenta[];
   onCerrar: () => void;
-  onConfirmar: (
-    datos: Parameters<typeof registrarVenta>[0],
-  ) => Promise<Awaited<ReturnType<typeof registrarVenta>>>;
+  onConfirmar: (datos: Parameters<typeof registrarVenta>[0]) => Promise<ResultadoDelCobro>;
 }
 
 /**

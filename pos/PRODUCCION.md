@@ -156,3 +156,8 @@ Antes de que el mostrador empiece a usarlo:
 - [ ] Los webhooks de WooCommerce dados de alta con `WOO_WEBHOOK_SECRET`
 - [ ] `npm run woo:historico` corrido contra la tienda real, con las cuentas cerrando
 - [ ] Sin panel rojo en **Estado del sistema**
+- [ ] La tablet del mostrador abrió el POS con internet al menos una vez **desde el
+      dominio de producción**: hasta que no pasa eso, el service worker no tiene
+      nada guardado y un corte deja la pantalla en blanco
+- [ ] El POS agregado a la pantalla de inicio de la tablet, y probado a pantalla completa
+- [ ] Probado un corte de verdad: modo avión, una venta, y que entre sola al volver

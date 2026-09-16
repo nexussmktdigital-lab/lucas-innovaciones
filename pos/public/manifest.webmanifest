@@ -1,0 +1,26 @@
+{
+  "name": "POS · Lucas Innovaciones",
+  "short_name": "POS",
+  "description": "Punto de venta de Lucas Innovaciones",
+  "start_url": "/vender",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#1f2937",
+  "lang": "es-AR",
+  "icons": [
+    {
+      "src": "/icono.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icono-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

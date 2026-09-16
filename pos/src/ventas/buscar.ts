@@ -24,6 +24,16 @@ export interface ResultadoBusqueda {
   variantId: string | null;
   nombre: string;
   sku: string | null;
+  /**
+   * El SKU del producto padre, cuando este renglón es una variación.
+   *
+   * No se muestra en ninguna parte: existe porque el buscador del servidor
+   * encuentra una variación tipeando el SKU del padre —el `LIKE` corre contra
+   * las dos columnas— y el catálogo guardado en la tablet tiene que poder hacer
+   * lo mismo. Sin esto, el mismo término encuentra la funda con conexión y no
+   * la encuentra sin ella.
+   */
+  skuProducto: string | null;
   marca: string | null;
   categoria: string | null;
   codigoBarras: string | null;
@@ -56,10 +66,22 @@ const SIN_ACENTOS = (columna: unknown) =>
 export async function buscarProductos(
   db: BaseDatos,
   termino: string,
-  opciones: { limite?: number; incluirSinStock?: boolean; recargoTiendaBp?: number } = {},
+  opciones: {
+    limite?: number;
+    incluirSinStock?: boolean;
+    recargoTiendaBp?: number;
+    /**
+     * Trae el catálogo entero en vez de buscar. Lo usa la instantánea que se
+     * guarda en la tablet para vender sin conexión: el precio de mostrador y el
+     * stock de una variación se calculan acá, y armar una segunda consulta
+     * parecida sería tener dos verdades que se despegan en la primera
+     * corrección que se le haga a una sola.
+     */
+    todos?: boolean;
+  } = {},
 ): Promise<ResultadoBusqueda[]> {
   const limpio = normalizar(termino);
-  if (limpio.length === 0) return [];
+  if (limpio.length === 0 && !opciones.todos) return [];
 
   const limite = opciones.limite ?? TOPE_RESULTADOS;
   const patron = `%${limpio}%`;
@@ -72,11 +94,24 @@ export async function buscarProductos(
     ? sql``
     : sql`AND (NOT ${gestionaStock} OR ${disponible} > 0)`;
 
+  const filtroTexto = opciones.todos
+    ? sql``
+    : sql`AND (
+        ${SIN_ACENTOS(sql`p.nombre`)} LIKE ${patron}
+        OR ${SIN_ACENTOS(sql`COALESCE(v.nombre, '')`)} LIKE ${patron}
+        OR lower(COALESCE(p.sku, '')) LIKE ${patron}
+        OR lower(COALESCE(v.sku, '')) LIKE ${patron}
+        OR ${SIN_ACENTOS(sql`COALESCE(p.marca, '')`)} LIKE ${patron}
+        OR lower(COALESCE(p.codigo_barras, '')) = ${limpio}
+        OR lower(COALESCE(v.codigo_barras, '')) = ${limpio}
+      )`;
+
   const crudas = filasDe<{
     id: string;
     variant_id: string | null;
     nombre: string;
     sku: string | null;
+    sku_producto: string | null;
     marca: string | null;
     categoria: string | null;
     codigo_barras: string | null;
@@ -100,6 +135,7 @@ export async function buscarProductos(
       CASE WHEN v.id IS NULL THEN p.nombre
            ELSE p.nombre || ' — ' || v.nombre END     AS nombre,
       COALESCE(v.sku, p.sku)                          AS sku,
+      p.sku                                           AS sku_producto,
       p.marca,
       p.categoria,
       COALESCE(v.codigo_barras, p.codigo_barras)      AS codigo_barras,
@@ -116,23 +152,22 @@ export async function buscarProductos(
       p.solo_mostrador,
       p.precio_local_centavos,
       p.imagen_url,
-      (
+      ${
+        // Sin término no hay coincidencia exacta. Sin este corte, comparar
+        // contra la cadena vacía marcaría como «exacto» a todo lo que no tiene
+        // código de barras cargado, que es medio catálogo.
+        opciones.todos
+          ? sql`false`
+          : sql`(
         lower(COALESCE(v.codigo_barras, p.codigo_barras, '')) = ${limpio}
         OR lower(COALESCE(v.sku, p.sku, '')) = ${limpio}
-      )                                               AS exacto
+      )`
+      }                                               AS exacto
     FROM products p
     LEFT JOIN product_variants v ON v.product_id = p.id AND v.activo
     WHERE p.activo
       ${filtroStock}
-      AND (
-        ${SIN_ACENTOS(sql`p.nombre`)} LIKE ${patron}
-        OR ${SIN_ACENTOS(sql`COALESCE(v.nombre, '')`)} LIKE ${patron}
-        OR lower(COALESCE(p.sku, '')) LIKE ${patron}
-        OR lower(COALESCE(v.sku, '')) LIKE ${patron}
-        OR ${SIN_ACENTOS(sql`COALESCE(p.marca, '')`)} LIKE ${patron}
-        OR lower(COALESCE(p.codigo_barras, '')) = ${limpio}
-        OR lower(COALESCE(v.codigo_barras, '')) = ${limpio}
-      )
+      ${filtroTexto}
     ORDER BY exacto DESC, length(p.nombre), p.nombre
     LIMIT ${limite}
   `),
@@ -153,6 +188,7 @@ export async function buscarProductos(
       variantId: f.variant_id === null ? null : String(f.variant_id),
       nombre: String(f.nombre),
       sku: f.sku === null ? null : String(f.sku),
+      skuProducto: f.sku_producto === null ? null : String(f.sku_producto),
       marca: f.marca === null ? null : String(f.marca),
       categoria: f.categoria === null ? null : String(f.categoria),
       codigoBarras: f.codigo_barras === null ? null : String(f.codigo_barras),

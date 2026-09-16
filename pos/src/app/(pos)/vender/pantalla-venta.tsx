@@ -11,13 +11,17 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { calcularTotales, type Descuento, type LineaCarrito } from '@/ventas/carrito';
+import { calcularCobro, calcularTotales, type Descuento, type LineaCarrito } from '@/ventas/carrito';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
+import { generarTicket } from '@/ventas/ticket';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { registrarVenta } from '@/app/acciones-venta';
+import { usarOffline } from '@/offline/usar-offline';
+import { resumirVenta } from '@/offline/cola';
 import Buscador from './buscador';
 import Carrito from './carrito';
 import Cobro from './cobro';
+import BarraOffline from './barra-offline';
 
 export interface Cuenta {
   id: string;
@@ -33,6 +37,18 @@ export interface Cliente {
   saldoCentavos: number;
   limiteCentavos: number | null;
 }
+
+/**
+ * Cómo le fue al cobro.
+ *
+ * Sin conexión no hay venta con número todavía: hay una venta cobrada y
+ * guardada. Es un final distinto del de siempre y por eso tiene su propio caso,
+ * en vez de inventar un `ventaId` vacío que la pantalla usaría para armar un
+ * enlace roto.
+ */
+export type ResultadoDelCobro =
+  | Awaited<ReturnType<typeof registrarVenta>>
+  | { ok: true; diferida: true };
 
 /** Una línea del carrito más lo que hace falta para mostrarla y editarla. */
 export interface LineaEnPantalla extends LineaCarrito {
@@ -53,6 +69,8 @@ interface Props {
   pendientesDeSync: number;
   /** True si quien atiende puede dar de alta un producto que falta. */
   puedeCargarProductos: boolean;
+  /** El turno abierto. Una venta cobrada sin conexión entra con este. */
+  cashSessionId: string;
 }
 
 export default function PantallaVenta({
@@ -64,8 +82,10 @@ export default function PantallaVenta({
   clientes,
   pendientesDeSync,
   puedeCargarProductos,
+  cashSessionId,
 }: Props) {
   const router = useRouter();
+  const offline = usarOffline();
   const [lineas, setLineas] = useState<LineaEnPantalla[]>([]);
   const [descuentoGlobal, setDescuentoGlobal] = useState<Descuento | null>(null);
   const [clienteId, setClienteId] = useState<string | null>(null);
@@ -188,13 +208,100 @@ export default function PantallaVenta({
     return () => window.removeEventListener('keydown', alTeclado);
   }, [lineas.length, cobrando]);
 
-  async function confirmar(datos: Parameters<typeof registrarVenta>[0]) {
+  /**
+   * Guarda una venta cobrada sin conexión y saca su comprobante provisorio.
+   *
+   * El orden importa: primero se guarda, después se imprime. Si se hiciera al
+   * revés y el almacén fallara, el cliente se iría con un papel de una venta
+   * que no existe en ninguna parte.
+   */
+  async function cobrarSinConexion(
+    datos: Parameters<typeof registrarVenta>[0],
+    ventana: Window | null,
+  ): Promise<ResultadoDelCobro> {
+    const capturadaEn = new Date();
+    const cobro = calcularCobro(totales.totalCentavos, datos.pagos);
+
+    try {
+      await offline.guardarVenta({
+        idempotencyKey: datos.idempotencyKey,
+        capturadaEn: capturadaEn.toISOString(),
+        cashSessionId,
+        totalCentavos: totales.totalCentavos,
+        vueltoCentavos: cobro.vueltoCentavos,
+        resumen: resumirVenta(lineas),
+        preciosCobradosCentavos: lineas.map((l) => l.precioUnitarioCentavos),
+        datos,
+        intentos: 0,
+      });
+    } catch {
+      ventana?.close();
+      return {
+        ok: false,
+        error:
+          'No hay conexión y este navegador no puede guardar la venta. No cobres hasta que vuelva internet.',
+      };
+    }
+
+    if (ventana) {
+      ventana.document.write(
+        generarTicket({
+          numero: 'Pendiente',
+          fecha: capturadaEn,
+          vendedor,
+          cliente: clientes.find((c) => c.id === clienteId)?.nombre ?? null,
+          lineas: lineas.map((l) => ({
+            descripcion: l.descripcion,
+            cantidad: l.cantidad,
+            precioUnitarioCentavos: l.precioUnitarioCentavos,
+            descuentoCentavos: l.descuentoCentavos,
+            totalCentavos: Math.max(
+              0,
+              l.precioUnitarioCentavos * l.cantidad - l.descuentoCentavos,
+            ),
+            monedaOriginal: l.monedaOriginal,
+            precioUsdCentavos: l.precioUsdCentavos,
+          })),
+          subtotalCentavos: totales.subtotalCentavos,
+          descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
+          totalCentavos: totales.totalCentavos,
+          pagos: datos.pagos.map((p) => ({
+            medio: p.medio,
+            montoCentavos: p.montoCentavos,
+            marcaTarjeta: p.marcaTarjeta ?? null,
+            cuotas: p.cuotas ?? null,
+          })),
+          vueltoCentavos: cobro.vueltoCentavos,
+          tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
+          provisional: true,
+        }),
+      );
+      ventana.document.close();
+    }
+
+    vaciar();
+    setCobrando(false);
+    return { ok: true, diferida: true };
+  }
+
+  async function confirmar(datos: Parameters<typeof registrarVenta>[0]): Promise<ResultadoDelCobro> {
     // La ventana del ticket se pide ANTES de esperar al servidor. Abrirla
     // después es abrirla fuera del gesto del cajero, y Safari —el navegador de
     // la caja— la bloquea: la venta entraba y el comprobante no salía nunca.
     const ventana = window.open('', '_blank', 'width=420,height=760');
 
-    const r = await registrarVenta(datos);
+    if (!offline.hayConexion) return cobrarSinConexion(datos, ventana);
+
+    let r: Awaited<ReturnType<typeof registrarVenta>>;
+    try {
+      r = await registrarVenta(datos);
+    } catch {
+      // Se cayó la conexión entre que se apretó Confirmar y la respuesta. La
+      // venta puede haber entrado o no, y la clave de idempotencia es la misma:
+      // si entró, subirla de nuevo devuelve la que ya está.
+      return cobrarSinConexion(datos, ventana);
+    }
+
     if (!r.ok) {
       ventana?.close();
       return r;
@@ -212,7 +319,21 @@ export default function PantallaVenta({
   }
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[1fr_26rem]">
+    <div className="mx-auto max-w-7xl">
+      <BarraOffline
+        hayConexion={offline.hayConexion}
+        catalogo={offline.catalogo}
+        catalogoVieja={offline.catalogoVieja}
+        enCola={offline.enCola}
+        subiendo={offline.subiendo}
+        trabada={offline.trabada}
+        avisos={offline.avisos}
+        disponible={offline.disponible}
+        onSubir={() => void offline.subirLaCola()}
+        onDescartarAvisos={offline.descartarAvisos}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_26rem]">
       <section aria-label="Buscar productos" className="min-w-0">
         <Buscador
           onAgregar={agregar}
@@ -221,6 +342,8 @@ export default function PantallaVenta({
           }}
           tcCentavos={tcCentavos}
           puedeCargar={puedeCargarProductos}
+          hayConexion={offline.hayConexion}
+          catalogo={offline.catalogo}
         />
       </section>
 
@@ -311,6 +434,7 @@ export default function PantallaVenta({
           onConfirmar={confirmar}
         />
       ) : null}
+      </div>
     </div>
   );
 }

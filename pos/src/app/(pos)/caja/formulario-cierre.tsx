@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useActionState } from 'react';
 import { cerrarCajaAccion, type EstadoCaja } from '@/app/acciones-caja';
 import { aCentavos, formatearARS } from '@/lib/dinero';
 import { DENOMINACIONES, totalDelConteo } from '@/caja/arqueo';
+import { cuantasEnCola } from '@/offline/almacen';
 
 const INICIAL: EstadoCaja = {};
 
@@ -33,6 +34,34 @@ export default function FormularioCierre({
   const [billetes, setBilletes] = useState<Record<number, string>>({});
   const [suelto, setSuelto] = useState('');
   const [aMano, setAMano] = useState('');
+  /**
+   * Ventas cobradas sin conexión que todavía no entraron (D56).
+   *
+   * Es plata que está en el cajón y que el sistema no cuenta, así que el
+   * efectivo esperado está mal por lo menos en eso: cerrar ahora es inventar
+   * una diferencia y hacer que alguien la justifique. La comprobación es del
+   * navegador porque la cola vive en el navegador; el servidor no puede saberlo.
+   */
+  const [esperando, setEsperando] = useState(0);
+
+  useEffect(() => {
+    let vivo = true;
+    const mirar = () =>
+      cuantasEnCola()
+        .then((n) => {
+          if (vivo) setEsperando(n);
+        })
+        .catch(() => {
+          // Sin almacén no hay cola que pueda existir: nada que frenar.
+        });
+
+    void mirar();
+    const reloj = setInterval(mirar, 5_000);
+    return () => {
+      vivo = false;
+      clearInterval(reloj);
+    };
+  }, []);
 
   const contadoCentavos = useMemo(() => {
     if (!contando) return leerMonto(aMano);
@@ -57,6 +86,25 @@ export default function FormularioCierre({
   // No hay estado de exito: al cerrar, la accion redirige al reporte del turno.
   // Un cartel aca no se veria nunca, porque sin turno abierto este formulario
   // se desmonta entero con la revalidacion.
+
+  if (esperando > 0) {
+    return (
+      <div
+        role="alert"
+        className="rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-4 text-sm"
+      >
+        <p className="font-semibold">
+          No se puede cerrar el turno: {esperando}{' '}
+          {esperando === 1 ? 'venta cobrada espera' : 'ventas cobradas esperan'} para entrar.
+        </p>
+        <p className="mt-1">
+          Esa plata está en el cajón y el sistema todavía no la cuenta, así que el arqueo daría de
+          más sin motivo. Volvé a <strong>Vender</strong>, esperá a que suban solas o tocá
+          «Subirlas ahora», y cerrá cuando no quede ninguna.
+        </p>
+      </div>
+    );
+  }
 
   if (!abierto) {
     return (
