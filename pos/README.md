@@ -270,6 +270,16 @@ Tres cosas que el cálculo respeta:
 - **Se redondea a los cien pesos.** Dividir da números como $11.607,14 y en el
   mostrador nadie cobra eso.
 
+**Un producto cargado desde el POS es la excepción, y conviene saberlo.** El
+precio que se escribe en el alta rápida queda como su precio de mostrador
+propio: no lleva recargo —todavía no está en la tienda— y, si después se
+publica, **la sincronización no se lo pisa nunca**. Eso es lo correcto para lo
+que el alta rápida resuelve: un producto que aparece en el mostrador y hay que
+vender ahora. Pero significa que ese precio lo cambia una persona, desde
+**Precios**, y no WooCommerce. Mientras el catálogo se cargue en Woo —que es
+como se decidió trabajar— esto no aparece: el precio de mostrador de un producto
+de la tienda sigue al de la tienda solo.
+
 ### La cuenta de la comisión
 
 Si el medio de pago se queda con un `c%`, el recargo que hace falta **no es

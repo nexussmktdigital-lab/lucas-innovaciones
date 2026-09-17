@@ -1372,6 +1372,23 @@ un cliente, que es una decisión de mostrador y está documentada como tal.
 
 | # | Qué | Por qué se deja |
 |---|---|---|
-| 37 | El precio de mostrador de un producto nacido en el POS queda fijo aunque cambie en WooCommerce | **Necesita una decisión, no un arreglo**: hay que definir si el precio que se escribe en el alta es el precio propio del mostrador para siempre o solo el inicial. Mientras no se decida, el que está es el que el dueño escribió |
 | 44 a 47 | Atribución de una venta subida por otro usuario, la copia de pantalla del service worker, la antigüedad del catálogo guardado y el tamaño de la cola sin conexión | Siguen valiendo las razones de la quinta pasada: ninguno pierde plata y los cuatro tienen aviso en pantalla |
 | 54, 55 | La devolución que descuenta deuda no deja asiento propio en la bitácora de la cuenta, y la sesión dura doce horas | Sin plata mal contada el primero, y aflojar el segundo es aflojar la única barrera de la tablet |
+
+### 37. El precio de mostrador de un producto nacido en el POS *(cerrado por decisión)*
+
+Estaba abierto desde la cuarta pasada, y no era un error sino una pregunta: el
+precio que se escribe en el alta rápida, ¿es el precio propio del mostrador para
+siempre, o solo el inicial? Queda fijo —la sincronización no lo pisa— y eso hace
+que dos productos vecinos se comporten al revés.
+
+**Decidido: queda como está.** El catálogo se carga en WooCommerce, así que un
+producto de la tienda sigue al precio de la tienda solo, que es el caso de
+siempre. El alta rápida del POS es la excepción —algo que aparece en el
+mostrador y hay que vender ahora— y ahí el precio escrito a mano es justamente
+lo que se quiere: no lleva recargo, porque todavía no está en la web, y lo
+cambia una persona desde **Precios**.
+
+Lo que faltaba no era código sino que estuviera escrito: quedó en el README, al
+lado del cálculo del recargo, para que dentro de seis meses la diferencia entre
+los dos productos vecinos tenga explicación.
