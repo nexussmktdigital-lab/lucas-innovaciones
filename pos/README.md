@@ -907,6 +907,7 @@ npm run test:e2e  # de punta a punta (Playwright)
 npm run typecheck # TypeScript en modo estricto
 npm run lint      # ESLint con el conjunto de Next
 npm run auditar   # invariantes de plata contra la base de verdad
+npm run carreras  # dos personas haciendo lo mismo al mismo tiempo
 ```
 
 `npm run auditar` es distinto de todo lo demás: no prueba código, prueba **los
@@ -919,9 +920,20 @@ después de un rato de uso, también contra producción. Es de solo lectura.
 npm run db:seed -- --reset && npm run build && npm run test:e2e && npm run auditar
 ```
 
+`npm run carreras` es el otro que no prueba código común. Abre **dos conexiones
+de verdad** contra PostgreSQL y hace a la vez lo que dos personas podrían hacer
+a la vez: pagar el mismo gasto, cerrar el mismo turno, vender la última unidad.
+Encontró que un gasto se podía pagar dos veces y la plata salía dos veces, sin
+que ningún control lo notara. Escribe en la base, así que se niega a correr
+contra una que no sea local y deja filas de prueba que limpia el `--reset`.
+
 Los tests de base **no necesitan un PostgreSQL levantado**: usan PGlite
 (PostgreSQL compilado a WASM) con las migraciones reales aplicadas, así que
 prueban el esquema de verdad — mismas restricciones, mismos disparadores.
+
+Lo que PGlite **no** puede probar es eso último: es una sola conexión, y dos
+transacciones simultáneas se serializan solas. Ahí es donde entra `carreras`, y
+por eso hace falta PostgreSQL de verdad para correrlo.
 
 Los de Playwright sí necesitan la base migrada, sembrada **y un build de
 producción**: el test de venta sin conexión depende del service worker, que a

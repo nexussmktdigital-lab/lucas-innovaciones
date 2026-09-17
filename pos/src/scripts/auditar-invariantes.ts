@@ -203,9 +203,14 @@ const CONTROLES: Control[] = [
     nombre: 'Correlativos sin huecos ni repetidos',
     espera: 'El número de venta es consecutivo por terminal',
     consulta: sql`
+      -- El correlativo se lee del FINAL del número, no del segundo trozo: el
+      -- número es «<terminal>-000001» y el nombre de la terminal se configura
+      -- (POS_TERMINAL). Con una terminal llamada «caja-2» —que es lo más
+      -- natural del mundo— partir por guiones daba «2» y este control se caía
+      -- con un error de PostgreSQL en vez de decir algo.
       WITH n AS (
         SELECT terminal,
-               CAST(split_part(numero, '-', 2) AS integer) AS correlativo
+               CAST(substring(numero from '[0-9]+$') AS integer) AS correlativo
           FROM sales
       )
       SELECT terminal, count(*) AS cuantas,

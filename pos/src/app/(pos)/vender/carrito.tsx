@@ -12,6 +12,8 @@ interface Props {
   descuentoGlobal: Descuento | null;
   puedeDescontar: boolean;
   clientes: Cliente[];
+  /** True si hay más clientes de los que entran en el selector. */
+  faltanClientes: boolean;
   clienteId: string | null;
   /** Solo el dueño puede fiar, así que solo a él le sirve ver la deuda. */
   puedeFiar: boolean;
@@ -45,6 +47,7 @@ export default function Carrito({
   onDescuentoDeLinea,
   onDescuentoGlobal,
   onCliente,
+  faltanClientes,
   onClienteCreado,
   onQuitar,
   onVaciar,
@@ -196,6 +199,13 @@ export default function Carrito({
                 </option>
               ))}
             </select>
+
+            {faltanClientes ? (
+              <p className="mt-1 text-xs text-(--color-tinta-suave)">
+                La lista está llena y no entran todos. Si no encontrás a alguien que existe,
+                buscalo en Clientes.
+              </p>
+            ) : null}
 
             {cargandoCliente ? (
               <NuevoCliente

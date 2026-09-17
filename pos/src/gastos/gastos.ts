@@ -213,11 +213,24 @@ export async function pagarGasto(
   },
 ): Promise<GastoRegistrado> {
   return db.transaction(async (tx) => {
+    /*
+     * El gasto se toma con candado ANTES de mirar en qué estado está.
+     *
+     * Sin candado, dos pagos del mismo gasto al mismo tiempo —el dueño que
+     * toca dos veces, o dos pantallas abiertas— leen los dos «pendiente», los
+     * dos pasan el control de abajo y los dos sacan la plata: el gasto queda
+     * pagado una vez y la cuenta pierde el doble. Se reprodujo contra
+     * PostgreSQL de verdad, con dos conexiones, y salía siempre.
+     *
+     * El candado del saldo que pone `moverCuenta` no alcanza: ordena los dos
+     * movimientos, no impide que se decidan dos veces.
+     */
     const [gasto] = await tx
       .select()
       .from(expenses)
       .where(eq(expenses.id, datos.gastoId))
-      .limit(1);
+      .limit(1)
+      .for('update');
 
     if (!gasto) throw new ErrorGasto('No se encuentra ese gasto.', 'no_existe');
     if (gasto.estado === 'pagado') {
@@ -285,11 +298,14 @@ export async function anularGasto(
   }
 
   return db.transaction(async (tx) => {
+    // Con candado, por lo mismo que en `pagarGasto`: dos anulaciones a la vez
+    // devolvían la plata dos veces.
     const [gasto] = await tx
       .select()
       .from(expenses)
       .where(eq(expenses.id, datos.gastoId))
-      .limit(1);
+      .limit(1)
+      .for('update');
 
     if (!gasto) throw new ErrorGasto('No se encuentra ese gasto.', 'no_existe');
     if (gasto.estado === 'anulado') {

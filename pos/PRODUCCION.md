@@ -199,6 +199,14 @@ Son unos pocos megabytes al año. Guardarla fuera del proveedor —la misma nube
 donde ya se guardan las fotos del local alcanza— cubre el caso que el historial
 de Neon no cubre: que se pierda la cuenta, no la base.
 
+**Cómo se comprueba que una copia sirve.** Restaurarla no alcanza: hay que
+mirarla. Sobre la base restaurada se corre `npm run auditar` —los diecinueve
+invariantes— y se abre el POS apuntándole. Si las dos cosas dan, la copia es
+buena. Se probó así, y de paso apareció algo que conviene saber: el respaldo
+tiene que incluir el esquema `drizzle`, donde vive la tabla de migraciones. Si
+se pierde, el próximo `db:migrate` intenta aplicarlas todas de nuevo sobre una
+base que ya las tiene.
+
 **Volver atrás el código** es aparte y es fácil: Vercel guarda cada despliegue y
 se vuelve al anterior desde su panel, en segundos. Lo que no se vuelve atrás así
 es una migración: si un despliegue agregó una columna, volver al código anterior
@@ -226,6 +234,9 @@ Antes de que el mostrador empiece a usarlo:
 - [ ] Probado un corte de verdad: modo avión, una venta, y que entre sola al volver
 - [ ] `npm run auditar` contra la base de producción, con los diecinueve invariantes dando
 - [ ] Una restauración probada de verdad: abrir la base de ayer y ver que el POS levante
+      *(el procedimiento ya se probó entero contra una base local —dump, restore,
+      invariantes y el POS abriendo con los datos puestos—; falta hacerlo una vez
+      contra la de producción)*
 - [ ] Sabido cuánto historial guarda el plan de Neon que se está pagando
 - [ ] `curl https://<dominio>/manifest.webmanifest` devuelve el JSON y no un redirect
       al login: si redirige, el POS no se puede instalar en la tablet

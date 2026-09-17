@@ -12,6 +12,9 @@ import PantallaVenta from './pantalla-venta';
 
 export const dynamic = 'force-dynamic';
 
+/** Cuántos clientes entran en el selector de la venta. Ver `clientesParaVender`. */
+const TOPE_DE_CLIENTES = 1000;
+
 export default async function PaginaVender() {
   const sesion = await auth();
   const terminal = config().POS_TERMINAL;
@@ -31,8 +34,9 @@ export default async function PaginaVender() {
     .where(eq(monetaryAccounts.activo, true));
 
   // Los clientes van con su deuda: al elegir a quién fiarle, lo primero que hay
-  // que ver es cuánto debe ya.
-  const clientes = await clientesParaVender(db);
+  // que ver es cuánto debe ya. Si la lista se llenó, la pantalla lo dice en vez
+  // de esconder a los que no entraron.
+  const clientes = await clientesParaVender(db, TOPE_DE_CLIENTES);
 
   const cola = await pendientesDeSincronizar(db);
 
@@ -44,6 +48,7 @@ export default async function PaginaVender() {
       tcCentavos={tc?.valorCentavos ?? null}
       cuentas={cuentas}
       clientes={clientes}
+      faltanClientes={clientes.length >= TOPE_DE_CLIENTES}
       pendientesDeSync={cola.pendientes + cola.fallidas}
       cashSessionId={caja.id}
       puedeCargarProductos={

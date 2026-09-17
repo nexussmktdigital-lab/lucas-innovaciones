@@ -66,6 +66,8 @@ interface Props {
   tcCentavos: number | null;
   cuentas: Cuenta[];
   clientes: Cliente[];
+  /** True si el selector no alcanza para todos: hay más de los que entran. */
+  faltanClientes: boolean;
   pendientesDeSync: number;
   /** True si quien atiende puede dar de alta un producto que falta. */
   puedeCargarProductos: boolean;
@@ -80,6 +82,7 @@ export default function PantallaVenta({
   tcCentavos,
   cuentas,
   clientes,
+  faltanClientes,
   pendientesDeSync,
   puedeCargarProductos,
   cashSessionId,
@@ -101,11 +104,18 @@ export default function PantallaVenta({
    * La lista que llega del servidor se arma al abrir Vender; uno cargado en el
    * medio no está ahí hasta la próxima carga. Se guarda acá y se muestra junto
    * con los demás, para poder elegirlo en el acto.
+   *
+   * Cuando el servidor vuelve a mandar la lista y el cliente ya está, gana la
+   * del servidor: la copia de acá nace con saldo cero y se queda así, y si en
+   * el medio se le fió, el mostrador vería «debe $0» de alguien que debe.
    */
   const [clientesNuevos, setClientesNuevos] = useState<Cliente[]>([]);
 
   const todosLosClientes = useMemo(
-    () => [...clientesNuevos, ...clientes.filter((c) => !clientesNuevos.some((n) => n.id === c.id))],
+    () => [
+      ...clientesNuevos.filter((n) => !clientes.some((c) => c.id === n.id)),
+      ...clientes,
+    ],
     [clientes, clientesNuevos],
   );
 
@@ -381,6 +391,7 @@ export default function PantallaVenta({
           descuentoGlobal={descuentoGlobal}
           puedeDescontar={esDuenio}
           clientes={todosLosClientes}
+          faltanClientes={faltanClientes}
           clienteId={clienteId}
           puedeFiar={esDuenio}
           tcCentavos={tcCentavos}

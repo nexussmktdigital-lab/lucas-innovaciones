@@ -9,6 +9,7 @@
  * Sale con codigo 1 si falta algo, asi se puede encadenar en un despliegue.
  * No imprime ningun secreto: solo dice si esta y a donde apunta.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { config as cargarEnv } from 'dotenv';
 import { chequearProduccion, entornoActual, type Gravedad } from '@/lib/produccion';
@@ -51,6 +52,31 @@ const avisos = chequeos.filter((c) => c.gravedad === 'aviso').length;
  *
  * Así que se comprueba acá, que es el paso que ya se corre antes de desplegar.
  */
+/*
+ * Qué migraciones dicen una cosa en el repositorio y otra en esta base.
+ *
+ * Drizzle guarda, junto a cada migración aplicada, el sha256 del archivo tal
+ * como estaba cuando corrió. Acá se vuelve a calcular sobre el archivo de hoy:
+ * si no coincide, el archivo se editó después, y lo que corrió en esta base fue
+ * la versión vieja. Se replica el cálculo del migrador —sha256 del contenido
+ * crudo, sin normalizar nada— porque cualquier otra cosa daría falsos avisos.
+ */
+function cambiadasDespuesDeAplicarse(
+  diario: { entries: { when: number; tag: string }[] },
+  aplicadas: Map<string, string>,
+): string[] {
+  return diario.entries
+    .filter((e) => {
+      const guardado = aplicadas.get(String(e.when));
+      if (!guardado) return false;
+      const ahora = createHash('sha256')
+        .update(readFileSync(`drizzle/${e.tag}.sql`))
+        .digest('hex');
+      return guardado !== ahora;
+    })
+    .map((e) => e.tag);
+}
+
 async function chequearMigraciones() {
   const { db } = await import('@/db');
   const { sql } = await import('drizzle-orm');
@@ -60,15 +86,38 @@ async function chequearMigraciones() {
     entries: { when: number; tag: string }[];
   };
 
-  const aplicadas = filas<{ created_at: string | number }>(
-    await db.execute(sql`SELECT created_at FROM drizzle.__drizzle_migrations`),
+  const aplicadas = filas<{ created_at: string | number; hash: string }>(
+    await db.execute(sql`SELECT created_at, hash FROM drizzle.__drizzle_migrations`),
   );
-  const yaEstan = new Set(aplicadas.map((f) => String(f.created_at)));
+  const yaEstan = new Map(aplicadas.map((f) => [String(f.created_at), f.hash]));
   const faltantes = diario.entries.filter((e) => !yaEstan.has(String(e.when)));
 
   if (faltantes.length === 0) {
+    const cambiadas = cambiadasDespuesDeAplicarse(diario, yaEstan);
+    if (cambiadas.length > 0) {
+      console.log(`[ FALTA ] Migraciones`);
+      console.log(
+        `          Están las ${diario.entries.length}, pero ${cambiadas.length} cambió después de` +
+          `\n          aplicarse acá: ${cambiadas.join(', ')}.`,
+      );
+      console.log(
+        '          Drizzle decide qué correr por la fecha, no por el contenido: una migración\n' +
+          '          editada después de haber corrido NO se vuelve a correr, así que esta base\n' +
+          '          quedó con lo que decía la versión vieja. Pasó de verdad en desarrollo —el\n' +
+          '          índice único de SKU nunca llegó a existir— y no lo dijo nadie.',
+      );
+      console.log(
+        '          → Comparar el esquema con una base migrada desde cero y aplicar a mano lo\n' +
+          '            que falte, o —si la base todavía no tiene datos— rehacerla desde cero.\n',
+      );
+      return 1;
+    }
+
     console.log(`[  OK  ] Migraciones`);
-    console.log(`          Las ${diario.entries.length} están aplicadas en esta base.\n`);
+    console.log(
+      `          Las ${diario.entries.length} están aplicadas en esta base, y ninguna cambió` +
+        `\n          después de correr.\n`,
+    );
     return 0;
   }
 

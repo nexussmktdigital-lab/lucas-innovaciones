@@ -163,11 +163,14 @@ export async function marcarDevuelta(
   datos: { id: string; usuarioId: string; nota?: string | null },
 ): Promise<DevolucionPendiente> {
   return db.transaction(async (tx) => {
+    // Con candado: dos personas marcándola a la vez la anotaban dos veces en
+    // la bitácora, y la segunda pisaba quién la había resuelto de verdad.
     const [antes] = await tx
       .select()
       .from(pendingRefunds)
       .where(eq(pendingRefunds.id, datos.id))
-      .limit(1);
+      .limit(1)
+      .for('update');
 
     if (!antes) throw new ErrorDevolucion('No se encuentra esa devolución.');
     if (antes.resueltoEn) {

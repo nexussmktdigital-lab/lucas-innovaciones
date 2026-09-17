@@ -386,11 +386,19 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
   }
 
   return db.transaction(async (tx) => {
+    /*
+     * El turno se toma con candado antes de mirar si ya está cerrado. Dos
+     * cierres a la vez —el botón tocado dos veces— leían los dos «abierta» y,
+     * si la caja no cuadraba, metían el ajuste dos veces: la diferencia se
+     * descontaba doble de la cuenta y el libro quedaba consistente consigo
+     * mismo, que es lo peor que puede pasar.
+     */
     const [sesion] = await tx
       .select()
       .from(cashSessions)
       .where(eq(cashSessions.id, datos.sesionId))
-      .limit(1);
+      .limit(1)
+      .for('update');
 
     if (!sesion) throw new ErrorCaja('No se encontró esa sesión de caja.');
     if (sesion.cerradaEn) throw new ErrorCaja('Esa caja ya está cerrada.');

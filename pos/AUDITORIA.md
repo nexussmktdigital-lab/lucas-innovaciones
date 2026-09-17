@@ -1120,3 +1120,157 @@ Se probó de punta a punta sobre la demo: se corta la conexión, la barra avisa,
 el buscador sigue encontrando contra el catálogo guardado, se cobra, la venta
 queda esperando, **Caja abre sin internet y frena el cierre del turno**, y al
 volver la conexión la venta entra sola y aparece marcada en Ventas.
+
+---
+
+# Séptima pasada — lo que nunca se había hecho ni una vez
+
+Las pasadas anteriores miraron el código, los invariantes de la base, la escala
+y la demo. Quedaba una franja entera sin tocar: **los pasos que solo ocurren el
+día de producción** —migrar una base vacía, restaurar un respaldo— y **lo que
+pasa cuando dos personas hacen lo mismo al mismo tiempo**, que en este local no
+es hipotético: hay mostrador y tablet.
+
+### 63. Una migración editada después de correr dejó la base sin un índice *(corregido)*
+
+Primer paso real de producción, nunca probado: aplicar las catorce migraciones
+sobre una base **vacía**. Aplican todas y limpias. Pero al comparar el esquema
+resultante contra el de la base de desarrollo —migrada de a poco, durante
+meses— apareció una diferencia:
+
+```
+CREATE UNIQUE INDEX products_sku_pos_uq ON products (upper(sku))
+  WHERE sku IS NOT NULL AND woo_id IS NULL;
+```
+
+**Estaba en la base nueva y no en la vieja**, aunque las dos tenían las catorce
+migraciones anotadas como aplicadas.
+
+La causa: `0011_sku_unico` se **reescribió después** de haber corrido. La primera
+versión cubría el catálogo entero y rompía la sincronización (está contado en su
+propio comentario); se corrigió el archivo, pero Drizzle decide qué correr **por
+la fecha del diario, no por el contenido**: una migración ya anotada no se vuelve
+a correr nunca. La base de desarrollo quedó con la versión vieja deshecha a mano
+y sin la nueva. El sha256 guardado junto a cada migración lo decía desde
+entonces, y nadie lo miraba.
+
+Dos arreglos:
+
+- `npm run produccion:chequear` ahora **recalcula el sha256 de cada archivo y lo
+  compara con el guardado**, y falla nombrando las que cambiaron después de
+  correr. Antes solo comprobaba que estuvieran todas.
+- La base de desarrollo quedó alineada con la de producción, y el esquema
+  completo de las dos se comparó otra vez: **idéntico, tabla por tabla**.
+
+Producción arranca de cero, así que nace con el índice. El hallazgo igual
+importa: el día que haya que editar una migración ya aplicada —y va a haber—,
+esto lo dice en vez de dejar la base del local en silencio distinta al código.
+
+### 64. El respaldo y la restauración, probados de punta a punta *(verificado)*
+
+`PRODUCCION.md` pedía «una restauración probada de verdad» y nadie la había
+hecho. Se hizo, con el comando que el documento manda:
+
+```bash
+pg_dump "$DATABASE_URL" --no-owner --format=custom --file=pos-$(date +%F).dump
+```
+
+Se restauró en una base nueva y se verificó todo lo que tiene sentido verificar:
+las **32 tablas con la misma cantidad de filas**, el esquema idéntico, la tabla
+de migraciones intacta —si se perdiera, el próximo `db:migrate` intentaría
+aplicarlas de nuevo—, los **19 invariantes en orden** sobre la copia, y el POS
+levantado contra ella: se entra, y Ventas, Caja, Fiado, Reportes y Clientes
+abren con los datos puestos.
+
+El procedimiento funciona. Falta hacerlo una vez contra la base real cuando
+exista, que es la casilla que queda en la lista final.
+
+### 65. El mismo gasto se podía pagar dos veces, y la plata salía dos veces *(corregido)*
+
+El hallazgo más serio de esta pasada. `pagarGasto` leía el gasto, comprobaba que
+estuviera pendiente y recién después movía la plata — **sin candado sobre la
+fila del gasto**. Dos pagos simultáneos del mismo gasto leen los dos
+«pendiente», los dos pasan el control y los dos sacan la plata.
+
+Se reprodujo contra PostgreSQL de verdad, con dos conexiones:
+
+```
+pagos aceptados: 2 (debería ser 1)
+movimientos de caja para ese gasto: 2 (debería ser 1)
+saldo: -29000000 -> -29200000 (bajó 200000 por un gasto de 100000)
+```
+
+Lo peor no es que pase: es que **no se nota**. Los dos movimientos son reales,
+el saldo coincide con la suma de los movimientos y el invariante de cuentas da
+en orden. El libro queda consistente consigo mismo y con cien mil pesos de
+menos.
+
+El candado de saldo que ya existía no alcanzaba: ordena los dos movimientos, no
+impide que se decidan dos veces.
+
+Mismo patrón, corregido en los tres lugares donde movía plata y en uno más:
+
+| Dónde | Qué pasaba con dos a la vez |
+|---|---|
+| `pagarGasto` | el gasto salía dos veces de la cuenta |
+| `anularGasto` | la plata volvía dos veces |
+| `cerrarCaja` | el ajuste de arqueo se descontaba dos veces |
+| `marcarDevuelta` | dos asientos en la bitácora, y el segundo pisaba quién la resolvió |
+
+Los cuatro toman ahora la fila con `FOR UPDATE` **antes** de mirar en qué estado
+está. Lo que ya estaba bien y se confirmó: venta, anulación de venta, devolución,
+cobro de fiado, transferencia entre cuentas y apertura de caja (esta última por
+un índice único parcial, no por candado).
+
+### 66. Nada probaba las carreras, y la batería de siempre no puede *(nueva herramienta)*
+
+Los 768 tests corren sobre PGlite, que es **una sola conexión**: dos
+transacciones simultáneas se serializan solas y la prueba pasa aunque el candado
+no exista. Por eso este agujero sobrevivió diez fases. Es la misma lección de la
+pasada anterior, en su forma más cara.
+
+`npm run carreras` (`src/scripts/probar-carreras.ts`) abre **dos conexiones de
+verdad** contra PostgreSQL y corre las carreras que mueven plata: el mismo gasto
+pagado y anulado dos veces, el mismo turno cerrado dos veces, la misma terminal
+abierta dos veces, el mismo cobro de fiado reintentado con la misma clave, y la
+última unidad en stock vendida por dos pantallas a la vez. Quince comprobaciones.
+
+Se verificó lo único que hace que una prueba valga: **sacando los candados,
+falla en siete de las quince**. Se niega a correr contra una base que no sea
+local salvo que se la obligue, porque escribe.
+
+### 67. El selector de clientes escondía a partir del 201 *(corregido)*
+
+La pantalla de venta pedía los clientes con un tope de **200** y no lo decía en
+ninguna parte. El cliente 201 sencillamente no aparece: no se le puede fiar, no
+figura en el comprobante, y quien atiende no tiene forma de entender por qué.
+Con el alta de clientes desde la misma venta —agregada esta semana— llegar a 200
+dejó de ser lejano.
+
+El tope pasó a **1000** y, cuando la lista se llena, la pantalla lo dice. El día
+que el local pase de mil, el selector tiene que dejar de ser una lista y pasar a
+ser un buscador, como el de productos; está anotado donde corresponde.
+
+### 68. El cliente cargado en la venta se quedaba con saldo cero *(corregido)*
+
+Un cliente dado de alta desde la pantalla de venta se guardaba en la memoria de
+esa pantalla con saldo cero —que es lo correcto al nacer— y **le ganaba a la
+copia que traía el servidor**. Si en esa misma sesión se le fiaba, la venta
+siguiente mostraba «debe $0» de alguien que debía: el aviso de deuda previa, que
+es justo lo que el mostrador mira antes de fiar de nuevo, no aparecía.
+
+Ahora la copia local vale solo mientras el servidor todavía no lo conoce; en
+cuanto llega en la lista, gana la del servidor.
+
+### 69. El control de correlativos se caía si la terminal tenía un guion *(corregido)*
+
+Salió de rebote, corriendo los invariantes sobre una base con terminales de
+prueba. El control leía el correlativo partiendo el número de venta por guiones
+y quedándose con el segundo trozo, pero el número es `<terminal>-000001` y **el
+nombre de la terminal se configura** (`POS_TERMINAL`). Con una terminal llamada
+`caja-2` —lo más natural del mundo, y el día que haya una segunda pantalla va a
+llamarse así— el control no fallaba: se **caía**, con un error crudo de
+PostgreSQL, y `npm run auditar` terminaba a la mitad sin correr los invariantes
+que venían después.
+
+Ahora el correlativo se lee del final del número, que es donde está.

@@ -276,7 +276,20 @@ export async function clientePorId(
 }
 
 /** Los que se pueden elegir en la venta: activos, con la deuda a la vista. */
-export async function clientesParaVender(db: BaseDatos, limite = 200) {
+/**
+ * Los clientes que se pueden elegir en una venta, con su deuda.
+ *
+ * El tope existe porque la pantalla de venta los manda a todos al navegador
+ * dentro de un `<select>`: sin tope, un mostrador con miles de clientes se
+ * llevaría medio megabyte en cada carga de Vender, por celular, en el peor
+ * momento. Con mil alcanza para años acá, y quien llame tiene que avisar
+ * cuando la lista se llenó —un cliente que no aparece y nadie explica es peor
+ * que una lista larga (el tope era 200 y no lo decía nadie).
+ *
+ * El día que el local pase de mil, esto deja de ser una lista y pasa a ser un
+ * buscador, como el de productos.
+ */
+export async function clientesParaVender(db: BaseDatos, limite = 1000) {
   const filas = await db
     .select({
       id: customers.id,
