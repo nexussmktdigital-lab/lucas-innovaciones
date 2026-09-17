@@ -37,7 +37,16 @@ export default async function PaginaCatalogo({
     limite: TOPE,
   });
 
-  const sanos = informe.totalProductos - informe.conProblemas;
+  /*
+   * Los que se pueden vender bien, no los perfectos.
+   *
+   * Antes este número era «sin ningún problema», y mezclaba lo que impide
+   * vender con lo cosmético: como el 97% del catálogo real no tiene foto, decía
+   * 3% para siempre y nadie lo miraba. Contado contra lo que bloquea, arranca
+   * cerca del 100% y se mueve el día que algo se rompe de verdad — que es la
+   * única forma de que un número sirva para algo.
+   */
+  const vendibles = informe.totalProductos - informe.conProblemasBloqueantes;
   const urlWoo = process.env.WOO_URL?.replace(/\/+$/, '') ?? null;
 
   return (
@@ -86,9 +95,9 @@ export default async function PaginaCatalogo({
           detalle="Precio sospechoso, dólar incoherente o sin precio"
         />
         <Dato
-          titulo="Sin ningún problema"
-          valor={sanos.toLocaleString('es-AR')}
-          detalle={`${Math.round((sanos / Math.max(informe.totalProductos, 1)) * 100)}% del catálogo`}
+          titulo="Se pueden vender bien"
+          valor={vendibles.toLocaleString('es-AR')}
+          detalle={`${Math.round((vendibles / Math.max(informe.totalProductos, 1)) * 100)}% del catálogo`}
         />
       </div>
 

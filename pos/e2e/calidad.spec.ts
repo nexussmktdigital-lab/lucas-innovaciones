@@ -120,6 +120,34 @@ test('vender el iPhone mal cargado frena la venta y explica por qué', async ({ 
   await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toBeVisible();
 });
 
+test('al vendedor lo frena del todo, y le dice cómo salir', async ({ page }) => {
+  // El mismo iPhone, pero desde el mostrador: el vendedor no puede decidir que
+  // el precio está bien. Lo que necesita es saber qué hacer con el cliente
+  // enfrente, y que el botón deje de ofrecerle un camino que no existe.
+  await page.goto('/ingresar');
+  await page.getByRole('tab', { name: 'Vendedor' }).click();
+  await page.getByLabel('PIN').fill(PIN);
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
+
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('iPhone 15 Pro Max');
+  await page.getByRole('button', { name: /iPhone 15 Pro Max/ }).first().waitFor();
+  await buscador.press('Enter');
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+
+  await expect(cobro.getByText('Este precio no se puede cobrar así')).toBeVisible();
+  await expect(cobro.getByText(/sacá ese producto del carrito/i)).toBeVisible();
+  // Y no le queda el botón ofreciendo un camino que vuelve a fallar.
+  await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
+  await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toBeHidden();
+});
+
 test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();

@@ -192,7 +192,7 @@ async function venderEn(fechaISO: string, opciones: { producto?: string; cantida
 }
 
 /** Un período que abarca todo lo que puedan tocar los tests. */
-const TODO = periodoEntre('2020-01-01', '2030-12-31');
+const TODO = periodoEntre('2021-01-01', '2026-12-31');
 
 describe('el resumen del período', () => {
   it('cuenta ventas, unidades, total y ticket promedio', async () => {

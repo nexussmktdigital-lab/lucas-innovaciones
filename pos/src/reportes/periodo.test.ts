@@ -139,6 +139,14 @@ describe('un período escrito a mano', () => {
   it('al revés no', () => {
     expect(() => periodoEntre('2026-09-15', '2026-09-01')).toThrow(ErrorPeriodo);
   });
+
+  it('todo el histórico entra: el importado del POS anterior empieza en 2023', () => {
+    expect(() => periodoEntre('2023-01-01', '2026-09-15')).not.toThrow();
+  });
+
+  it('desde 1970 no: arma la tabla entera en memoria para nada', () => {
+    expect(() => periodoEntre('1970-01-01', '2026-09-15')).toThrow(ErrorPeriodo);
+  });
 });
 
 describe('los instantes que van a la base', () => {

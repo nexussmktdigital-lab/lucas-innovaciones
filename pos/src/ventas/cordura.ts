@@ -118,6 +118,28 @@ export function revisarLinea(
   p: ProductoAValidar,
   precioCentavos: number,
 ): Sospecha | null {
+  /*
+   * Cero no es un precio, tenga piso el producto o no.
+   *
+   * Las categorías sin piso —cables, fundas, vidrios, cargadores— son la mayor
+   * parte de las unidades que se venden, y para ellas no había ningún control:
+   * un producto que llegó de la tienda sin precio, o con el precio en cero por
+   * un error de carga, salía del mostrador **gratis** y con el stock
+   * descontado. En un renglón suelto se nota; en una venta de seis accesorios,
+   * no. El dueño puede confirmarlo igual si de verdad va a regalar algo, que es
+   * lo mismo que hace con cualquier otro precio raro.
+   */
+  if (precioCentavos <= 0) {
+    return {
+      descripcion: p.nombre,
+      precioCentavos,
+      pisoCentavos: 1,
+      motivo:
+        'Está cargado sin precio y se cobraría $0. Revisá la ficha antes de vender: ' +
+        'el stock se descuenta igual.',
+    };
+  }
+
   const piso = pisoPara(p);
   if (piso === null || precioCentavos >= piso) return null;
 

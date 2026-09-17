@@ -1274,3 +1274,104 @@ PostgreSQL, y `npm run auditar` terminaba a la mitad sin correr los invariantes
 que venían después.
 
 Ahora el correlativo se lee del final del número, que es donde está.
+
+---
+
+# Octava pasada — cerrar lo que quedó abierto, y una que faltaba
+
+Las siete pasadas anteriores dejaron una lista de hallazgos abiertos «que no
+frenan la salida». Antes de abrir el local conviene mirarla de nuevo y decidir
+uno por uno, porque «no frena la salida» y «puede quedar así el primer día» no
+son lo mismo. Esta pasada cierra cinco, deja tres anotados con su razón, y
+encuentra uno nuevo revisando de dónde puede salir plata sin que nadie firme.
+
+### 70. Un producto sin precio se vendía gratis, y ningún control avisaba *(corregido)*
+
+La guarda de precios tiene pisos por categoría y marca, y **a propósito** no le
+pone piso a los accesorios: cables, fundas, vidrios, cargadores. Un vidrio
+templado a $5.000 es normal, y marcarlo solo entrena al cajero a ignorar el
+cartel.
+
+El agujero es el borde de esa decisión: **sin piso, tampoco había piso en
+cero**. Un producto que llegó de la tienda sin precio —o con el precio en cero
+por un error de carga— salía del mostrador gratis, con el stock descontado y sin
+que nada lo frenara. Y los accesorios son justo la mayor parte de las unidades
+que se venden. En un renglón suelto se ve; en una venta de seis accesorios, no.
+
+Cero no es un precio barato: es la falta de un precio. Ahora lo frena siempre,
+diga lo que diga la categoría, con el mismo mecanismo que el resto —el dueño lo
+puede confirmar a sabiendas si de verdad va a regalar algo—. El único cero que
+ya estaba cubierto era el del precio escrito a mano, que es otro camino.
+
+### 17. El vendedor que topa con un precio sospechoso queda sin salida *(corregido)*
+
+Estaba abierto desde la primera auditoría. El vendedor veía el cartel rojo, el
+botón de confirmar seguía habilitado y cada clic volvía a fallar igual, con un
+cliente esperando del otro lado del mostrador.
+
+Ahora se le dice qué hacer —sacar ese producto del carrito y cobrar el resto; el
+precio lo corrige el dueño en el catálogo, o lo confirma él desde su usuario— y
+el botón queda trabado hasta que el carrito cambie, que es lo único que puede
+destrabarlo. Tiene su prueba de punta a punta: el mismo iPhone mal cargado del
+test del dueño, pero entrando como vendedor.
+
+### 18. La pantalla de inicio decía que sincronizó cuando no sincronizó *(corregido)*
+
+Los productos del seed se guardaban con `lastSyncedAt`, así que una instalación
+recién sembrada mostraba «Última sincronización: hoy» sin haber hablado nunca
+con WooCommerce. Es exactamente el cartel que uno mira cuando los productos no
+aparecen —pasó esta semana, con la demo—, y decía lo contrario de la verdad.
+
+Los del seed ya no lo llevan: ahora Inicio dice «Todavía no se sincronizó»
+hasta que la sincronización ocurra de verdad. De paso, la cuenta que decidía si
+la base ya tiene catálogo real quedó más simple y más honesta: alcanza con que
+exista un producto que haya hablado con la tienda.
+
+### 19. «Sin ningún problema: 0 (0% del catálogo)» *(corregido)*
+
+Mezclaba lo que impide vender con lo cosmético. Como el 97% del catálogo real no
+tiene foto, ese número iba a decir 3% para siempre y nadie lo iba a mirar.
+
+Ahora cuenta **los que se pueden vender bien** —el total menos lo que bloquea—,
+que arranca cerca del 100% y se mueve el día que algo se rompe de verdad.
+
+### 40. No había tope al período que se exporta *(corregido)*
+
+`desde=1970` en la URL armaba en memoria la tabla entera —ventas, renglones y
+gastos— para nada. No es un ataque, porque hay que ser el dueño y estar con
+sesión: es el dueño tocando una URL vieja y viendo la pantalla colgada sin
+entender por qué. El tope va en `periodoEntre`, que es la única puerta por donde
+entra un período escrito a mano —la pantalla y la descarga pasan las dos por
+ahí— y avisa con una frase en vez de tardar una eternidad.
+
+Quedó en **diez años** y no en tres, que fue el primer número. Lo corrigieron
+los tests: dos armaban un período de 2020 a 2030 para decir «todo», y tenían
+razón en querer eso —el histórico importado del POS anterior empieza en 2023 y
+«todo» es una pregunta legítima—. El tope está para el absurdo, no para
+discutirle al dueño qué período puede mirar.
+
+## Los permisos, revisados de nuevo y enteros
+
+Una acción de servidor es una dirección HTTP: que el botón no esté en pantalla
+no impide llamarla. Se revisaron **las treinta y tres**, una por una, mirando qué
+comprueba cada una antes de tocar la base.
+
+**Ninguna quedó floja.** Todas piden sesión y todas las que hacen algo sensible
+piden además el permiso que corresponde: vender, anular, fiar, cobrar fiado,
+poner un tope, cargar o pagar un gasto, transferir entre cuentas, tocar el
+dólar, publicar en la tienda, importar una planilla, cambiar los textos de
+WhatsApp. Las de gastos y cuentas lo hacen con un ayudante común —`duenio()`—
+que pide sesión y `gasto.cargar` en el mismo paso.
+
+Tres no piden permiso además de la sesión, y las tres están bien así: cargar y
+editar un cliente (el vendedor los necesita para vender, y la ficha no incluye
+el tope de fiado, que sí es del dueño), y marcar que se le devolvió la plata a
+un cliente, que es una decisión de mostrador y está documentada como tal.
+
+## Lo que queda abierto, y por qué
+
+| # | Qué | Por qué se deja |
+|---|---|---|
+| 37 | El precio de mostrador de un producto nacido en el POS queda fijo aunque cambie en WooCommerce | **Necesita una decisión, no un arreglo**: hay que definir si el precio que se escribe en el alta es el precio propio del mostrador para siempre o solo el inicial. Mientras no se decida, el que está es el que el dueño escribió |
+| 44 a 47 | Atribución de una venta subida por otro usuario, la copia de pantalla del service worker, la antigüedad del catálogo guardado y el tamaño de la cola sin conexión | Siguen valiendo las razones de la quinta pasada: ninguno pierde plata y los cuatro tienen aviso en pantalla |
+| 54, 55 | La devolución que descuenta deuda no deja asiento propio en la bitácora de la cuenta, y la sesión dura doce horas | Sin plata mal contada el primero, y aflojar el segundo es aflojar la única barrera de la tablet |

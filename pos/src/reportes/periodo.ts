@@ -142,10 +142,33 @@ export function periodoPorNombre(nombre: NombreDePeriodo, ahora = new Date()): P
   }
 }
 
+/**
+ * Tope de un período escrito a mano, en días.
+ *
+ * Las fechas viajan por la URL, y `desde=1970` arma en memoria la tabla entera
+ * —ventas, renglones y gastos— para nada. No es un ataque, porque hay que ser
+ * el dueño y estar con sesión: es el dueño tocando una URL vieja y viendo la
+ * pantalla colgada sin entender por qué.
+ *
+ * Diez años y no tres: el histórico importado del POS anterior empieza en 2023
+ * y «todo» es una pregunta legítima. El tope está para el absurdo, no para
+ * discutirle al dueño qué período puede mirar.
+ */
+export const DIAS_MAXIMOS_DE_UN_PERIODO = 3660;
+
 /** Un período escrito a mano, con las dos puntas inclusivas para quien lo lee. */
 export function periodoEntre(desdeISO: string, hastaISO: string): Periodo {
   if (desdeISO > hastaISO) {
     throw new ErrorPeriodo('La fecha de inicio es posterior a la de fin.');
+  }
+  const dias =
+    (comienzoDelDia(hastaISO).getTime() - comienzoDelDia(desdeISO).getTime()) / 86_400_000;
+  if (dias > DIAS_MAXIMOS_DE_UN_PERIODO) {
+    throw new ErrorPeriodo(
+      `Ese período son más de ${Math.round(DIAS_MAXIMOS_DE_UN_PERIODO / 365)} años, ` +
+        'más que todo lo que hay cargado. Elegí uno más corto: el reporte se arma en el ' +
+        'momento y uno así tarda una eternidad.',
+    );
   }
   // `hastaISO` lo escribe una persona pensando «hasta ese día inclusive», así
   // que el límite real es el comienzo del día siguiente.

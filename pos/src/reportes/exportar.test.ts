@@ -25,7 +25,7 @@ let celular: string;
 let cliente: string;
 let categoria: string;
 
-const TODO = periodoEntre('2020-01-01', '2030-12-31');
+const TODO = periodoEntre('2021-01-01', '2026-12-31');
 
 beforeAll(async () => {
   db = await crearBaseDePrueba();

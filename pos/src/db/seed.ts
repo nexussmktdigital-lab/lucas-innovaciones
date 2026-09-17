@@ -238,13 +238,21 @@ export async function sembrar(
     ])
     .onConflictDoNothing();
 
-  // ¿Hay catálogo real? Un producto con `lastSyncedAt` vino de WooCommerce.
+  /*
+   * ¿Hay catálogo real? Un producto con `lastSyncedAt` habló con WooCommerce.
+   *
+   * Los del seed ya **no** lo llevan, y por eso alcanza con que haya uno. Antes
+   * lo llevaban —para que esta misma cuenta funcionara— y eso hacía que una
+   * instalación recién sembrada mostrara «Última sincronización: hoy» sin haber
+   * hablado nunca con la tienda. Justo el cartel que hay que mirar cuando los
+   * productos no aparecen.
+   */
   const [yaSincronizado] = await db
     .select({ cuantos: count() })
     .from(schema.products)
     .where(isNotNull(schema.products.lastSyncedAt));
 
-  const hayCatalogoReal = (yaSincronizado?.cuantos ?? 0) > CATALOGO.length;
+  const hayCatalogoReal = (yaSincronizado?.cuantos ?? 0) > 0;
   const catalogoOmitido = hayCatalogoReal && !opciones.forzarCatalogo;
 
   if (!catalogoOmitido) {
@@ -274,7 +282,6 @@ export async function sembrar(
         // catalogo real (97% sin foto), pero eso se mide por columna aparte.
         fichaIncompleta: !p.sku || (!p.usd && p.precio < 100),
         activo: true,
-        lastSyncedAt: new Date(),
       })),
     )
     .onConflictDoNothing();
@@ -303,7 +310,6 @@ export async function sembrar(
           // Cada capacidad lleva su propio stock: no es el del padre.
           gestionaStock: true,
           activo: true,
-          lastSyncedAt: new Date(),
         },
       ];
     });

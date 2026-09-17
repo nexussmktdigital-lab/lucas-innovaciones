@@ -89,6 +89,15 @@ export default function Cobro({
   const [error, setError] = useState<string | null>(null);
   /** Precio sospechoso: el dueño tiene que decidir a sabiendas. */
   const [aConfirmar, setAConfirmar] = useState<string | null>(null);
+  /**
+   * Lo mismo, pero visto por el vendedor, que no lo puede saltear.
+   *
+   * Antes acá se mostraba el error y nada más: el botón seguía habilitado y
+   * cada clic volvía a fallar igual, con un cliente esperando del otro lado.
+   * Ahora se dice qué hacer y el botón queda trabado hasta que el carrito
+   * cambie, que es lo único que puede destrabarlo.
+   */
+  const [trabado, setTrabado] = useState<string | null>(null);
   const clave = useRef(nuevaClave());
   const primerCampo = useRef<HTMLInputElement>(null);
 
@@ -108,6 +117,12 @@ export default function Cobro({
   useEffect(() => {
     primerCampo.current?.focus();
   }, []);
+
+  // Sacar el producto del carrito destraba el cobro. Es la salida que antes no
+  // estaba escrita en ninguna parte.
+  useEffect(() => {
+    setTrabado(null);
+  }, [lineas]);
 
   const fiadoCentavos = pagos
     .filter((p) => p.medio === 'cuenta_corriente')
@@ -178,6 +193,7 @@ export default function Cobro({
 
     if (!r.ok) {
       if (r.puedeConfirmar) setAConfirmar(r.error);
+      else if (r.motivo === 'precio_sospechoso') setTrabado(r.error);
       else setError(r.error);
       setEnviando(false);
     }
@@ -367,6 +383,30 @@ export default function Cobro({
           </p>
         ) : null}
 
+        {trabado ? (
+          <div
+            role="alert"
+            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-3"
+          >
+            <p className="text-sm font-semibold text-(--color-error)">
+              Este precio no se puede cobrar así
+            </p>
+            <p className="mt-1 text-sm">{trabado}</p>
+            <p className="mt-2 text-sm">
+              <strong>Qué hacer:</strong> sacá ese producto del carrito y cobrá el resto. Para
+              venderlo, el precio lo tiene que corregir el dueño en el catálogo —o confirmarlo él
+              desde su usuario.
+            </p>
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="mt-3 min-h-10 w-full rounded-(--radius-caja) bg-(--color-marca) text-sm font-semibold text-white"
+            >
+              Volver al carrito
+            </button>
+          </div>
+        ) : null}
+
         {aConfirmar ? (
           <div
             role="alert"
@@ -398,7 +438,7 @@ export default function Cobro({
         <button
           type="button"
           onClick={() => void confirmar()}
-          disabled={problemas.length > 0 || enviando || aConfirmar !== null}
+          disabled={problemas.length > 0 || enviando || aConfirmar !== null || trabado !== null}
           className="mt-4 min-h-14 w-full rounded-(--radius-caja) bg-(--color-ok) text-lg font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
         >
           {enviando ? 'Confirmando…' : 'Confirmar venta e imprimir'}

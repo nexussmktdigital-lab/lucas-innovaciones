@@ -62,6 +62,19 @@ describe('revisarLinea', () => {
     expect(revisarLinea(producto({ marca: 'Samsung' }), 41_000_000)).toBeNull();
   });
 
+  it('un accesorio sin precio no se regala: cero nunca pasa', () => {
+    // El vidrio templado no tiene piso, así que hasta acá cualquier precio le
+    // servía — incluido el cero que deja una ficha mal cargada.
+    const s = revisarLinea(
+      producto({ nombre: 'Vidrio templado', categoria: 'Vidrios templados', marca: null }),
+      0,
+    );
+
+    expect(s).not.toBeNull();
+    expect(s!.motivo).toMatch(/sin precio/);
+    expect(s!.motivo).toMatch(/stock se descuenta/);
+  });
+
   it('deja pasar un accesorio barato: no tiene piso', () => {
     expect(
       revisarLinea(
