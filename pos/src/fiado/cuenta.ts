@@ -34,6 +34,7 @@ import {
   sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { imputarPago } from './plan';
 import type { MedioPago } from '@/ventas/carrito';
 import { tipoDeCuentaPara } from '@/ventas/confirmar';
 
@@ -62,10 +63,7 @@ export interface CuentaCorriente {
 }
 
 /** La cuenta de un cliente, o null si nunca se le fio. */
-export async function cuentaDe(
-  db: BaseDatos,
-  customerId: string,
-): Promise<CuentaCorriente | null> {
+export async function cuentaDe(db: BaseDatos, customerId: string): Promise<CuentaCorriente | null> {
   const [c] = await db
     .select({
       id: creditAccounts.id,
@@ -132,7 +130,7 @@ export async function anotarDeuda(
     numero: string;
     usuarioId: string;
   },
-): Promise<{ saldoCentavos: number }> {
+): Promise<{ saldoCentavos: number; cuentaId: string }> {
   if (datos.montoCentavos <= 0) {
     throw new ErrorFiado('Una deuda tiene que ser mayor a cero.', 'monto_invalido');
   }
@@ -176,7 +174,7 @@ export async function anotarDeuda(
     },
   });
 
-  return { saldoCentavos };
+  return { saldoCentavos, cuentaId: cuenta.id };
 }
 
 export interface DatosCobro {
@@ -201,10 +199,7 @@ export interface CobroRegistrado {
 /**
  * Cobra a cuenta de la deuda. La plata entra a la caja del turno.
  */
-export async function cobrarFiado(
-  db: BaseDatos,
-  datos: DatosCobro,
-): Promise<CobroRegistrado> {
+export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<CobroRegistrado> {
   if (!Number.isInteger(datos.montoCentavos) || datos.montoCentavos <= 0) {
     throw new ErrorFiado('El monto a cobrar tiene que ser mayor a cero.', 'monto_invalido');
   }
@@ -266,6 +261,19 @@ export async function cobrarFiado(
         idempotencyKey: datos.idempotencyKey,
       })
       .returning({ id: creditPayments.id });
+
+    /*
+     * Lo cobrado se imputa a las cuotas, de la más vieja a la más nueva.
+     *
+     * Sin esto el semáforo de la pantalla de Fiado mentiría: un cliente que
+     * pagó todo seguiría figurando en rojo porque su cuota vencida nunca se
+     * habría marcado. Si no tiene plan no hace nada, que es el caso de siempre.
+     */
+    await imputarPago(tx, {
+      creditAccountId: cuenta.id,
+      creditPaymentId: cobro!.id,
+      montoCentavos: datos.montoCentavos,
+    });
 
     // A la caja entra plata de verdad: es lo que hace que el arqueo cierre.
     const tipoCuenta = tipoDeCuentaPara(datos.medio);
@@ -362,7 +370,10 @@ export async function ponerLimite(
   db: BaseDatos,
   datos: { customerId: string; limiteCentavos: number | null; usuarioId: string },
 ): Promise<void> {
-  if (datos.limiteCentavos !== null && (!Number.isInteger(datos.limiteCentavos) || datos.limiteCentavos < 0)) {
+  if (
+    datos.limiteCentavos !== null &&
+    (!Number.isInteger(datos.limiteCentavos) || datos.limiteCentavos < 0)
+  ) {
     throw new ErrorFiado('El límite no puede ser negativo.', 'monto_invalido');
   }
 

@@ -4,11 +4,12 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { clientePorId } from '@/clientes/clientes';
 import { cuentaDe, movimientosDe } from '@/fiado/cuenta';
+import { cuotasDeCuenta, estadoDeDeuda } from '@/fiado/plan';
 import { devolucionesDe } from '@/fiado/devoluciones';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { armarRecordatorio, mensajesDe, ultimoRecordatorio } from '@/whatsapp/mensajes';
 import { formatearARS } from '@/lib/dinero';
-import { formatearFechaHora } from '@/lib/fecha';
+import { fechaLocalISO, formatearFechaHora } from '@/lib/fecha';
 import BotonWhatsApp from '../../boton-whatsapp';
 import Devoluciones from './devoluciones';
 import FormularioCliente from '../formulario-cliente';
@@ -16,6 +17,12 @@ import FormularioLimite from './formulario-limite';
 import FormularioFicha from './formulario-ficha';
 
 export const dynamic = 'force-dynamic';
+
+/** `2026-10-18` → `18/10/2026`. */
+function comoSeLee(iso: string): string {
+  const [a, m, d] = iso.split('-');
+  return `${d}/${m}/${a}`;
+}
 
 /** Ficha del cliente: sus datos, su deuda y su historia. */
 export default async function PaginaCliente({ params }: { params: Promise<{ id: string }> }) {
@@ -28,6 +35,11 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
 
   const cuenta = await cuentaDe(db, id);
   const movimientos = await movimientosDe(db, id);
+
+  // Las cuotas de sus planes vivos, si tiene alguno. Es la pregunta que se le
+  // hace a la ficha cuando el cliente está enfrente: «¿cuánto te toca hoy?».
+  const cuotas = cuenta ? await cuotasDeCuenta(db, cuenta.id) : [];
+  const estado = cuotas.length > 0 ? estadoDeDeuda(cuotas, fechaLocalISO()) : null;
 
   const aDevolver = await devolucionesDe(db, id);
   const ajustes = await ajustesDeWhatsApp(db);
@@ -89,10 +101,44 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           ) : null}
         </div>
 
+        {estado ? (
+          <div className="mt-3 rounded-(--radius-caja) bg-(--color-papel) p-3">
+            <p className="text-sm font-semibold">
+              {estado.titulo} · {estado.cuotasPagadas} de {estado.cuotasTotales} cuotas pagas
+            </p>
+            <ol className="mt-2 flex flex-col gap-1 text-sm">
+              {cuotas.map((c) => {
+                const falta = Math.max(0, c.montoCentavos - c.pagadoCentavos);
+                const vencida = falta > 0 && c.vencimiento < fechaLocalISO();
+                return (
+                  <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="w-16 text-(--color-tinta-suave)">Cuota {c.numero}</span>
+                    <span className="tabular font-medium">{formatearARS(c.montoCentavos)}</span>
+                    <span
+                      className={
+                        vencida
+                          ? 'font-semibold text-(--color-error)'
+                          : 'text-(--color-tinta-media)'
+                      }
+                    >
+                      {falta === 0 ? 'pagada' : `vence el ${comoSeLee(c.vencimiento)}`}
+                    </span>
+                    {falta > 0 && falta !== c.montoCentavos ? (
+                      <span className="tabular text-xs text-(--color-tinta-suave)">
+                        falta {formatearARS(falta)}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        ) : null}
+
         {recordatorio.listo ? (
           <div className="mt-3">
             <BotonWhatsApp
-              tipo="recordatorio_fiado"
+              tipo={recordatorio.mensaje.tipo}
               referenciaId={cliente.id}
               enlace={recordatorio.mensaje.enlace}
               etiqueta="Recordarle por WhatsApp"

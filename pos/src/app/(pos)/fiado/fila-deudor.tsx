@@ -6,6 +6,7 @@ import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import type { DeudorEnLista } from '@/fiado/cuenta';
+import { comoSeDice, type Color, type EstadoDeDeuda, type Frecuencia } from '@/fiado/plan';
 import type { Preparacion, UltimoAviso } from '@/whatsapp/mensajes';
 import BotonWhatsApp from '../boton-whatsapp';
 
@@ -26,6 +27,54 @@ function textoDeHace(dias: number): string {
   return `hace ${dias} días`;
 }
 
+/**
+ * El semáforo, en colores y en palabras.
+ *
+ * El borde se ve de lejos y el texto explica: un cartel de color sin texto se
+ * interpreta mal, y un texto sin color no se ve cuando hay quince clientes en
+ * la lista.
+ */
+const SEMAFORO: Record<Color, { borde: string; fondo: string; texto: string; punto: string }> = {
+  rojo: {
+    borde: 'border-(--color-error)',
+    fondo: 'bg-(--color-error)/8',
+    texto: 'text-(--color-error)',
+    punto: 'bg-(--color-error)',
+  },
+  amarillo: {
+    borde: 'border-(--color-alerta)',
+    fondo: 'bg-(--color-alerta)/8',
+    texto: 'text-(--color-alerta)',
+    punto: 'bg-(--color-alerta)',
+  },
+  verde: {
+    borde: 'border-(--color-ok)',
+    fondo: 'bg-(--color-ok)/6',
+    texto: 'text-(--color-ok)',
+    punto: 'bg-(--color-ok)',
+  },
+  gris: {
+    borde: 'border-(--color-borde)',
+    fondo: 'bg-(--color-panel)',
+    texto: 'text-(--color-tinta-suave)',
+    punto: 'bg-(--color-tinta-suave)',
+  },
+};
+
+/** Qué dice el botón de WhatsApp según el estado. */
+const ETIQUETA_WHATSAPP: Record<Color, string> = {
+  rojo: 'Reclamarle la cuota vencida',
+  amarillo: 'Avisarle que vence la cuota',
+  verde: 'Recordarle la próxima cuota',
+  gris: 'Recordarle por WhatsApp',
+};
+
+/** `2026-10-18` → `18/10/2026`. */
+function comoSeLee(iso: string): string {
+  const [a, m, d] = iso.split('-');
+  return `${d}/${m}/${a}`;
+}
+
 /** Clave de idempotencia: una por formulario abierto. Reintentar no cobra dos veces. */
 function nuevaClave(): string {
   return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random()}`;
@@ -33,18 +82,21 @@ function nuevaClave(): string {
 
 export default function FilaDeudor({
   deudor,
+  estado,
   hayCaja,
   esDuenio,
   recordatorio,
   ultimoAviso,
 }: {
   deudor: DeudorEnLista;
+  /** Su plan de cuotas, si tiene. `null` es el fiado abierto de siempre. */
+  estado: (EstadoDeDeuda & { frecuencia: Frecuencia | null }) | null;
   hayCaja: boolean;
   esDuenio: boolean;
   recordatorio: Preparacion;
   ultimoAviso: UltimoAviso | null;
 }) {
-  const [estado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
+  const [resultado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
   const [clave] = useState(nuevaClave);
 
@@ -52,14 +104,17 @@ export default function FilaDeudor({
   // adentro invita a volver a apretar. La clave de idempotencia igual impide
   // que se cobre dos veces, pero el susto no hace falta.
   useEffect(() => {
-    if (estado.ok) setAbierto(false);
-  }, [estado.ok]);
+    if (resultado.ok) setAbierto(false);
+  }, [resultado.ok]);
 
   const pasadoDeLimite =
     deudor.limiteCentavos !== null && deudor.saldoCentavos >= deudor.limiteCentavos;
 
+  const color = estado?.color ?? 'gris';
+  const tono = SEMAFORO[color];
+
   return (
-    <li className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-3">
+    <li className={`rounded-(--radius-caja) border-2 p-3 ${tono.borde} ${tono.fondo}`}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <Link
           href={`/clientes/${deudor.customerId}`}
@@ -86,7 +141,42 @@ export default function FilaDeudor({
         </span>
       </div>
 
+      {estado ? (
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+          <span className={`inline-block size-2.5 shrink-0 rounded-full ${tono.punto}`} aria-hidden />
+          <span className={`font-semibold ${tono.texto}`}>{estado.titulo}</span>
+          {estado.proxima ? (
+            <span className="text-(--color-tinta-media)">
+              — cuota {estado.proxima.numero} de {estado.cuotasTotales} ·{' '}
+              <span className="tabular font-medium">
+                {formatearARS(estado.proxima.faltaCentavos)}
+              </span>{' '}
+              {color === 'rojo' ? 'venció' : 'vence'} el {comoSeLee(estado.proxima.vencimiento)}
+            </span>
+          ) : (
+            <span className="text-(--color-tinta-media)">
+              — las {estado.cuotasTotales} cuotas están pagas
+            </span>
+          )}
+        </div>
+      ) : null}
+
+      {estado?.color === 'rojo' && estado.vencidoCentavos > 0 ? (
+        <p className="mt-1 text-sm">
+          Vencido y sin pagar:{' '}
+          <strong className="tabular text-(--color-error)">
+            {formatearARS(estado.vencidoCentavos)}
+          </strong>
+        </p>
+      ) : null}
+
       <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-(--color-tinta-suave)">
+        {estado?.frecuencia ? (
+          <span>
+            Paga {comoSeDice(estado.frecuencia)} · {estado.cuotasPagadas} de{' '}
+            {estado.cuotasTotales} cuotas pagas
+          </span>
+        ) : null}
         {deudor.ultimoMovimiento ? (
           <span>Última actividad: {formatearFecha(deudor.ultimoMovimiento)}</span>
         ) : null}
@@ -97,19 +187,19 @@ export default function FilaDeudor({
         ) : null}
       </div>
 
-      {estado.ok ? (
+      {resultado.ok ? (
         <p role="status" className="mt-2 text-sm font-medium text-(--color-ok)">
-          {estado.ok}
+          {resultado.ok}
         </p>
       ) : null}
 
       <div className="mt-2 flex flex-wrap items-center gap-3">
         {recordatorio.listo ? (
           <BotonWhatsApp
-            tipo="recordatorio_fiado"
+            tipo={recordatorio.mensaje.tipo}
             referenciaId={deudor.customerId}
             enlace={recordatorio.mensaje.enlace}
-            etiqueta="Recordarle por WhatsApp"
+            etiqueta={ETIQUETA_WHATSAPP[color]}
             aviso={
               ultimoAviso?.reciente
                 ? `Ya se le recordó ${textoDeHace(ultimoAviso.hace)}.`
@@ -206,9 +296,9 @@ export default function FilaDeudor({
             </div>
           </div>
 
-          {estado.error ? (
+          {resultado.error ? (
             <p role="alert" className="text-sm font-medium text-(--color-error)">
-              {estado.error}
+              {resultado.error}
             </p>
           ) : null}
 

@@ -19,11 +19,12 @@ import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { whatsappMessages } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import { formatearARS } from '@/lib/dinero';
-import { formatearFecha } from '@/lib/fecha';
+import { fechaLocalISO, formatearFecha } from '@/lib/fecha';
 import { NEGOCIO_POR_DEFECTO } from '@/ventas/ticket';
 import { ajustesDeWhatsApp, type AjustesDeWhatsApp } from './config';
 import { enlaceDeWhatsApp } from './enlace';
 import { acortarDetalle, nombreDePila, renderizar, type TipoDeMensaje } from './plantillas';
+import { estadosDeClientes, type EstadoDeDeuda } from '@/fiado/plan';
 
 export interface MensajePreparado {
   tipo: TipoDeMensaje;
@@ -134,9 +135,7 @@ function comprobanteDe(v: FilaVenta, cfg: AjustesDeWhatsApp): Preparacion {
     detalle: v.detalle === null ? null : acortarDetalle(v.detalle),
     fecha: formatearFecha(new Date(v.fecha)),
     fiado:
-      fiadoCentavos > 0
-        ? `Quedaste debiendo ${formatearARS(fiadoCentavos)} de esta compra.`
-        : null,
+      fiadoCentavos > 0 ? `Quedaste debiendo ${formatearARS(fiadoCentavos)} de esta compra.` : null,
   });
 
   return {
@@ -206,6 +205,27 @@ export interface DeudaParaRecordar {
   telefono: string | null;
   saldoCentavos: number;
   ultimoMovimiento: Date | null;
+  /**
+   * El estado de su plan de cuotas, si tiene uno.
+   *
+   * Es lo que decide qué mensaje se arma: el que se atrasó no tiene que leer lo
+   * mismo que el que tiene una cuota el viernes, y ninguno de los dos lo mismo
+   * que el fiado abierto de siempre.
+   */
+  estado?: EstadoDeDeuda | null;
+}
+
+/** «hoy», «mañana», «en 5 días»: como se dice una fecha cercana. */
+function comoSeDiceElPlazo(dias: number): string {
+  if (dias <= 0) return 'hoy';
+  if (dias === 1) return 'mañana';
+  return `en ${dias} días`;
+}
+
+/** Una fecha `YYYY-MM-DD` como la lee una persona. */
+function fechaCorta(iso: string): string {
+  const [a, m, d] = iso.split('-');
+  return `${d}/${m}/${a}`;
 }
 
 /**
@@ -226,17 +246,12 @@ export function recordatorioDe(d: DeudaParaRecordar, cfg: AjustesDeWhatsApp): Pr
     };
   }
 
-  const texto = renderizar(cfg.recordatorio_fiado, {
-    cliente: nombreDePila(d.nombre),
-    local: NEGOCIO_POR_DEFECTO.nombre,
-    deuda: formatearARS(d.saldoCentavos),
-    desde: d.ultimoMovimiento ? formatearFecha(d.ultimoMovimiento) : null,
-  });
+  const { tipo, texto } = textoDelRecordatorio(d, cfg);
 
   return {
     listo: true,
     mensaje: {
-      tipo: 'recordatorio_fiado',
+      tipo,
       clienteId: d.customerId,
       nombre: d.nombre,
       telefono: d.telefono,
@@ -245,6 +260,59 @@ export function recordatorioDe(d: DeudaParaRecordar, cfg: AjustesDeWhatsApp): Pr
       referenciaTipo: 'cuenta',
       referenciaId: d.customerId,
     },
+  };
+}
+
+/**
+ * Qué mensaje le toca a este cliente.
+ *
+ * Tres estados, tres textos, y el dueño puede cambiar los tres desde Mensajes:
+ * atrasado, cuota por vencer, y el fiado sin fechas. Un cliente con plan que ya
+ * terminó de pagar pero sigue debiendo algo —un saldo suelto— cae en el
+ * tercero, que es lo correcto: esa plata no tiene cuota.
+ */
+function textoDelRecordatorio(
+  d: DeudaParaRecordar,
+  cfg: AjustesDeWhatsApp,
+): { tipo: TipoDeMensaje; texto: string } {
+  const e = d.estado;
+  const comun = {
+    cliente: nombreDePila(d.nombre),
+    local: NEGOCIO_POR_DEFECTO.nombre,
+    deuda: formatearARS(d.saldoCentavos),
+  };
+
+  if (e && e.color === 'rojo' && e.proxima) {
+    return {
+      tipo: 'recordatorio_atrasado',
+      texto: renderizar(cfg.recordatorio_atrasado, {
+        ...comun,
+        vencido: formatearARS(e.vencidoCentavos),
+        atraso: `hace ${e.diasDeAtraso} ${e.diasDeAtraso === 1 ? 'día' : 'días'}`,
+        vencimiento: fechaCorta(e.proxima.vencimiento),
+      }),
+    };
+  }
+
+  if (e && (e.color === 'amarillo' || e.color === 'verde') && e.proxima) {
+    return {
+      tipo: 'recordatorio_cuota',
+      texto: renderizar(cfg.recordatorio_cuota, {
+        ...comun,
+        cuota: formatearARS(e.proxima.faltaCentavos),
+        vencimiento: fechaCorta(e.proxima.vencimiento),
+        cuando: comoSeDiceElPlazo(e.proxima.enDias),
+        numero: `${e.proxima.numero} de ${e.cuotasTotales}`,
+      }),
+    };
+  }
+
+  return {
+    tipo: 'recordatorio_fiado',
+    texto: renderizar(cfg.recordatorio_fiado, {
+      ...comun,
+      desde: d.ultimoMovimiento ? formatearFecha(d.ultimoMovimiento) : null,
+    }),
   };
 }
 
@@ -272,6 +340,11 @@ export async function armarRecordatorio(
 
   if (!c) return { listo: false, codigo: 'no_existe', motivo: 'No se encuentra ese cliente.' };
 
+  // El estado del plan se pide acá y no en `recordatorioDe`, que es pura: la
+  // lista de fiado ya lo trae para todos de una sola consulta y no tiene por
+  // qué volver a preguntarlo cliente por cliente.
+  const estados = await estadosDeClientes(db, [String(c.id)], fechaLocalISO());
+
   return recordatorioDe(
     {
       customerId: String(c.id),
@@ -279,6 +352,7 @@ export async function armarRecordatorio(
       telefono: c.telefono,
       saldoCentavos: Number(c.saldo_centavos ?? 0),
       ultimoMovimiento: c.ultimo ? new Date(c.ultimo) : null,
+      estado: estados.get(String(c.id)) ?? null,
     },
     ajustes ?? (await ajustesDeWhatsApp(db)),
   );
@@ -290,6 +364,8 @@ export function armar(
   tipo: TipoDeMensaje,
   referenciaId: string,
 ): Promise<Preparacion> {
+  // Los tres recordatorios se arman igual: cuál sale lo decide el estado del
+  // cliente, no quien apretó el botón.
   return tipo === 'comprobante'
     ? armarComprobante(db, referenciaId)
     : armarRecordatorio(db, referenciaId);

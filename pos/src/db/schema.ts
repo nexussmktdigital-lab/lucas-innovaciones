@@ -105,7 +105,12 @@ export const tipoBeneficiarioEnum = pgEnum('tipo_beneficiario', [
  * borra, se le pone el asiento contrario y queda el motivo.
  */
 export const estadoGastoEnum = pgEnum('estado_gasto', ['pagado', 'pendiente', 'anulado']);
-export const periodicidadEnum = pgEnum('periodicidad', ['mensual', 'bimestral', 'trimestral', 'anual']);
+export const periodicidadEnum = pgEnum('periodicidad', [
+  'mensual',
+  'bimestral',
+  'trimestral',
+  'anual',
+]);
 
 export const origenCotizacionEnum = pgEnum('origen_cotizacion', [
   'infodolar',
@@ -115,7 +120,14 @@ export const origenCotizacionEnum = pgEnum('origen_cotizacion', [
 
 export const estadoSyncEnum = pgEnum('estado_sync', ['pendiente', 'procesando', 'ok', 'fallido']);
 
-export const tipoMensajeEnum = pgEnum('tipo_mensaje', ['comprobante', 'recordatorio_fiado']);
+export const tipoMensajeEnum = pgEnum('tipo_mensaje', [
+  'comprobante',
+  'recordatorio_fiado',
+  /** Tiene plan de cuotas y está al día: la próxima vence tal día. */
+  'recordatorio_cuota',
+  /** Tiene una cuota vencida. */
+  'recordatorio_atrasado',
+]);
 
 /* -------------------------------------------------------------------------- */
 /* Identidad y configuracion                                                  */
@@ -543,12 +555,25 @@ export const creditPlans = pgTable(
     recargoCentavos: bigint({ mode: 'number' }).notNull().default(0),
     cantidadCuotas: integer().notNull(),
     totalAPagarCentavos: bigint({ mode: 'number' }).notNull(),
+    /** Cada cuánto vence una cuota: `semanal`, `quincenal` o `mensual`. */
+    frecuencia: text(),
+    /**
+     * Cuándo se anuló, si se anuló.
+     *
+     * Un plan de una venta anulada no se borra: las cuotas que ya se cobraron
+     * tienen imputaciones apuntando a ellas (D29).
+     */
+    anuladoEn: timestamp({ withTimezone: true }),
     origen: origenCuentaCorrienteEnum().notNull().default('sistema'),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('credit_plans_cuenta_idx').on(t.creditAccountId),
     check('credit_plans_cuotas_ck', sql`${t.cantidadCuotas} > 0`),
+    check(
+      'credit_plans_frecuencia_ck',
+      sql`${t.frecuencia} IS NULL OR ${t.frecuencia} IN ('semanal', 'quincenal', 'mensual')`,
+    ),
   ],
 );
 
@@ -568,6 +593,7 @@ export const installments = pgTable(
   (t) => [
     unique('installments_plan_numero_uq').on(t.planId, t.numero),
     index('installments_vencimiento_idx').on(t.vencimiento),
+    index('installments_plan_idx').on(t.planId),
   ],
 );
 

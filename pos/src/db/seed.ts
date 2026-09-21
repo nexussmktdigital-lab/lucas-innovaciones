@@ -8,11 +8,14 @@
  * `catalogo-prioridad-fotos.csv`), mas los servicios y chips que hoy se cargan
  * como item generico y con D24 pasan a ser productos de verdad.
  */
-import { count, inArray, isNotNull, sql } from 'drizzle-orm';
+import { count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import * as schema from './schema';
 import type { BaseDatos } from './tipos';
 import { hashearPassword, hashearPin } from '@/auth/pin';
 import { usdAPesos } from '@/lib/dinero';
+import { fechaLocalISO, sumarDias } from '@/lib/fecha';
+import { migrarFichaDePapel } from '@/fiado/cuenta';
+import { crearPlan, type Frecuencia } from '@/fiado/plan';
 
 const TC_CENTAVOS = 157_100; // $1.571,00 — blue de Córdoba de referencia
 
@@ -357,8 +360,12 @@ export async function sembrar(
       { nombre: 'Consumidor final', telefono: null },
       { nombre: 'Mayco Villafañe', telefono: '+5493571000001' },
       { nombre: 'Gaby González', telefono: '+5493571000002' },
+      { nombre: 'Rocío Ferreyra', telefono: '+5493571000003' },
+      { nombre: 'Cristian Ludueña', telefono: '+5493571000004' },
     ])
     .onConflictDoNothing();
+
+  await sembrarFiado(db, duenio?.id ?? null);
 
   return {
     productos: catalogoOmitido ? 0 : CATALOGO.length,
@@ -368,4 +375,97 @@ export async function sembrar(
     pinVendedor: PIN_VENDEDOR,
     catalogoOmitido,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Fiado de prueba: los cuatro estados que puede tener una cuenta             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Deudas de prueba, una por cada color del semáforo.
+ *
+ * Sin esto, la pantalla de Fiado de una instalación nueva está vacía y no hay
+ * forma de ver cómo se comporta —ni de probarla— hasta que alguien fíe de
+ * verdad. Las deudas entran como **ficha de papel**, que es el único camino que
+ * deja un saldo sin inventar una venta: así los invariantes de plata siguen
+ * cerrando (`npm run auditar`).
+ *
+ * Las fechas se calculan contra hoy y no son fijas: sembrada en marzo o en
+ * noviembre, la demo siempre muestra un atrasado, uno por vencer y uno al día.
+ */
+async function sembrarFiado(db: BaseDatos, usuarioId: string | null): Promise<void> {
+  if (!usuarioId) return;
+
+  const hoy = fechaLocalISO();
+
+  const deudas: {
+    telefono: string;
+    saldoCentavos: number;
+    nota: string;
+    plan?: { cuotas: number; frecuencia: Frecuencia; desdeISO: string };
+  }[] = [
+    {
+      // Rojo: dos cuotas vencidas.
+      telefono: '+5493571000001',
+      saldoCentavos: 180_000_00,
+      nota: 'Celular en tres pagos',
+      plan: { cuotas: 3, frecuencia: 'mensual', desdeISO: sumarDias(hoy, -70) },
+    },
+    {
+      // Amarillo: la próxima vence en dos días.
+      telefono: '+5493571000002',
+      saldoCentavos: 90_000_00,
+      nota: 'Accesorios en tres quincenas',
+      plan: { cuotas: 3, frecuencia: 'quincenal', desdeISO: sumarDias(hoy, -13) },
+    },
+    {
+      // Verde: recién arranca.
+      telefono: '+5493571000003',
+      saldoCentavos: 240_000_00,
+      nota: 'iPhone en seis meses',
+      plan: { cuotas: 6, frecuencia: 'mensual', desdeISO: hoy },
+    },
+    {
+      // Gris: el fiado de siempre, sin fechas.
+      telefono: '+5493571000004',
+      saldoCentavos: 15_000_00,
+      nota: 'Fiado de la libreta',
+    },
+  ];
+
+  for (const d of deudas) {
+    const [cliente] = await db
+      .select({ id: schema.customers.id })
+      .from(schema.customers)
+      .where(eq(schema.customers.telefono, d.telefono))
+      .limit(1);
+    if (!cliente) continue;
+
+    // Si ya tiene cuenta con saldo, esta base ya se sembró: no se duplica.
+    const [cuentaPrevia] = await db
+      .select({ id: schema.creditAccounts.id, saldoCentavos: schema.creditAccounts.saldoCentavos })
+      .from(schema.creditAccounts)
+      .where(eq(schema.creditAccounts.customerId, cliente.id))
+      .limit(1);
+    if (cuentaPrevia && cuentaPrevia.saldoCentavos > 0) continue;
+
+    const cuenta = await migrarFichaDePapel(db, {
+      customerId: cliente.id,
+      saldoCentavos: d.saldoCentavos,
+      usuarioId,
+      nota: d.nota,
+    });
+
+    if (d.plan) {
+      await crearPlan(db, {
+        creditAccountId: cuenta.id,
+        saleId: null,
+        montoCentavos: d.saldoCentavos,
+        cantidad: d.plan.cuotas,
+        frecuencia: d.plan.frecuencia,
+        desdeISO: d.plan.desdeISO,
+        descripcion: d.nota,
+      });
+    }
+  }
 }

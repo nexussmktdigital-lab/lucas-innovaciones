@@ -334,6 +334,8 @@ describe('ajustes', () => {
       plantillas: {
         comprobante: 'Gracias {cliente}, son {total}',
         recordatorio_fiado: PLANTILLAS_POR_DEFECTO.recordatorio_fiado,
+        recordatorio_cuota: PLANTILLAS_POR_DEFECTO.recordatorio_cuota,
+        recordatorio_atrasado: PLANTILLAS_POR_DEFECTO.recordatorio_atrasado,
       },
       diasEntreRecordatorios: 15,
       usuarioId: duenioId,
@@ -355,6 +357,8 @@ describe('ajustes', () => {
         plantillas: {
           comprobante: 'Hola {nombreDelPerro}',
           recordatorio_fiado: PLANTILLAS_POR_DEFECTO.recordatorio_fiado,
+          recordatorio_cuota: PLANTILLAS_POR_DEFECTO.recordatorio_cuota,
+          recordatorio_atrasado: PLANTILLAS_POR_DEFECTO.recordatorio_atrasado,
         },
         diasEntreRecordatorios: 7,
         usuarioId: duenioId,

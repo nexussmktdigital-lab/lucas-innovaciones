@@ -12,7 +12,12 @@
  * `Intl`, así que si algún día vuelve el horario de verano esto sigue andando
  * sin tocar nada.
  */
-import { ZONA_HORARIA } from '@/lib/fecha';
+// `sumarDias` y `sumarMeses` viven en `lib/fecha` porque las usan dos dominios:
+// los períodos de un reporte y los vencimientos de las cuotas. Se re-exportan
+// desde acá para no romper a quien ya las importaba de este módulo.
+import { sumarDias, sumarMeses, ZONA_HORARIA } from '@/lib/fecha';
+
+export { sumarDias, sumarMeses };
 
 export class ErrorPeriodo extends Error {}
 
@@ -90,22 +95,6 @@ export function diaLocal(instante: Date): string {
 /** `YYYY-MM` del calendario local. */
 export function mesLocal(instante: Date): string {
   return diaLocal(instante).slice(0, 7);
-}
-
-/** Suma días a una fecha `YYYY-MM-DD`, en el calendario y no en milisegundos. */
-export function sumarDias(fechaISO: string, dias: number): string {
-  const d = new Date(`${fechaISO}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + dias);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Suma meses, recortando el día si el mes destino es más corto. */
-export function sumarMeses(fechaISO: string, meses: number): string {
-  const [a, m, d] = fechaISO.split('-').map(Number) as [number, number, number];
-  const base = new Date(Date.UTC(a, m - 1 + meses, 1, 12));
-  const ultimoDia = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0, 12));
-  base.setUTCDate(Math.min(d, ultimoDia.getUTCDate()));
-  return base.toISOString().slice(0, 10);
 }
 
 /** El primer día de ese mes, en `YYYY-MM-DD`. */

@@ -133,9 +133,7 @@ describe('acortar el detalle', () => {
 describe('el campo de fiado', () => {
   it('está declarado en el comprobante y la plantilla de fábrica lo usa', () => {
     expect(camposUsados(PLANTILLAS_POR_DEFECTO.comprobante)).toContain('fiado');
-    expect(() =>
-      validarPlantilla('comprobante', PLANTILLAS_POR_DEFECTO.comprobante),
-    ).not.toThrow();
+    expect(() => validarPlantilla('comprobante', PLANTILLAS_POR_DEFECTO.comprobante)).not.toThrow();
   });
 
   it('en una venta pagada al contado no deja renglón vacío', () => {
@@ -186,9 +184,7 @@ describe('enlace', () => {
 
   it('el texto viaja escapado: saltos de línea, acentos y emojis', () => {
     const url = enlaceDeWhatsApp('+5493514567890', 'Hola Gaby!\nGracias 🙌');
-    expect(url).toBe(
-      'https://wa.me/5493514567890?text=Hola%20Gaby!%0AGracias%20%F0%9F%99%8C',
-    );
+    expect(url).toBe('https://wa.me/5493514567890?text=Hola%20Gaby!%0AGracias%20%F0%9F%99%8C');
   });
 
   it('un & en el texto no corta la URL', () => {

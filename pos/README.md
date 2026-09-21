@@ -334,10 +334,56 @@ lo que nació en el sistema. Se ofrece solo mientras el cliente no tenga
 movimientos: sumar dos veces la misma deuda es el error que hay que evitar, y el
 dominio también lo rechaza.
 
-El modelo es una **cuenta corriente de saldo**, no un plan de cuotas: el cliente
-debe una cifra, se le fía y sube, paga y baja. Es como funciona la libreta. Las
-tablas de planes y cuotas están en el esquema para cuando haya que financiar una
-compra grande en cuotas fijas.
+### Fiar en cuotas
+
+El fiado de $5.000 del vecino no necesita fechas: debe una cifra, paga cuando
+pasa, listo. Un celular de $400.000 en seis pagos sí, y la diferencia no es
+cosmética: **sin fechas nadie sabe quién está atrasado**, y el recordatorio de
+WhatsApp le termina diciendo lo mismo al que paga puntual que al que debe desde
+marzo.
+
+Al cobrar, si algo se fía, la pantalla pregunta **cómo lo va a pagar**:
+
+| Opción | Qué hace |
+|---|---|
+| **Cuando pueda** (la que viene puesta) | Queda como saldo abierto, sin fechas. Es el fiado de siempre |
+| **Cada semana / cada 15 días / cada mes** | Arma las cuotas y muestra cuánto es cada una y cuándo vence la primera y la última |
+
+Tres decisiones que conviene conocer:
+
+- **El plan no reemplaza al saldo, lo explica.** La deuda sigue siendo una
+  cifra, y el tope, el cobro y la anulación funcionan igual. Las cuotas dicen
+  *cuándo* se espera cada parte.
+- **La primera vence una frecuencia después de la compra**, no el mismo día. Y
+  las mensuales van por calendario: si compró un 5, paga los 5.
+- **Un pago se imputa a la cuota más vieja primero**, que es lo que hace
+  cualquiera con una libreta. Lo que sobre después de cubrirlas todas queda como
+  saldo a cuenta y no se le inventa una cuota a nadie.
+
+Anular la venta apaga el plan, pero no lo borra: las cuotas que el cliente llegó
+a pagar tienen su imputación apuntando a ellas (D29).
+
+### El semáforo de Fiado
+
+Cada cliente es una tarjeta con color, y el color no decora: ordena a quién hay
+que llamar hoy.
+
+| Color | Qué significa | Qué dice el botón de WhatsApp |
+|---|---|---|
+| 🔴 Rojo | Tiene una cuota vencida sin pagar. Muestra cuántos días y cuánto | «Reclamarle la cuota vencida» |
+| 🟡 Amarillo | La próxima vence hoy o dentro de tres días | «Avisarle que vence la cuota» |
+| 🟢 Verde | Al día. Dice cuándo vence la próxima | «Recordarle la próxima cuota» |
+| ⚪ Gris | Debe, pero sin plan: el fiado abierto | «Recordarle por WhatsApp» |
+
+**Vencida se calcula, no se guarda.** Una cuota no cambia de estado sola a la
+medianoche: se compara su vencimiento con hoy cada vez que se mira. Guardarlo
+obligaría a una tarea que corra todas las noches y a que nadie se olvide de
+mirarla.
+
+Los tres mensajes son distintos y los tres se editan desde **Mensajes**: el que
+se atrasó no tiene que leer lo mismo que el que tiene una cuota el viernes.
+Ninguno de los dos reclama como un banco — el cliente que se incomoda no vuelve
+a comprar.
 
 ---
 

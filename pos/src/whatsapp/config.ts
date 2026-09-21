@@ -7,11 +7,7 @@
 import { eq } from 'drizzle-orm';
 import { auditLog, settings } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
-import {
-  PLANTILLAS_POR_DEFECTO,
-  validarPlantilla,
-  type TipoDeMensaje,
-} from './plantillas';
+import { PLANTILLAS_POR_DEFECTO, validarPlantilla, type TipoDeMensaje } from './plantillas';
 
 export const CLAVE = 'whatsapp';
 
@@ -28,6 +24,8 @@ export const DIAS_MAXIMO = 90;
 export interface AjustesDeWhatsApp {
   comprobante: string;
   recordatorio_fiado: string;
+  recordatorio_cuota: string;
+  recordatorio_atrasado: string;
   diasEntreRecordatorios: number;
 }
 
@@ -52,6 +50,14 @@ export async function ajustesDeWhatsApp(db: BaseDatos): Promise<AjustesDeWhatsAp
       guardado.recordatorio_fiado,
       PLANTILLAS_POR_DEFECTO.recordatorio_fiado,
     ),
+    recordatorio_cuota: texto(
+      guardado.recordatorio_cuota,
+      PLANTILLAS_POR_DEFECTO.recordatorio_cuota,
+    ),
+    recordatorio_atrasado: texto(
+      guardado.recordatorio_atrasado,
+      PLANTILLAS_POR_DEFECTO.recordatorio_atrasado,
+    ),
     diasEntreRecordatorios:
       Number.isInteger(dias) && dias >= 1 && dias <= DIAS_MAXIMO ? dias : DIAS_POR_DEFECTO,
   };
@@ -75,6 +81,8 @@ export async function guardarAjustesDeWhatsApp(
   const nuevo: AjustesDeWhatsApp = {
     comprobante: datos.plantillas.comprobante.trim(),
     recordatorio_fiado: datos.plantillas.recordatorio_fiado.trim(),
+    recordatorio_cuota: datos.plantillas.recordatorio_cuota.trim(),
+    recordatorio_atrasado: datos.plantillas.recordatorio_atrasado.trim(),
     diasEntreRecordatorios: dias,
   };
 

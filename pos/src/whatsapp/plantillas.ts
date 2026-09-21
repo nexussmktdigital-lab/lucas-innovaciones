@@ -38,9 +38,30 @@ export const CAMPOS: Record<TipoDeMensaje, { campo: string; ejemplo: string; que
     { campo: 'deuda', ejemplo: '$ 45.000,00', que: 'Cuánto debe hoy' },
     { campo: 'desde', ejemplo: '12/09/2026', que: 'Fecha de su última actividad' },
   ],
+  recordatorio_cuota: [
+    { campo: 'cliente', ejemplo: 'Gaby', que: 'Nombre de pila del cliente' },
+    { campo: 'local', ejemplo: 'Lucas Innovaciones', que: 'Nombre del local' },
+    { campo: 'deuda', ejemplo: '$ 45.000,00', que: 'Cuánto debe en total' },
+    { campo: 'cuota', ejemplo: '$ 15.000,00', que: 'Lo que falta de la próxima cuota' },
+    { campo: 'vencimiento', ejemplo: '28/09/2026', que: 'Cuándo vence esa cuota' },
+    { campo: 'cuando', ejemplo: 'en 5 días', que: '«hoy», «mañana» o «en 5 días»' },
+    { campo: 'numero', ejemplo: '2 de 6', que: 'Qué cuota es, de cuántas' },
+  ],
+  recordatorio_atrasado: [
+    { campo: 'cliente', ejemplo: 'Gaby', que: 'Nombre de pila del cliente' },
+    { campo: 'local', ejemplo: 'Lucas Innovaciones', que: 'Nombre del local' },
+    { campo: 'deuda', ejemplo: '$ 45.000,00', que: 'Cuánto debe en total' },
+    { campo: 'vencido', ejemplo: '$ 15.000,00', que: 'Lo que está vencido y sin pagar' },
+    { campo: 'atraso', ejemplo: '8 días', que: 'Hace cuánto venció la cuota más vieja' },
+    { campo: 'vencimiento', ejemplo: '10/09/2026', que: 'Cuándo venció' },
+  ],
 };
 
-export type TipoDeMensaje = 'comprobante' | 'recordatorio_fiado';
+export type TipoDeMensaje =
+  | 'comprobante'
+  | 'recordatorio_fiado'
+  | 'recordatorio_cuota'
+  | 'recordatorio_atrasado';
 
 /**
  * Textos por defecto.
@@ -61,6 +82,26 @@ export const PLANTILLAS_POR_DEFECTO: Record<TipoDeMensaje, string> = {
     'Hola {cliente}, ¿cómo andás? Te escribo de {local}.\n\n' +
     'Te queda un saldo de {deuda} en la cuenta. ' +
     'Cuando puedas te acercás y lo arreglamos, no hay apuro.\n\n' +
+    '¡Gracias!',
+  /*
+   * El que está al día no tiene que leer un reclamo. Este mensaje avisa, que es
+   * otra cosa: el cliente que sabe cuándo vence su cuota es el que la paga.
+   */
+  recordatorio_cuota:
+    'Hola {cliente}, ¿cómo va? Te escribo de {local} 🙌\n\n' +
+    'Te recuerdo que la cuota {numero} de {cuota} vence {cuando} ({vencimiento}).\n' +
+    'Te esperamos por el local cuando quieras.\n\n' +
+    '¡Gracias!',
+  /*
+   * Y el que se atrasó tampoco tiene que leer una carta documento. Dice el
+   * número y la fecha —que es lo que el cliente muchas veces no tiene presente—
+   * y deja la puerta abierta, porque el que se incomoda no vuelve a comprar.
+   */
+  recordatorio_atrasado:
+    'Hola {cliente}, ¿cómo estás? Te escribo de {local}.\n\n' +
+    'Se te pasó la cuota de {vencido} que vencía el {vencimiento} ({atraso}).\n' +
+    'Si podés acercate esta semana y lo ponemos al día. ' +
+    'Cualquier cosa, escribime y lo vemos.\n\n' +
     '¡Gracias!',
 };
 
@@ -129,16 +170,18 @@ export function validarPlantilla(tipo: TipoDeMensaje, plantilla: string): void {
  * es preferible «Hola!» a «Hola {cliente}!».
  */
 export function renderizar(plantilla: string, datos: Record<string, string | null>): string {
-  return plantilla
-    .replace(PLACEHOLDER, (original, campo: string) => {
-      const valor = datos[campo];
-      if (valor === undefined) return original;
-      return valor ?? '';
-    })
-    // Al borrar un campo vacío pueden quedar espacios dobles y renglones sueltos.
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return (
+    plantilla
+      .replace(PLACEHOLDER, (original, campo: string) => {
+        const valor = datos[campo];
+        if (valor === undefined) return original;
+        return valor ?? '';
+      })
+      // Al borrar un campo vacío pueden quedar espacios dobles y renglones sueltos.
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
 }
 
 /** El nombre de pila, que es como se saluda en el mostrador. */

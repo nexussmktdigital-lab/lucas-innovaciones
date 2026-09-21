@@ -34,8 +34,12 @@ export default async function PaginaMensajes() {
       </div>
 
       <FormularioPlantillas
-        comprobante={ajustes.comprobante}
-        recordatorio={ajustes.recordatorio_fiado}
+        plantillas={{
+          comprobante: ajustes.comprobante,
+          recordatorio_fiado: ajustes.recordatorio_fiado,
+          recordatorio_cuota: ajustes.recordatorio_cuota,
+          recordatorio_atrasado: ajustes.recordatorio_atrasado,
+        }}
         dias={ajustes.diasEntreRecordatorios}
       />
 

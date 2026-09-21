@@ -27,7 +27,12 @@ async function entrarComoDuenio(page: Page) {
 
 async function asegurarCajaAbierta(page: Page) {
   await page.goto('/caja');
-  if (await page.getByRole('button', { name: 'Abrir caja' }).isVisible().catch(() => false)) {
+  if (
+    await page
+      .getByRole('button', { name: 'Abrir caja' })
+      .isVisible()
+      .catch(() => false)
+  ) {
     await page.getByLabel('Efectivo inicial').fill('0');
     await page.getByRole('button', { name: 'Abrir caja' }).click();
   }
@@ -82,7 +87,10 @@ test('fiar deja la deuda registrada y no mueve plata', async ({ page }) => {
   await page.goto('/vender');
 
   await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
-  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page
+    .getByRole('button', { name: /Vidrio templado/ })
+    .first()
+    .waitFor();
   await page.getByPlaceholder('Buscar por nombre').press('Enter');
 
   await elegirCliente(page, CLIENTE);
@@ -135,7 +143,10 @@ test('el tope frena la venta antes de que entre', async ({ page }) => {
 
   await page.goto('/vender');
   await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
-  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page
+    .getByRole('button', { name: /Vidrio templado/ })
+    .first()
+    .waitFor();
   await page.getByPlaceholder('Buscar por nombre').press('Enter');
   await elegirCliente(page, CLIENTE);
 
@@ -170,7 +181,10 @@ test('el vendedor no puede fiar, pero sí recibir un pago', async ({ page }) => 
 
   await page.goto('/vender');
   await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
-  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page
+    .getByRole('button', { name: /Vidrio templado/ })
+    .first()
+    .waitFor();
   await page.getByPlaceholder('Buscar por nombre').press('Enter');
 
   await page.getByRole('button', { name: /^Cobrar/ }).click();
@@ -235,7 +249,10 @@ test('anular una venta fiada ya cobrada en parte deja anotada la devolución', a
   // Se le fía un vidrio de $5.000.
   await page.goto('/vender');
   await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
-  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page
+    .getByRole('button', { name: /Vidrio templado/ })
+    .first()
+    .waitFor();
   await page.getByPlaceholder('Buscar por nombre').press('Enter');
   await elegirCliente(page, CLIENTE_DEV);
 
@@ -255,9 +272,15 @@ test('anular una venta fiada ya cobrada en parte deja anotada la devolución', a
 
   // Y se anula la venta.
   await page.goto('/ventas');
-  const filaVenta = page.getByRole('listitem').filter({ hasText: /Vidrio templado/ }).first();
+  const filaVenta = page
+    .getByRole('listitem')
+    .filter({ hasText: /Vidrio templado/ })
+    .first();
   await filaVenta.getByRole('button', { name: 'Anular' }).click();
-  await page.getByLabel(/¿Por qué se anula/).first().fill('Se arrepintió');
+  await page
+    .getByLabel(/¿Por qué se anula/)
+    .first()
+    .fill('Se arrepintió');
   await page.getByRole('button', { name: 'Anular la venta' }).click();
 
   // El aviso rojo queda en la fila de la venta anulada, puesto por el servidor:
@@ -314,7 +337,10 @@ test('se carga un cliente desde la pantalla de venta sin perder el carrito', asy
   const buscador = page.getByPlaceholder('Buscar por nombre');
   for (const termino of ['vidrio templado', 'funda común']) {
     await buscador.fill(termino);
-    await page.getByRole('button', { name: new RegExp(termino.split(' ')[0]!, 'i') }).first().waitFor();
+    await page
+      .getByRole('button', { name: new RegExp(termino.split(' ')[0]!, 'i') })
+      .first()
+      .waitFor();
     await buscador.press('Enter');
   }
 
@@ -357,7 +383,10 @@ test('un pago sin monto lo explica en vez de romper la pantalla', async ({ page 
 
   const buscador = page.getByPlaceholder('Buscar por nombre');
   await buscador.fill('vidrio templado');
-  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page
+    .getByRole('button', { name: /Vidrio templado/ })
+    .first()
+    .waitFor();
   await buscador.press('Enter');
 
   await page.getByRole('button', { name: /^Cobrar/ }).click();
@@ -367,11 +396,134 @@ test('un pago sin monto lo explica en vez de romper la pantalla', async ({ page 
   // Se borra el monto, como cuando se va a reescribir.
   await cobro.getByLabel('Monto en Efectivo').fill('');
 
-  await expect(cobro.getByText('Hay un pago sin monto. Escribilo o quitá ese renglón.')).toBeVisible();
+  await expect(
+    cobro.getByText('Hay un pago sin monto. Escribilo o quitá ese renglón.'),
+  ).toBeVisible();
   await expect(cobro).toBeVisible();
   await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeDisabled();
 
   // Y al escribirlo, sigue todo en pie.
   await cobro.getByLabel('Monto en Efectivo').fill('5000');
   await expect(cobro.getByRole('button', { name: /Confirmar venta/ })).toBeEnabled();
+});
+
+/* -------------------------------------------------------------------------- */
+/* Plan de cuotas                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fiar con fechas: el caso del celular en cuotas.
+ *
+ * Es lo que hace la diferencia entre «debe $400.000» y «debe $400.000, la
+ * próxima cuota vence el 18». Sin esto, nadie sabe a quién hay que llamar.
+ */
+test('se fía en cuotas y la pantalla dice cuándo vence cada una', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('vidrio templado');
+  await page
+    .getByRole('button', { name: /vidrio/i })
+    .first()
+    .waitFor();
+  await buscador.press('Enter');
+
+  await elegirCliente(page, CLIENTE);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+
+  // El plan aparece recién cuando hay algo fiado, y arranca sin fechas.
+  await expect(cobro.getByText('¿Cómo lo va a pagar?')).toBeVisible();
+  await expect(cobro.getByText(/Queda como saldo en su cuenta/)).toBeVisible();
+
+  await cobro.getByRole('button', { name: 'Cada mes' }).click();
+  await cobro.getByRole('button', { name: '3', exact: true }).click();
+
+  // Y dice en qué se convirtió: tres cuotas y las dos fechas de los extremos.
+  await expect(cobro.getByText(/3 cuotas de/)).toBeVisible();
+  await expect(cobro.getByText(/La primera vence el/)).toBeVisible();
+
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(cobro).toBeHidden({ timeout: 15_000 });
+
+  // En Fiado queda en verde, con la fecha de la próxima.
+  await page.goto('/fiado');
+  const tarjeta = page.getByRole('listitem').filter({ hasText: CLIENTE });
+  await expect(tarjeta).toContainText('Al día');
+  await expect(tarjeta).toContainText('cuota 1 de 3');
+  await expect(tarjeta).toContainText('Paga por mes');
+});
+
+test('el semáforo separa al atrasado del que está al día', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await page.goto('/fiado');
+
+  // Los tres del seed, uno por color.
+  const atrasado = page.getByRole('listitem').filter({ hasText: 'Mayco Villafañe' });
+  await expect(atrasado).toContainText(/Atrasado|cuotas vencidas/);
+  await expect(atrasado).toContainText('Vencido y sin pagar');
+
+  const porVencer = page.getByRole('listitem').filter({ hasText: 'Gaby González' });
+  await expect(porVencer).toContainText(/vence (hoy|en \d+ días)/);
+
+  const alDia = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await expect(alDia).toContainText('Al día');
+
+  // El de la libreta no tiene plan y no se le inventa uno.
+  const sinPlan = page.getByRole('listitem').filter({ hasText: 'Cristian Ludueña' });
+  await expect(sinPlan).not.toContainText('cuota');
+
+  // Y el resumen de arriba cuenta a los atrasados.
+  await expect(page.getByText('Atrasados')).toBeVisible();
+});
+
+test('el mensaje de WhatsApp no es el mismo para el atrasado que para el que está al día', async ({
+  page,
+}) => {
+  await entrarComoDuenio(page);
+  await page.goto('/fiado');
+
+  const atrasado = page.getByRole('listitem').filter({ hasText: 'Mayco Villafañe' });
+  await expect(atrasado.getByRole('link', { name: /Reclamarle la cuota vencida/ })).toBeVisible();
+
+  const alDia = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await expect(alDia.getByRole('link', { name: /Recordarle la próxima cuota/ })).toBeVisible();
+
+  const sinPlan = page.getByRole('listitem').filter({ hasText: 'Cristian Ludueña' });
+  await expect(sinPlan.getByRole('link', { name: /Recordarle por WhatsApp/ })).toBeVisible();
+
+  // Y el texto que va dentro del enlace también cambia: uno habla de atraso y
+  // el otro de una cuota que vence.
+  const enlaceAtrasado = await atrasado
+    .getByRole('link', { name: /Reclamarle la cuota vencida/ })
+    .getAttribute('href');
+  const enlaceAlDia = await alDia
+    .getByRole('link', { name: /Recordarle la próxima cuota/ })
+    .getAttribute('href');
+
+  expect(decodeURIComponent(enlaceAtrasado ?? '')).toMatch(/se te pasó la cuota/i);
+  expect(decodeURIComponent(enlaceAlDia ?? '')).toMatch(/vence/i);
+});
+
+test('cobrarle al atrasado lo saca del rojo', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Mayco Villafañe' });
+  await expect(tarjeta).toContainText(/Atrasado|cuotas vencidas/);
+
+  // Paga las dos cuotas vencidas: $60.000 cada una.
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('120000');
+  await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+
+  await expect(page.getByRole('listitem').filter({ hasText: 'Mayco Villafañe' })).not.toContainText(
+    'Vencido y sin pagar',
+    { timeout: 15_000 },
+  );
 });

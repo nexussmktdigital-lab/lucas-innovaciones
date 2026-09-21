@@ -19,8 +19,16 @@ const TITULOS: Record<TipoDeMensaje, { titulo: string; cuando: string }> = {
     cuando: 'Se ofrece en cada venta del turno que tenga un cliente con teléfono.',
   },
   recordatorio_fiado: {
-    titulo: 'Recordatorio de deuda',
-    cuando: 'Se ofrece en la lista de fiado y en la ficha del cliente.',
+    titulo: 'Recordatorio de deuda, sin plan de pago',
+    cuando: 'Para el fiado abierto: el cliente debe, pero no hay fechas acordadas.',
+  },
+  recordatorio_cuota: {
+    titulo: 'Aviso de cuota que vence',
+    cuando: 'Para el que está al día: le recuerda la próxima cuota antes de que venza.',
+  },
+  recordatorio_atrasado: {
+    titulo: 'Recordatorio de cuota vencida',
+    cuando: 'Para el que se pasó de la fecha. Es el único que habla de atraso.',
   },
 };
 
@@ -31,19 +39,14 @@ const TITULOS: Record<TipoDeMensaje, { titulo: string; cuando: string }> = {
  * deberia tener que mandarse un WhatsApp a si mismo para ver como quedo.
  */
 export default function FormularioPlantillas({
-  comprobante,
-  recordatorio,
+  plantillas,
   dias,
 }: {
-  comprobante: string;
-  recordatorio: string;
+  plantillas: Record<TipoDeMensaje, string>;
   dias: number;
 }) {
   const [estado, accion, pendiente] = useActionState(guardarPlantillasAccion, INICIAL);
-  const [textos, setTextos] = useState<Record<TipoDeMensaje, string>>({
-    comprobante,
-    recordatorio_fiado: recordatorio,
-  });
+  const [textos, setTextos] = useState<Record<TipoDeMensaje, string>>(plantillas);
 
   return (
     <form action={accion} className="space-y-4">

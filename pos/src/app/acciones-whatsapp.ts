@@ -26,7 +26,12 @@ export interface EstadoWhatsApp {
   ok?: string;
 }
 
-const tipos = z.enum(['comprobante', 'recordatorio_fiado']);
+const tipos = z.enum([
+  'comprobante',
+  'recordatorio_fiado',
+  'recordatorio_cuota',
+  'recordatorio_atrasado',
+]);
 
 /**
  * Deja constancia de que se abrio el chat con el mensaje puesto.
@@ -84,6 +89,8 @@ export async function guardarPlantillasAccion(
   const plantillas: Record<TipoDeMensaje, string> = {
     comprobante: String(datos.get('comprobante') ?? ''),
     recordatorio_fiado: String(datos.get('recordatorio_fiado') ?? ''),
+    recordatorio_cuota: String(datos.get('recordatorio_cuota') ?? ''),
+    recordatorio_atrasado: String(datos.get('recordatorio_atrasado') ?? ''),
   };
 
   try {

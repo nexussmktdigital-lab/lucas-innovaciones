@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { aCentavos, formatearARS } from '@/lib/dinero';
+import PlanDeCuotas, { type PlanElegido } from './plan-de-cuotas';
 import {
   calcularCobro,
   problemasDelCobro,
@@ -12,12 +13,7 @@ import {
 } from '@/ventas/carrito';
 import { nombreDelMedio } from '@/ventas/ticket';
 import type { registrarVenta } from '@/app/acciones-venta';
-import type {
-  Cliente,
-  Cuenta,
-  LineaEnPantalla,
-  ResultadoDelCobro,
-} from './pantalla-venta';
+import type { Cliente, Cuenta, LineaEnPantalla, ResultadoDelCobro } from './pantalla-venta';
 
 interface Props {
   totales: TotalesCarrito;
@@ -85,6 +81,8 @@ export default function Cobro({
   onConfirmar,
 }: Props) {
   const [pagos, setPagos] = useState<PagoEnPantalla[]>([]);
+  /** El plan de cuotas de lo fiado. `null` es «cuando pueda», que es el de siempre. */
+  const [plan, setPlan] = useState<PlanElegido | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Precio sospechoso: el dueño tiene que decidir a sabiendas. */
@@ -189,6 +187,8 @@ export default function Cobro({
       descuentoGlobal,
       clienteId,
       idempotencyKey: clave.current,
+      // Sin fiado no hay nada que financiar, y el servidor lo ignora igual.
+      plan: hayFiado ? plan : null,
     });
 
     if (!r.ok) {
@@ -278,7 +278,9 @@ export default function Cobro({
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <select
                       value={p.marcaTarjeta ?? ''}
-                      onChange={(e) => actualizar(p.clave, { marcaTarjeta: e.target.value || null })}
+                      onChange={(e) =>
+                        actualizar(p.clave, { marcaTarjeta: e.target.value || null })
+                      }
                       aria-label="Marca de la tarjeta"
                       className="min-h-9 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2"
                     >
@@ -297,7 +299,11 @@ export default function Cobro({
                           min={1}
                           max={24}
                           value={p.cuotas ?? 1}
-                          onChange={(e) => actualizar(p.clave, { cuotas: Math.max(1, Number(e.target.value) || 1) })}
+                          onChange={(e) =>
+                            actualizar(p.clave, {
+                              cuotas: Math.max(1, Number(e.target.value) || 1),
+                            })
+                          }
                           aria-label="Cantidad de cuotas"
                           className="tabular min-h-9 w-16 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-center"
                         />
@@ -315,8 +321,7 @@ export default function Cobro({
 
         {hayFiado && cliente ? (
           <p className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
-            Le vas a fiar{' '}
-            <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
+            Le vas a fiar <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
             <strong>{cliente.nombre}</strong>.{' '}
             {cliente.saldoCentavos > 0 ? (
               <>
@@ -341,6 +346,10 @@ export default function Cobro({
               </>
             ) : null}
           </p>
+        ) : null}
+
+        {hayFiado && cliente ? (
+          <PlanDeCuotas montoCentavos={fiadoCentavos} plan={plan} onCambiar={setPlan} />
         ) : null}
 
         {cobro && pagos.length > 0 ? (

@@ -33,17 +33,13 @@ import {
   syncQueue,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { anularPlanesDeVenta } from '@/fiado/plan';
 import { anotarDevolucion } from '@/fiado/devoluciones';
 
 export class ErrorAnulacion extends Error {
   constructor(
     message: string,
-    readonly motivo:
-      | 'no_existe'
-      | 'ya_anulada'
-      | 'otro_turno'
-      | 'sin_caja'
-      | 'datos_invalidos',
+    readonly motivo: 'no_existe' | 'ya_anulada' | 'otro_turno' | 'sin_caja' | 'datos_invalidos',
   ) {
     super(message);
     this.name = 'ErrorAnulacion';
@@ -80,10 +76,7 @@ export interface VentaAnulada {
 
 const MOTIVO_MINIMO = 4;
 
-export async function anularVenta(
-  db: BaseDatos,
-  datos: DatosAnulacion,
-): Promise<VentaAnulada> {
+export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise<VentaAnulada> {
   const motivo = datos.motivo.trim();
   if (motivo.length < MOTIVO_MINIMO) {
     throw new ErrorAnulacion(
@@ -118,7 +111,12 @@ export async function anularVenta(
     const [sesion] = await tx
       .select({ id: cashSessions.id })
       .from(cashSessions)
-      .where(and(eq(cashSessions.id, venta.cash_session_id ?? ''), sql`${cashSessions.cerradaEn} IS NULL`))
+      .where(
+        and(
+          eq(cashSessions.id, venta.cash_session_id ?? ''),
+          sql`${cashSessions.cerradaEn} IS NULL`,
+        ),
+      )
       .limit(1);
 
     if (!sesion) {
@@ -271,16 +269,18 @@ export async function anularVenta(
       .select({ montoCentavos: salePayments.montoCentavos })
       .from(salePayments)
       .where(
-        and(
-          eq(salePayments.saleId, datos.ventaId),
-          eq(salePayments.medio, 'cuenta_corriente'),
-        ),
+        and(eq(salePayments.saleId, datos.ventaId), eq(salePayments.medio, 'cuenta_corriente')),
       );
 
     let deudaBorradaCentavos = 0;
     let aDevolverCentavos = 0;
 
     if (fiado && venta.cliente_id) {
+      // El plan de cuotas de esta venta deja de existir para todo lo que mira
+      // vencimientos. No se borra: las cuotas que el cliente llegó a pagar
+      // tienen su imputación apuntando a ellas (D29).
+      await anularPlanesDeVenta(tx, datos.ventaId);
+
       deudaBorradaCentavos = await descontarDeuda(tx, {
         customerId: venta.cliente_id,
         montoCentavos: fiado.montoCentavos,
@@ -467,8 +467,7 @@ export async function ventasDelTurno(
     offline: Boolean(f.offline),
     // El driver de produccion devuelve `timestamptz` como texto desde una
     // consulta escrita a mano; PGlite lo devuelve como Date. Se convierte aca.
-    offlineCapturadaEn:
-      f.offline_capturada_en === null ? null : new Date(f.offline_capturada_en),
+    offlineCapturadaEn: f.offline_capturada_en === null ? null : new Date(f.offline_capturada_en),
     offlineDesvioCentavos: Number(f.offline_desvio_centavos ?? 0),
   }));
 }

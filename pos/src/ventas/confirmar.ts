@@ -47,6 +47,8 @@ import {
   type VarianteVendible,
 } from './carrito';
 import { anotarDeuda } from '@/fiado/cuenta';
+import { crearPlan, type Frecuencia } from '@/fiado/plan';
+import { fechaLocalISO } from '@/lib/fecha';
 import { recargoDeTienda } from '@/precios/config';
 import { precioDeMostrador } from '@/precios/mostrador';
 import { explicarSospechas, revisarPrecioEscrito, revisarVenta, type Sospecha } from './cordura';
@@ -116,6 +118,14 @@ export interface SolicitudDeVenta {
   confirmarPreciosSospechosos?: boolean;
   /** Presente solo si la venta se cobró sin conexión y entra ahora. */
   diferida?: CobroDiferido | null;
+  /**
+   * Cómo se va a pagar lo que se fía.
+   *
+   * Opcional a propósito: sin plan, lo fiado queda como saldo abierto, que es
+   * el fiado de toda la vida y sigue siendo lo correcto para los $5.000 del
+   * vecino. El plan es para la compra grande.
+   */
+  plan?: { frecuencia: Frecuencia; cuotas: number } | null;
   ip?: string | null;
 }
 
@@ -226,7 +236,10 @@ export async function confirmarVenta(
             .select({ id: cashSessions.id })
             .from(cashSessions)
             .where(
-              and(eq(cashSessions.terminal, solicitud.terminal), sql`${cashSessions.cerradaEn} IS NULL`),
+              and(
+                eq(cashSessions.terminal, solicitud.terminal),
+                sql`${cashSessions.cerradaEn} IS NULL`,
+              ),
             )
             .limit(1)
         : [];
@@ -600,18 +613,35 @@ export async function confirmarVenta(
 
     if (fiadoCentavos > 0) {
       if (!solicitud.clienteId) {
-        throw new ErrorVenta(
-          'Para fiar hace falta elegir un cliente.',
-          'datos_invalidos',
-        );
+        throw new ErrorVenta('Para fiar hace falta elegir un cliente.', 'datos_invalidos');
       }
-      await anotarDeuda(tx, {
+      const deuda = await anotarDeuda(tx, {
         customerId: solicitud.clienteId,
         montoCentavos: fiadoCentavos,
         saleId: ventaId,
         numero,
         usuarioId: solicitud.vendedorId,
       });
+
+      /*
+       * El plan de cuotas, si se acordó uno. Va en la misma transacción: una
+       * venta fiada cuyo plan falló al guardarse sería peor que no tener plan,
+       * porque el mostrador creería que hay fechas y no las habría.
+       *
+       * Las fechas se cuentan desde el día de la venta —el de verdad, que en
+       * una venta cobrada sin conexión es el del cobro y no el de hoy.
+       */
+      if (solicitud.plan) {
+        await crearPlan(tx, {
+          creditAccountId: deuda.cuentaId,
+          saleId: ventaId,
+          montoCentavos: fiadoCentavos,
+          cantidad: solicitud.plan.cuotas,
+          frecuencia: solicitud.plan.frecuencia,
+          desdeISO: fechaLocalISO(solicitud.diferida?.capturadaEn ?? new Date()),
+          descripcion: `Venta ${numero}`,
+        });
+      }
     }
 
     // 13. Stock: se descuenta donde de verdad se lleva y queda el asiento.

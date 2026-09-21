@@ -46,3 +46,26 @@ export function fechaLocalISO(d: Date = new Date()): string {
   }).format(d);
   return partes;
 }
+
+/** Suma días a una fecha `YYYY-MM-DD`, en el calendario y no en milisegundos. */
+export function sumarDias(fechaISO: string, dias: number): string {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Suma meses, recortando el día si el mes destino es más corto. */
+export function sumarMeses(fechaISO: string, meses: number): string {
+  const [a, m, d] = fechaISO.split('-').map(Number) as [number, number, number];
+  const base = new Date(Date.UTC(a, m - 1 + meses, 1, 12));
+  const ultimoDia = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0, 12));
+  base.setUTCDate(Math.min(d, ultimoDia.getUTCDate()));
+  return base.toISOString().slice(0, 10);
+}
+
+/** Cuántos días de calendario hay entre dos fechas `YYYY-MM-DD` (b − a). */
+export function diasEntre(desdeISO: string, hastaISO: string): number {
+  const a = Date.parse(`${desdeISO}T12:00:00Z`);
+  const b = Date.parse(`${hastaISO}T12:00:00Z`);
+  return Math.round((b - a) / 86_400_000);
+}

@@ -3,9 +3,10 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
-import { formatearFecha } from '@/lib/fecha';
+import { fechaLocalISO, formatearFecha } from '@/lib/fecha';
 import { sesionAbierta } from '@/caja/sesion';
 import { deudores, totalFiado } from '@/fiado/cuenta';
+import { estadosDeClientes } from '@/fiado/plan';
 import { devolucionesPendientes } from '@/fiado/devoluciones';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { recordatorioDe, ultimosRecordatorios } from '@/whatsapp/mensajes';
@@ -38,6 +39,37 @@ export default async function PaginaFiado() {
     ajustes.diasEntreRecordatorios,
   );
 
+  // El semáforo: quién está atrasado, a quién le vence una cuota y a quién
+  // todavía le falta. Una sola consulta para toda la lista, con el día del
+  // calendario del local —no el del servidor, que a las 21:30 ya es mañana.
+  const hoy = fechaLocalISO();
+  const estados = await estadosDeClientes(
+    db,
+    lista.map((d) => d.customerId),
+    hoy,
+  );
+
+  const atrasados = [...estados.values()].filter((e) => e.color === 'rojo');
+
+  /*
+   * El orden de la lista es el orden en que hay que llamar.
+   *
+   * Venía por monto, que es el orden de «quién me debe más» y no el de «a quién
+   * llamo hoy»: un atrasado de $15.000 importa más que uno al día de $400.000.
+   * Primero el semáforo, y dentro de cada color, lo más viejo y lo más grande.
+   */
+  const URGENCIA: Record<string, number> = { rojo: 0, amarillo: 1, gris: 2, verde: 3 };
+  const ordenada = [...lista].sort((a, b) => {
+    const ea = estados.get(a.customerId);
+    const eb = estados.get(b.customerId);
+    const ua = URGENCIA[ea?.color ?? 'gris'] ?? 2;
+    const ub = URGENCIA[eb?.color ?? 'gris'] ?? 2;
+    if (ua !== ub) return ua - ub;
+    // Dentro del rojo, primero el que hace más que se pasó.
+    if (ua === 0) return (eb?.diasDeAtraso ?? 0) - (ea?.diasDeAtraso ?? 0);
+    return b.saldoCentavos - a.saldoCentavos;
+  });
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -47,12 +79,23 @@ export default async function PaginaFiado() {
         </Link>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Dato titulo="En la calle" valor={formatearARS(total.totalCentavos)} />
         <Dato
           titulo="Clientes con deuda"
           valor={total.clientes.toLocaleString('es-AR')}
           detalle={total.clientes === 0 ? 'Nadie debe nada' : undefined}
+        />
+        {/* El número que se mira primero: quién se pasó de la fecha. */}
+        <Dato
+          titulo="Atrasados"
+          valor={atrasados.length.toLocaleString('es-AR')}
+          detalle={
+            atrasados.length > 0
+              ? `${formatearARS(atrasados.reduce((s, e) => s + e.vencidoCentavos, 0))} vencidos`
+              : 'Nadie se pasó de la fecha'
+          }
+          alerta={atrasados.length > 0}
         />
       </div>
 
@@ -88,8 +131,8 @@ export default async function PaginaFiado() {
 
       {!caja ? (
         <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
-          La caja está cerrada. Se puede mirar, pero para recibir un pago hay que abrir el turno:
-          la plata tiene que entrar a una caja para que el arqueo cierre.{' '}
+          La caja está cerrada. Se puede mirar, pero para recibir un pago hay que abrir el turno: la
+          plata tiene que entrar a una caja para que el arqueo cierre.{' '}
           <Link href="/caja" className="font-semibold underline underline-offset-2">
             Abrir la caja
           </Link>
@@ -108,13 +151,17 @@ export default async function PaginaFiado() {
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {lista.map((d) => (
+          {ordenada.map((d) => (
             <FilaDeudor
               key={d.customerId}
               deudor={d}
+              estado={estados.get(d.customerId) ?? null}
               hayCaja={Boolean(caja)}
               esDuenio={esDuenio}
-              recordatorio={recordatorioDe(d, ajustes)}
+              recordatorio={recordatorioDe(
+                { ...d, estado: estados.get(d.customerId) ?? null },
+                ajustes,
+              )}
               ultimoAviso={avisos.get(d.customerId) ?? null}
             />
           ))}
@@ -136,9 +183,25 @@ export default async function PaginaFiado() {
   );
 }
 
-function Dato({ titulo, valor, detalle }: { titulo: string; valor: string; detalle?: string }) {
+function Dato({
+  titulo,
+  valor,
+  detalle,
+  alerta,
+}: {
+  titulo: string;
+  valor: string;
+  detalle?: string;
+  alerta?: boolean;
+}) {
   return (
-    <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
+    <div
+      className={`rounded-(--radius-caja) border p-4 ${
+        alerta
+          ? 'border-(--color-error) bg-(--color-error)/8'
+          : 'border-(--color-borde) bg-(--color-panel)'
+      }`}
+    >
       <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
       <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
       {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}

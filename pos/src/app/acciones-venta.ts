@@ -16,6 +16,7 @@ import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
+import { CUOTAS_MAXIMAS } from '@/fiado/plan';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { calcularTotales } from '@/ventas/carrito';
 import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
@@ -53,7 +54,10 @@ const esquemaVenta = z.object({
         monetaryAccountId: z.string().uuid().nullish(),
         marcaTarjeta: z.string().max(40).nullish(),
         cuotas: z.number().int().positive().max(60).nullish(),
-        ultimos4: z.string().regex(/^\d{4}$/).nullish(),
+        ultimos4: z
+          .string()
+          .regex(/^\d{4}$/)
+          .nullish(),
       }),
     )
     .min(1, 'Falta indicar cómo se paga.'),
@@ -68,6 +72,13 @@ const esquemaVenta = z.object({
   nota: z.string().max(500).nullish(),
   /** El dueño vio el cartel de precio sospechoso y decidió vender igual. */
   confirmarPreciosSospechosos: z.boolean().optional(),
+  /** Cómo se van a pagar las cuotas de lo fiado. Sin esto queda como saldo abierto. */
+  plan: z
+    .object({
+      frecuencia: z.enum(['semanal', 'quincenal', 'mensual']),
+      cuotas: z.number().int().min(1).max(CUOTAS_MAXIMAS),
+    })
+    .nullish(),
 });
 
 export type DatosDeVenta = z.input<typeof esquemaVenta>;
@@ -163,6 +174,8 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       nota: validado.data.nota ?? null,
       autorizadaPorId: hayDescuento ? sesion.user.id : null,
       confirmarPreciosSospechosos: salteaGuardaDePrecios,
+      // Un plan sin fiado no es nada: si no quedó deuda, no hay qué financiar.
+      plan: hayFiado ? (validado.data.plan ?? null) : null,
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
@@ -242,9 +255,7 @@ export type ResultadoDiferida =
  * significaría que cualquier venta normal pudiera pedir esas excepciones con
  * una bandera. Acá quedan a la vista, en un solo lugar.
  */
-export async function subirVentaDiferida(
-  datos: DatosDeVentaDiferida,
-): Promise<ResultadoDiferida> {
+export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<ResultadoDiferida> {
   const sesion = await auth();
   if (!sesion?.user) return { ok: false, error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'venta.crear')) {
@@ -338,6 +349,9 @@ export async function subirVentaDiferida(
       terminal,
       idempotencyKey: d.idempotencyKey,
       nota: d.nota ?? null,
+      // El plan viaja con la venta guardada sin conexión: las fechas se cuentan
+      // desde el día en que se cobró de verdad, no desde el día que sube.
+      plan: hayFiado ? (d.plan ?? null) : null,
       diferida: {
         capturadaEn: new Date(d.capturadaEn),
         preciosCobradosCentavos: d.preciosCobradosCentavos,
@@ -358,8 +372,10 @@ export async function subirVentaDiferida(
       yaEstaba: venta.yaExistia,
     };
   } catch (error) {
-    if (error instanceof ErrorVenta) return { ok: false, error: error.message, motivo: error.motivo };
-    if (error instanceof ErrorFiado) return { ok: false, error: error.message, motivo: error.motivo };
+    if (error instanceof ErrorVenta)
+      return { ok: false, error: error.message, motivo: error.motivo };
+    if (error instanceof ErrorFiado)
+      return { ok: false, error: error.message, motivo: error.motivo };
     console.error('[venta] Falló una venta diferida:', error);
     return { ok: false, error: 'No se pudo subir la venta. Sigue guardada: probá de nuevo.' };
   }
