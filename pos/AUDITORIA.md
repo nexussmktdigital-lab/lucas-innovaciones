@@ -1392,3 +1392,83 @@ cambia una persona desde **Precios**.
 Lo que faltaba no era código sino que estuviera escrito: quedó en el README, al
 lado del cálculo del recargo, para que dentro de seis meses la diferencia entre
 los dos productos vecinos tenga explicación.
+
+---
+
+# Novena pasada — el cajón, probando la demo
+
+Matías probó la demo cargando gastos y ventas de verdad y encontró esto:
+
+> gasté $2.000.000 y vendí $1.500.000 y me dice que **sobra $500.000**
+
+Tenía razón, y detrás había cuatro cosas, no una.
+
+## Lo que pasaba
+
+El efectivo esperado del turno es la suma de los movimientos de la cuenta de
+efectivo: apertura, ventas en efectivo, cobros de fiado, menos gastos y
+retiros. La cuenta estaba bien. Lo que no estaba era **el piso**: nada impedía
+cargar una salida del cajón mayor a lo que había adentro.
+
+Con $1.500.000 vendidos y un gasto de $2.000.000 marcado como pagado en
+efectivo, el esperado quedaba en **−$500.000**. El cierre hace
+`contado − esperado`, así que contar el cajón vacío daba `0 − (−500.000)` y la
+pantalla anunciaba **«Sobran $500.000»**. La resta era correcta. El cartel no
+significaba nada: lo que había pasado es que se cargó una salida que no salió
+de ahí.
+
+## Las cuatro
+
+**1. Del cajón se podía sacar lo que no había.** `transferir` ya controlaba el
+saldo antes de mover la plata; `registrarGasto` y `pagarGasto`, no. Ahora el
+control está en `moverCuenta`, que es por donde pasan los tres, y es doble:
+contra el saldo de la cuenta y —más exigente— contra lo que hay en el cajón de
+**este** turno, porque el saldo de la cuenta arrastra todos los turnos
+anteriores y el cajón se vació anoche.
+
+El control es solo para el efectivo, a propósito: el cajón lo conoce entero el
+POS y se cuenta todas las noches, así que un negativo ahí es siempre un error de
+carga. El saldo del banco o de Mercado Pago es un espejo incompleto —entra plata
+que nunca pasó por el POS— y frenar un pago real porque el espejo va atrasado
+sería peor que el problema.
+
+**2. Traer plata del banco al cajón no lo veía el arqueo.** La entrada de una
+transferencia iba siempre sin sesión, con el argumento de que «el turno es del
+cajón y no del banco». Es cierto al depositar la recaudación, y exactamente al
+revés cuando se trae cambio para dar vuelto: esos billetes entran al cajón que
+se cuenta a la noche. El conteo daba de más por el monto traído y no había nada
+en pantalla que lo explicara. Ahora la entrada pertenece al turno si el destino
+es la caja.
+
+**3. El panel de caja mentía sin decir un número falso.** El renglón «Gastos
+pagados del cajón» sumaba todos los gastos del turno, incluidos los pagados por
+transferencia. Se pagaban $2.000.000 del banco y la pantalla decía «gastos
+pagados del cajón: $2.000.000» justo al lado de un efectivo esperado que —con
+razón— no los restaba. Los dos números eran correctos por separado. Juntos
+decían una mentira. Ahora el renglón cuenta solo lo que salió de una cuenta de
+efectivo y lo demás va aparte, bajo «no salió del cajón».
+
+**4. La invariante que tenía que atajar todo esto estaba desactivada.** Existía
+desde la fase 7 —«Efectivo esperado de cada turno»— pero sumaba la apertura dos
+veces: la apertura ya es un movimiento de la cuenta de efectivo, y la condición
+volvía a sumarla encima. Con eso quedaba tan laxa que no saltaba nunca. Un turno
+abierto con $100.000 que pagaba un gasto de $150.000 quedaba esperando −$50.000
+y pasaba de largo. Ahora se llama **«Ningún turno espera menos de cero en el
+cajón»** y pregunta lo que tiene que preguntar.
+
+## Y el cartel, cuando igual pasa
+
+Aunque ya no se pueda llegar por estos caminos, si un turno queda esperando
+menos de cero el cierre lo dice en vez de anunciar que sobra plata: *«el sistema
+esperaba menos de cero en el cajón, así que salió más plata de la que entró.
+Casi siempre es un gasto grande cargado como pagado en efectivo cuando en
+realidad salió del banco»*.
+
+## Lo que quedó para que no vuelva
+
+`npm run caja`: veintidós combinaciones de cobro y de pago, cada una en su
+propio turno, con los billetes contados a mano y comparados con lo que dice el
+sistema. Efectivo, tarjeta, transferencia, Mercado Pago, mixto, fiado, seña,
+cobro de deuda vieja, gasto del cajón, gasto del banco, gasto pendiente, gasto
+anulado, depósito y retiro. Los tres tests nuevos de `gastos.test.ts` se
+comprobaron al revés: apagando el arreglo, fallan.

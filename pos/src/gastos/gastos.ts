@@ -28,6 +28,8 @@ import {
   payees,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { formatearARS } from '@/lib/dinero';
+import { efectivoDelTurno } from '@/caja/cajon';
 import type { MedioPago } from '@/ventas/carrito';
 
 export class ErrorGasto extends Error {
@@ -37,6 +39,7 @@ export class ErrorGasto extends Error {
       | 'datos_invalidos'
       | 'sin_cuenta'
       | 'cuenta_inexistente'
+      | 'saldo_insuficiente'
       | 'no_existe'
       | 'ya_pagado'
       | 'ya_anulado' = 'datos_invalidos',
@@ -100,6 +103,19 @@ function validar(datos: DatosGasto): void {
  * El signo lo pone quien llama: negativo cuando sale, positivo cuando vuelve.
  * La cuenta se toma con candado de fila para que dos gastos simultáneos no
  * dejen el saldo mal.
+ *
+ * **Del cajón no se puede sacar lo que no hay.** Parece obvio y no lo era: se
+ * podía pagar un gasto de $2.000.000 en efectivo habiendo vendido $1.500.000,
+ * y el arqueo quedaba esperando menos de cero. Contar el cajón vacío daba
+ * entonces «sobran $500.000», que es cierto en la resta y no significa nada:
+ * lo que había pasado era que salió más plata de la que entró.
+ *
+ * El control es solo para el efectivo, y es a propósito. El cajón lo conoce
+ * entero el POS y se verifica contra los billetes todas las noches, así que un
+ * negativo ahí es siempre un error de carga. El saldo del banco o de Mercado
+ * Pago, en cambio, es un espejo incompleto: entra plata que nunca pasó por el
+ * POS, y frenar un pago real porque el espejo va atrasado sería peor que el
+ * problema.
  */
 async function moverCuenta(
   tx: BaseDatos,
@@ -114,12 +130,49 @@ async function moverCuenta(
     descripcion: string;
   },
 ): Promise<void> {
-  const [cuenta] = filasDe<{ id: string }>(
+  const [cuenta] = filasDe<{
+    id: string;
+    nombre: string;
+    tipo: string;
+    saldo_centavos: string | number;
+  }>(
     await tx.execute(
-      sql`SELECT id FROM monetary_accounts WHERE id = ${datos.monetaryAccountId} FOR UPDATE`,
+      sql`SELECT id, nombre, tipo::text AS tipo, saldo_centavos
+            FROM monetary_accounts WHERE id = ${datos.monetaryAccountId} FOR UPDATE`,
     ),
   );
   if (!cuenta) throw new ErrorGasto('No se encuentra esa cuenta.', 'cuenta_inexistente');
+
+  if (datos.montoCentavos < 0 && String(cuenta.tipo) === 'efectivo') {
+    const sale = -datos.montoCentavos;
+
+    const enLaCuenta = Number(cuenta.saldo_centavos);
+    if (enLaCuenta < sale) {
+      throw new ErrorGasto(
+        `En «${cuenta.nombre}» hay ${formatearARS(enLaCuenta)} y esto saca ${formatearARS(sale)}. ` +
+          'Si la plata salió de otro lado, elegí esa cuenta; si entró plata que el sistema no vio, ' +
+          'cargala primero desde Cuentas.',
+        'saldo_insuficiente',
+      );
+    }
+
+    /*
+     * Y además, contra el cajón de este turno. Es más exigente que el saldo de
+     * la cuenta: la cuenta arrastra lo de todos los turnos anteriores, pero lo
+     * que se cuenta a la noche es lo que entró desde que se abrió hoy.
+     */
+    if (datos.cashSessionId) {
+      const enElCajon = await efectivoDelTurno(tx, datos.cashSessionId);
+      if (enElCajon < sale) {
+        throw new ErrorGasto(
+          `En el cajón de este turno hay ${formatearARS(enElCajon)} y esto saca ${formatearARS(sale)}. ` +
+            'Un pago grande sale del banco o de Mercado Pago: elegí esa cuenta. Si de verdad se pagó ' +
+            'con billetes que vinieron de otro lado, hacé primero la transferencia a la caja.',
+          'saldo_insuficiente',
+        );
+      }
+    }
+  }
 
   await tx.insert(cashMovements).values({
     monetaryAccountId: datos.monetaryAccountId,

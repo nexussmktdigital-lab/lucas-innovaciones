@@ -14,6 +14,8 @@
 import { eq, sql } from 'drizzle-orm';
 import { auditLog, cashMovements, monetaryAccounts } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { formatearARS } from '@/lib/dinero';
+import { efectivoDelTurno } from '@/caja/cajon';
 
 export class ErrorCuenta extends Error {}
 
@@ -129,9 +131,14 @@ export async function transferir(
     // Las dos cuentas con candado, y siempre en el mismo orden: dos
     // transferencias cruzadas simultáneas no se pueden trabar entre sí.
     const [a, b] = [datos.origenId, datos.destinoId].sort();
-    const cuentas = filasDe<{ id: string; nombre: string; saldo_centavos: string | number }>(
+    const cuentas = filasDe<{
+      id: string;
+      nombre: string;
+      tipo: string;
+      saldo_centavos: string | number;
+    }>(
       await tx.execute(sql`
-        SELECT id, nombre, saldo_centavos FROM monetary_accounts
+        SELECT id, nombre, tipo::text AS tipo, saldo_centavos FROM monetary_accounts
          WHERE id IN (${a}, ${b}) ORDER BY id FOR UPDATE
       `),
     );
@@ -143,9 +150,26 @@ export async function transferir(
     const saldoOrigen = Number(origen.saldo_centavos);
     if (saldoOrigen < datos.montoCentavos) {
       throw new ErrorCuenta(
-        `En «${origen.nombre}» hay ${(saldoOrigen / 100).toLocaleString('es-AR')} pesos: ` +
+        `En «${origen.nombre}» hay ${formatearARS(saldoOrigen)}: ` +
           'no alcanza para esa transferencia.',
       );
+    }
+
+    /*
+     * Y si sale del cajón, contra lo que hay en el cajón de este turno, que es
+     * bastante menos que el saldo de la cuenta: la cuenta arrastra todos los
+     * turnos y el cajón se vació anoche. Sin esto se podía depositar en el
+     * banco más plata de la que había adentro, y el arqueo quedaba esperando
+     * menos de cero: a la noche decía «sobran».
+     */
+    if (datos.cashSessionId && String(origen.tipo) === 'efectivo') {
+      const enElCajon = await efectivoDelTurno(tx, datos.cashSessionId);
+      if (enElCajon < datos.montoCentavos) {
+        throw new ErrorCuenta(
+          `En el cajón de este turno hay ${formatearARS(enElCajon)} y esto saca ` +
+            `${formatearARS(datos.montoCentavos)}. Contá de nuevo lo que hay antes de depositar.`,
+        );
+      }
     }
 
     const nota = datos.nota?.trim() || null;
@@ -166,8 +190,17 @@ export async function transferir(
       },
       {
         monetaryAccountId: datos.destinoId,
-        // La entrada no pertenece al turno: el turno es del cajón, no del banco.
-        cashSessionId: null,
+        /*
+         * La entrada pertenece al turno solo si el destino es el cajón.
+         *
+         * Antes iba siempre en `null`, con el argumento de que el turno es del
+         * cajón y no del banco —cierto cuando se deposita, y al revés cuando
+         * se trae plata del banco para dar vuelto: esos billetes entran al
+         * cajón que se cuenta a la noche y el arqueo no los veía. El conteo
+         * daba de más por el monto traído, sin nada en pantalla que lo
+         * explicara.
+         */
+        cashSessionId: String(destino.tipo) === 'efectivo' ? (datos.cashSessionId ?? null) : null,
         tipo: 'ingreso',
         montoCentavos: datos.montoCentavos,
         referenciaTipo: 'monetary_accounts',

@@ -156,6 +156,16 @@ export interface ResumenDeSesion {
    */
   gastosCentavos: number;
   retirosCentavos: number;
+  /**
+   * Gastos del turno pagados de otra cuenta, en positivo.
+   *
+   * No tocan el cajón, y por eso van aparte. Antes se sumaban con los de
+   * arriba: se pagaban $2.000.000 por transferencia y el arqueo decía
+   * «gastos pagados del cajón: $2.000.000» al lado de un efectivo esperado
+   * que —con razón— no los restaba. Los dos números eran correctos y juntos
+   * decían una mentira.
+   */
+  gastosDeOtraCuentaCentavos: number;
   /** Lo devuelto a clientes por ventas de turnos anteriores. */
   devolucionesCentavos: number;
   /** Ventas que se cobraron sin conexión y entraron en este turno (D56). */
@@ -314,21 +324,34 @@ export async function resumenDeSesion(
     gastos: string | number;
     retiros: string | number;
     devoluciones: string | number;
+    gastos_de_otra_cuenta: string | number;
   }>(
     await db.execute(sql`
-      SELECT COALESCE(-SUM(monto_centavos) FILTER (
-               WHERE tipo = 'gasto'
-                  OR (tipo = 'anulacion' AND referencia_tipo = 'expenses')
+      SELECT COALESCE(-SUM(m.monto_centavos) FILTER (
+               WHERE c.tipo = 'efectivo'
+                 AND (m.tipo = 'gasto'
+                      OR (m.tipo = 'anulacion' AND m.referencia_tipo = 'expenses'))
              ), 0) AS gastos,
-             COALESCE(-SUM(monto_centavos) FILTER (WHERE tipo = 'retiro'), 0) AS retiros,
+             COALESCE(-SUM(m.monto_centavos) FILTER (
+               WHERE c.tipo = 'efectivo' AND m.tipo = 'retiro'
+             ), 0) AS retiros,
              -- Lo que se le devolvió a un cliente por una venta de otro turno.
              -- Sin este renglón el efectivo esperado baja y nada lo explica, que
              -- es justo el descuadre sin motivo que el arqueo vino a eliminar.
-             COALESCE(-SUM(monto_centavos) FILTER (
-               WHERE tipo = 'anulacion' AND referencia_tipo = 'returns'
-             ), 0) AS devoluciones
-        FROM cash_movements
-       WHERE cash_session_id = ${sesionId}
+             COALESCE(-SUM(m.monto_centavos) FILTER (
+               WHERE c.tipo = 'efectivo'
+                 AND m.tipo = 'anulacion' AND m.referencia_tipo = 'returns'
+             ), 0) AS devoluciones,
+             -- Lo del turno que salió de otra cuenta: se informa, pero no baja
+             -- el cajón. Es la línea que faltaba para que el panel no mienta.
+             COALESCE(-SUM(m.monto_centavos) FILTER (
+               WHERE c.tipo <> 'efectivo'
+                 AND (m.tipo = 'gasto'
+                      OR (m.tipo = 'anulacion' AND m.referencia_tipo = 'expenses'))
+             ), 0) AS gastos_de_otra_cuenta
+        FROM cash_movements m
+        JOIN monetary_accounts c ON c.id = m.monetary_account_id
+       WHERE m.cash_session_id = ${sesionId}
     `),
   );
 
@@ -350,6 +373,7 @@ export async function resumenDeSesion(
     gastosCentavos: Number(salidas?.gastos ?? 0),
     retirosCentavos: Number(salidas?.retiros ?? 0),
     devolucionesCentavos: Number(salidas?.devoluciones ?? 0),
+    gastosDeOtraCuentaCentavos: Number(salidas?.gastos_de_otra_cuenta ?? 0),
     ventasDiferidas: Number(ventas?.diferidas ?? 0),
     ventasDiferidasCentavos: Number(ventas?.diferidas_centavos ?? 0),
     ventasDeOtroTurno: Number(ventas?.de_otro_turno ?? 0),

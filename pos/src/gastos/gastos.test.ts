@@ -38,6 +38,16 @@ let sesion: string;
 let alquiler: string;
 let proveedores: string;
 
+/**
+ * El cajón arranca con plata de sobra a propósito.
+ *
+ * Antes abría con $5.000 y los tests pagaban gastos de $50.000 y $300.000 de
+ * ahí, dejando el arqueo esperando menos de cero. Eso ya no se puede —del
+ * cajón no sale lo que no hay— y estaba bien que no se pudiera: el test que lo
+ * daba por bueno estaba fijando un bug.
+ */
+const APERTURA = 500_000_00;
+
 beforeAll(async () => {
   db = await crearBaseDePrueba();
 });
@@ -72,7 +82,7 @@ beforeEach(async () => {
     terminal: 'T1',
     usuarioId: duenio,
     monetaryAccountId: caja,
-    saldoInicialCentavos: 5_000_00,
+    saldoInicialCentavos: APERTURA,
   });
   sesion = s.id;
 });
@@ -113,9 +123,58 @@ describe('registrar un gasto', () => {
     // Y el arqueo lo descuenta del efectivo esperado, que es el punto de todo,
     // y además lo muestra como salida para que el conteo se explique.
     const r = await resumenDeSesion(db, sesion);
-    expect(r.efectivoEsperadoCentavos).toBe(5_000_00 - 50_000_00);
+    expect(r.efectivoEsperadoCentavos).toBe(APERTURA - 50_000_00);
     expect(r.gastosCentavos).toBe(50_000_00);
     expect(r.retirosCentavos).toBe(0);
+  });
+
+  /*
+   * El caso que apareció probando la demo: se cargó un gasto de $2.000.000
+   * pagado en efectivo habiendo vendido $1.500.000. El cajón quedaba esperando
+   * −$500.000 y el cierre, contando los billetes que sí estaban, anunciaba
+   * «sobran $500.000». La resta era correcta y el cartel no significaba nada.
+   */
+  it('no se paga del cajón más de lo que hay adentro', async () => {
+    const antes = await saldo(caja);
+
+    await expect(
+      registrarGasto(db, {
+        ...base(),
+        montoCentavos: APERTURA + 1,
+        estado: 'pagado',
+        medio: 'efectivo',
+        monetaryAccountId: caja,
+        cashSessionId: sesion,
+      }),
+    ).rejects.toMatchObject({ motivo: 'saldo_insuficiente' });
+
+    // Y no quedó nada a medio hacer: ni el gasto ni el movimiento.
+    expect(await saldo(caja)).toBe(antes);
+    expect(await resumenDeSesion(db, sesion)).toMatchObject({
+      efectivoEsperadoCentavos: APERTURA,
+    });
+    expect(await gastosDelTurno(db, sesion)).toHaveLength(0);
+  });
+
+  it('el mismo gasto, pagado del banco, entra sin problema', async () => {
+    // Es el camino correcto para un pago grande, y tiene que seguir abierto.
+    const g = await registrarGasto(db, {
+      ...base(),
+      montoCentavos: APERTURA + 1,
+      estado: 'pagado',
+      medio: 'transferencia',
+      monetaryAccountId: banco,
+      cashSessionId: sesion,
+    });
+
+    expect(g.movioPlata).toBe(true);
+
+    // El cajón no se enteró, y el turno lo informa aparte para que nadie lo
+    // sume al conteo de los billetes.
+    const r = await resumenDeSesion(db, sesion);
+    expect(r.efectivoEsperadoCentavos).toBe(APERTURA);
+    expect(r.gastosCentavos).toBe(0);
+    expect(r.gastosDeOtraCuentaCentavos).toBe(APERTURA + 1);
   });
 
   it('pagado por transferencia sale del banco y no toca la caja', async () => {
@@ -420,7 +479,7 @@ describe('cuentas monetarias', () => {
     const cuentas = await cuentasConSaldo(db);
     const efectivo = cuentas.find((c) => c.tipo === 'efectivo')!;
 
-    expect(efectivo.saldoCentavos).toBe(5_000_00 - 1_000_00);
+    expect(efectivo.saldoCentavos).toBe(APERTURA - 1_000_00);
     expect(efectivo.movimientos).toBe(2); // apertura y gasto
     expect(await descuadres(db)).toEqual([]);
   });
@@ -443,7 +502,7 @@ describe('transferir entre cuentas', () => {
       cashSessionId: sesion,
     });
 
-    expect(await saldo(caja)).toBe(2_000_00);
+    expect(await saldo(caja)).toBe(APERTURA - 3_000_00);
     expect(await saldo(banco)).toBe(3_000_00);
 
     const totalDespues = (await cuentasConSaldo(db)).reduce((n, c) => n + c.saldoCentavos, 0);
@@ -463,7 +522,7 @@ describe('transferir entre cuentas', () => {
     // En el cajón quedan $2.000 y eso es lo que hay que contar. El depósito
     // figura como retiro y no como gasto: la plata no se gastó, se mudó.
     const r = await resumenDeSesion(db, sesion);
-    expect(r.efectivoEsperadoCentavos).toBe(2_000_00);
+    expect(r.efectivoEsperadoCentavos).toBe(APERTURA - 3_000_00);
     expect(r.retirosCentavos).toBe(3_000_00);
     expect(r.gastosCentavos).toBe(0);
   });
@@ -473,13 +532,56 @@ describe('transferir entre cuentas', () => {
       transferir(db, {
         origenId: caja,
         destinoId: banco,
-        montoCentavos: 9_999_00,
+        montoCentavos: APERTURA + 1,
         usuarioId: duenio,
       }),
     ).rejects.toBeInstanceOf(ErrorCuenta);
 
-    expect(await saldo(caja)).toBe(5_000_00);
+    expect(await saldo(caja)).toBe(APERTURA);
     expect(await saldo(banco)).toBe(0);
+  });
+
+  it('ni se deposita más de lo que hay en el cajón de este turno', async () => {
+    // El saldo de la cuenta alcanzaría —arrastra los turnos anteriores—, pero
+    // los billetes que hay adentro ahora son los de este turno.
+    await db
+      .update(monetaryAccounts)
+      .set({ saldoCentavos: APERTURA * 10 })
+      .where(eq(monetaryAccounts.id, caja));
+
+    await expect(
+      transferir(db, {
+        origenId: caja,
+        destinoId: banco,
+        montoCentavos: APERTURA + 1,
+        usuarioId: duenio,
+        cashSessionId: sesion,
+      }),
+    ).rejects.toBeInstanceOf(ErrorCuenta);
+
+    expect((await resumenDeSesion(db, sesion)).efectivoEsperadoCentavos).toBe(APERTURA);
+  });
+
+  it('traer plata del banco al cajón sí lo ve el arqueo', async () => {
+    // Al revés del depósito: estos billetes entran al cajón que se cuenta a la
+    // noche. Iban con la sesión en null y el conteo daba de más sin motivo.
+    await db
+      .update(monetaryAccounts)
+      .set({ saldoCentavos: 100_000_00 })
+      .where(eq(monetaryAccounts.id, banco));
+
+    await transferir(db, {
+      origenId: banco,
+      destinoId: caja,
+      montoCentavos: 20_000_00,
+      usuarioId: duenio,
+      nota: 'Cambio para dar vuelto',
+      cashSessionId: sesion,
+    });
+
+    expect((await resumenDeSesion(db, sesion)).efectivoEsperadoCentavos).toBe(
+      APERTURA + 20_000_00,
+    );
   });
 
   it('no se transfiere a la misma cuenta ni por cero', async () => {
@@ -518,7 +620,7 @@ describe('transferir entre cuentas', () => {
     ]);
 
     // Pase lo que pase con el orden, el total se conserva y no hay descuadres.
-    expect((await saldo(caja)) + (await saldo(banco))).toBe(5_000_00);
+    expect((await saldo(caja)) + (await saldo(banco))).toBe(APERTURA);
     expect(await descuadres(db)).toEqual([]);
   });
 });
@@ -538,10 +640,10 @@ describe('extracto de una cuenta', () => {
 
     // El más nuevo primero: el gasto, con el saldo de hoy.
     expect(filas[0]!.montoCentavos).toBe(-1_000_00);
-    expect(filas[0]!.saldoCentavos).toBe(4_000_00);
+    expect(filas[0]!.saldoCentavos).toBe(APERTURA - 1_000_00);
 
-    // Y antes de ese gasto había $5.000, los de la apertura.
+    // Y antes de ese gasto estaba lo de la apertura.
     expect(filas[1]!.tipo).toBe('apertura');
-    expect(filas[1]!.saldoCentavos).toBe(5_000_00);
+    expect(filas[1]!.saldoCentavos).toBe(APERTURA);
   });
 });

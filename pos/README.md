@@ -6,7 +6,7 @@ que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
 **Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
 
-El sistema pasó **cinco auditorías**, anotadas en [AUDITORIA.md](AUDITORIA.md): las fases 3.5 a 3.7 salieron de la primera, y las dos últimas son el control previo a producción — los diecinueve invariantes de plata dando sobre la base de verdad, y una medición con el catálogo completo (803 productos: el buscador tarda 6 ms y los reportes 3).
+El sistema pasó **nueve auditorías**, anotadas en [AUDITORIA.md](AUDITORIA.md): las fases 3.5 a 3.7 salieron de la primera, y las dos últimas son el control previo a producción — los diecinueve invariantes de plata dando sobre la base de verdad, y una medición con el catálogo completo (803 productos: el buscador tarda 6 ms y los reportes 3).
 
 ---
 
@@ -1011,6 +1011,7 @@ npm run typecheck # TypeScript en modo estricto
 npm run lint      # ESLint con el conjunto de Next
 npm run auditar   # invariantes de plata contra la base de verdad
 npm run carreras  # dos personas haciendo lo mismo al mismo tiempo
+npm run caja      # el cajón contra todas las formas de mover plata
 ```
 
 `npm run auditar` es distinto de todo lo demás: no prueba código, prueba **los
@@ -1029,6 +1030,34 @@ a la vez: pagar el mismo gasto, cerrar el mismo turno, vender la última unidad.
 Encontró que un gasto se podía pagar dos veces y la plata salía dos veces, sin
 que ningún control lo notara. Escribe en la base, así que se niega a correr
 contra una que no sea local y deja filas de prueba que limpia el `--reset`.
+
+`npm run caja` es el tercero de esta familia. El arqueo es la única cuenta del
+POS que se puede verificar contra el mundo —lo que dice el sistema tiene que ser
+lo que hay adentro del cajón—, así que por cada forma de cobrar y de pagar arma
+un turno solo para ella, calcula **a mano** cuántos billetes deberían quedar y
+lo compara con lo que dice el sistema. Veintidós combinaciones: efectivo,
+tarjeta, transferencia, Mercado Pago, mixto, fiado, seña, cobro de deuda vieja,
+gasto del cajón, gasto del banco, gasto pendiente, gasto anulado, depósito y
+retiro del banco.
+
+Encontró cuatro cosas de una sola sesión probando la demo:
+
+- **Se podía pagar del cajón más plata de la que había adentro.** Un gasto de
+  $2.000.000 en efectivo habiendo vendido $1.500.000 dejaba el turno esperando
+  −$500.000, y el cierre, contando los billetes que sí estaban, anunciaba
+  «sobran $500.000». La resta era correcta y el cartel no significaba nada.
+  `transferir` ya controlaba el saldo; los gastos, no.
+- **Traer plata del banco al cajón no lo veía el arqueo.** La entrada de una
+  transferencia iba siempre sin turno, con el argumento de que «el turno es del
+  cajón y no del banco» —cierto al depositar, y al revés al traer cambio para
+  dar vuelto—. El conteo daba de más por el monto traído, sin nada que lo
+  explicara.
+- **El panel de caja sumaba los gastos pagados por banco al renglón «gastos
+  pagados del cajón».** Los dos números eran correctos por separado y juntos
+  decían una mentira.
+- **La invariante del auditor que tenía que atajar todo esto estaba desactivada
+  por un error de suma:** contaba la apertura dos veces, así que la condición
+  era tan laxa que no saltaba nunca.
 
 Los tests de base **no necesitan un PostgreSQL levantado**: usan PGlite
 (PostgreSQL compilado a WASM) con las migraciones reales aplicadas, así que

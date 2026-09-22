@@ -244,8 +244,19 @@ export default function FormularioCierre({
             {diferencia > 0 ? 'Sobran' : 'Faltan'} {formatearARS(Math.abs(diferencia))}
           </p>
           <p className="mt-1 leading-relaxed">
-            Casi siempre es un vuelto que se dio de menos o una venta en efectivo cargada como
-            transferencia.
+            {esperadoCentavos < 0
+              ? /*
+                 * El caso que descoloca: el sistema espera menos de cero en el
+                 * cajón porque se cargó más plata saliendo de la que entró, y
+                 * entonces contar los billetes que sí están da «sobran». Es
+                 * cierto en la resta y no significa nada, así que se dice lo
+                 * que de verdad pasó.
+                 */
+                'Ojo: el sistema esperaba menos de cero en el cajón, así que salió más plata de la ' +
+                'que entró. Casi siempre es un gasto grande cargado como pagado en efectivo cuando ' +
+                'en realidad salió del banco o de Mercado Pago. Revisalo en Gastos antes de cerrar.'
+              : 'Casi siempre es un vuelto que se dio de menos o una venta en efectivo cargada como ' +
+                'transferencia.'}
           </p>
           <label htmlFor="justificacion" className="mt-3 mb-1 block font-medium">
             ¿A qué se debe?

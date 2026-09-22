@@ -70,11 +70,13 @@ beforeEach(async () => {
     .returning();
   categoria = cat!.id;
 
+  // Con plata en el cajón: los gastos en efectivo de más abajo salen de acá,
+  // y del cajón no se puede sacar lo que no hay.
   const s = await abrirCaja(db, {
     terminal: 'T1',
     usuarioId: duenio,
     monetaryAccountId: caja,
-    saldoInicialCentavos: 0,
+    saldoInicialCentavos: 1_000_000_00,
   });
   sesionId = s.id;
 });

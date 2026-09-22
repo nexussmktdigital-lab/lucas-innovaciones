@@ -173,19 +173,28 @@ const CONTROLES: Control[] = [
     `,
   },
   {
-    nombre: 'Efectivo esperado de cada turno',
-    espera: 'apertura + Σ movimientos de efectivo del turno = lo que se cuenta',
+    nombre: 'Ningún turno espera menos de cero en el cajón',
+    espera: 'No se puede sacar del cajón más plata de la que entró',
+    /*
+     * La apertura ya es un movimiento de la cuenta de efectivo, así que la
+     * suma de abajo la incluye. La versión anterior la sumaba otra vez encima
+     * —`saldo_inicial + Σ movimientos`— y eso volvía la condición tan laxa que
+     * la invariante no saltaba nunca: un turno abierto con $100.000 que pagaba
+     * un gasto de $150.000 quedaba esperando −$50.000 y pasaba de largo.
+     *
+     * Importa porque un esperado negativo rompe el arqueo de la peor manera:
+     * el cierre resta contado − esperado y anuncia que **sobra** plata, cuando
+     * lo que pasó es que se cargó una salida que no salió de ahí.
+     */
     consulta: sql`
       SELECT s.terminal, s.abierta_en,
              s.saldo_inicial_centavos,
-             COALESCE(SUM(m.monto_centavos) FILTER (WHERE c.tipo = 'efectivo'), 0) AS movido
+             COALESCE(SUM(m.monto_centavos) FILTER (WHERE c.tipo = 'efectivo'), 0) AS esperado
         FROM cash_sessions s
         LEFT JOIN cash_movements m ON m.cash_session_id = s.id
         LEFT JOIN monetary_accounts c ON c.id = m.monetary_account_id
        GROUP BY s.id, s.terminal, s.abierta_en, s.saldo_inicial_centavos
       HAVING COALESCE(SUM(m.monto_centavos) FILTER (WHERE c.tipo = 'efectivo'), 0) < 0
-         AND s.saldo_inicial_centavos +
-             COALESCE(SUM(m.monto_centavos) FILTER (WHERE c.tipo = 'efectivo'), 0) < 0
     `,
   },
   {

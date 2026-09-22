@@ -186,9 +186,20 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
             </dl>
           ) : null}
 
-          {/* Lo que NO entró, separado para que nadie lo sume al cajón. */}
-          {resumen.fiadoCentavos > 0 || resumen.cobrosDeFiadoCentavos > 0 ? (
+          {/* Lo que NO entró ni salió del cajón, separado para que nadie lo
+              sume al conteo de los billetes. */}
+          {resumen.fiadoCentavos > 0 ||
+          resumen.cobrosDeFiadoCentavos > 0 ||
+          resumen.gastosDeOtraCuentaCentavos > 0 ? (
             <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm text-(--color-tinta-suave)">
+              {resumen.gastosDeOtraCuentaCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Gastos pagados de otra cuenta · no salió del cajón</dt>
+                  <dd className="tabular">
+                    {formatearARS(resumen.gastosDeOtraCuentaCentavos)}
+                  </dd>
+                </div>
+              ) : null}
               {resumen.fiadoCentavos > 0 ? (
                 <div className="flex justify-between">
                   <dt>Fiado en el turno · no entró plata</dt>
