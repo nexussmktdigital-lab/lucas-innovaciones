@@ -102,6 +102,177 @@ práctica suele ser bastante menos.
 
 ---
 
+## 0.5. El despliegue, de principio a fin
+
+Doce pasos, en este orden. Cada uno dice dónde está el detalle. Los comandos van
+en la PowerShell, parado en la carpeta `pos`.
+
+> **Antes que nada:** Node **22 LTS**. Con Node 24 hay cosas que fallan raro.
+> `node --version` lo dice.
+
+### 1. Poner el código en `main`
+
+Vercel despliega a producción desde la rama principal. Todo lo construido está
+en `claude/vigilant-volta-335wxv`, así que primero se junta:
+
+```powershell
+git checkout main
+git pull origin main
+git merge claude/vigilant-volta-335wxv
+git push origin main
+```
+
+### 2. Crear la base en Neon
+
+[neon.tech](https://neon.tech) → proyecto nuevo, región **South America (São
+Paulo)** para que el mostrador esté cerca. De la pantalla de conexión copiar la
+cadena **Pooled connection** (tiene `-pooler` en el host). Esa es la que va a
+Vercel.
+
+> El plan gratuito guarda 24 horas de historial para volver atrás. Para un
+> negocio conviene el pago; la razón está en el punto 5.
+
+### 3. Rotar lo que quedó expuesto y generar los secretos
+
+La clave de WooCommerce y la contraseña de Neon se pegaron en un chat. El paso a
+paso está en el **punto 1**. Además hacen falta tres secretos nuevos:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Una vez para `AUTH_SECRET`, otra para `CRON_SECRET` y otra para
+`WOO_WEBHOOK_SECRET`. Guardalos en un gestor de contraseñas, no en un archivo
+suelto ni en un chat.
+
+### 4. Crear el proyecto en Vercel
+
+[vercel.com](https://vercel.com) → **Add New → Project** → importar
+`nexussmktdigital-lab/lucas-innovaciones`. Y acá lo único que hay que tocar:
+
+- **Root Directory: `pos`** ← el repositorio tiene el POS adentro de esa
+  carpeta. Si queda en la raíz, la construcción falla sin decir por qué.
+- Framework: Next.js (lo detecta solo).
+- Build y Output: los que vienen.
+
+**No desplegar todavía**: primero las variables, en el paso siguiente. Un
+despliegue sin variables arranca y falla al abrir cualquier pantalla.
+
+### 5. Cargar las variables, marcadas para «Production»
+
+**Settings → Environment Variables**. Estas son obligatorias:
+
+| Variable | Qué va |
+|---|---|
+| `DATABASE_URL` | la cadena **pooled** de Neon |
+| `AUTH_SECRET` | el primero que generaste |
+| `AUTH_TRUST_HOST` | `true` |
+| `WOO_URL` | `https://lucasinnovaciones.com.ar` |
+| `WOO_CONSUMER_KEY` | la clave **nueva** de producción |
+| `WOO_CONSUMER_SECRET` | su secreto |
+| `WOO_WEBHOOK_SECRET` | el secreto de los webhooks |
+| `CRON_SECRET` | el de la tarea programada |
+| `POS_TERMINAL` | `T1` |
+
+Opcional: `ANTHROPIC_API_KEY`, solo para la ayuda que arma la ficha de un
+producto nuevo. Sin ella el alta funciona igual, escrita a mano.
+
+### 6. El primer despliegue
+
+**Deployments → Deploy**. Tarda un par de minutos. Al terminar da una dirección
+`…vercel.app` que todavía no va a andar: falta la base.
+
+### 7. Aplicar las migraciones
+
+Las migraciones **no corren solas**, y es a propósito (**punto 4**). Se corren
+desde tu máquina, apuntando a la base de producción **sin tocar tu `.env`**:
+
+```powershell
+$env:DATABASE_URL="<la cadena pooled de Neon>"
+npm run db:migrate
+npm run produccion:chequear
+Remove-Item Env:\DATABASE_URL
+```
+
+> **Nunca** corras `npm run db:seed -- --reset` con esa variable puesta: borra
+> la base entera. El seed es solo para la demo y para desarrollo.
+
+Ahora sí, abrí la dirección `…vercel.app`: tiene que aparecer la pantalla de
+ingreso.
+
+### 8. Dejar la base lista para abrir el local
+
+La base está migrada pero vacía: no hay con qué entrar.
+
+```powershell
+$env:DATABASE_URL="<la cadena pooled de Neon>"
+npm run preparar
+Remove-Item Env:\DATABASE_URL
+```
+
+Crea el dueño, el vendedor del mostrador, las tres cuentas monetarias y las
+once categorías de gasto. **Nada más**: sin productos, sin clientes y sin
+ventas. El catálogo entra en el paso 11, desde WooCommerce.
+
+La contraseña y el PIN se generan al azar y **se muestran una sola vez**. No
+quedan en ningún archivo. Guardalos en el gestor de contraseñas en ese momento;
+si se pierden, `npm run preparar -- --rehacer-claves` genera otros.
+
+> **Nunca** uses `npm run db:seed` contra producción. Siembra veintiocho
+> productos que no existen en la tienda, clientes con deudas inventadas y
+> facturación del sistema anterior: no es un arranque, es ensuciar los reportes
+> del primer día.
+
+Correrlo dos veces no duplica nada y no pisa las claves salvo que se lo pidas.
+
+### 9. El subdominio
+
+**Settings → Domains** → agregar `pos.lucasinnovaciones.com.ar`. Copiar el
+CNAME que muestra y cargarlo en **DonWeb → Zona DNS**, como dice el punto 0.
+Esperar a que el candado aparezca.
+
+### 10. Los webhooks de WooCommerce
+
+WordPress → **WooCommerce → Ajustes → Avanzado → Webhooks**. Uno por cada
+evento de producto (creado, actualizado, borrado), todos apuntando a:
+
+```
+https://pos.lucasinnovaciones.com.ar/api/webhooks/woo
+```
+
+Con el mismo `WOO_WEBHOOK_SECRET` que cargaste en Vercel.
+
+### 11. Traer el catálogo y el histórico
+
+```powershell
+$env:DATABASE_URL="<la cadena pooled de Neon>"
+npm run woo:sync -- --verificar     # confirma contra qué tienda habla
+npm run woo:sync                    # trae los productos
+npm run woo:historico -- --ensayo   # cuenta los pedidos, sin escribir
+npm run woo:historico               # importa la facturación anterior
+npm run auditar                     # los diecinueve invariantes
+Remove-Item Env:\DATABASE_URL
+```
+
+El histórico va contra la tienda **de verdad** y no contra el staging: lo que
+interesa es la facturación real. Detalle en el punto 2.5.
+
+### 12. Comprobar que quedó bien
+
+Con la tarea programada:
+
+```powershell
+curl.exe -H "Authorization: Bearer <CRON_SECRET>" `
+  https://pos.lucasinnovaciones.com.ar/api/cron/sincronizar
+```
+
+Tiene que contestar `{"ok":true,…}`. Un 401 es el secreto equivocado; un 503,
+que la variable no llegó al despliegue.
+
+Y después, la **lista final** del fondo de este archivo, entera.
+
+---
+
 ## 1. Rotar las credenciales expuestas
 
 La contraseña de Neon y la clave de WooCommerce se pegaron en una conversación

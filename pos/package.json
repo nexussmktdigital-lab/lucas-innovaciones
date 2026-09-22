@@ -24,7 +24,8 @@
     "test:e2e": "playwright test",
     "auditar": "tsx src/scripts/auditar-invariantes.ts",
     "carreras": "tsx src/scripts/probar-carreras.ts",
-    "caja": "tsx src/scripts/probar-caja.ts"
+    "caja": "tsx src/scripts/probar-caja.ts",
+    "preparar": "tsx src/scripts/preparar-local.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

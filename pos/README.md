@@ -1014,6 +1014,17 @@ npm run carreras  # dos personas haciendo lo mismo al mismo tiempo
 npm run caja      # el cajón contra todas las formas de mover plata
 ```
 
+Y uno que no es de prueba sino de puesta en marcha:
+
+```bash
+npm run preparar  # deja una base vacía lista para abrir el local
+```
+
+Crea el dueño, el vendedor, las tres cuentas monetarias y las categorías de
+gasto, con las claves generadas al azar y mostradas una sola vez. Nada más: sin
+productos, sin clientes y sin ventas. Es lo que hay que correr contra la base de
+producción el primer día — **`db:seed` no**, que siembra datos de prueba.
+
 `npm run auditar` es distinto de todo lo demás: no prueba código, prueba **los
 datos**. Son diecinueve preguntas con una sola respuesta correcta —el saldo de
 cada cuenta contra sus movimientos, el stock contra sus asientos, la deuda de
