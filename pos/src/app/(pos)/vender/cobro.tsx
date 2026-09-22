@@ -221,7 +221,11 @@ export default function Cobro({
           </button>
         </div>
 
-        <p className="tabular mt-2 text-3xl font-bold">{formatearARS(totales.totalCentavos)}</p>
+        {/* En el cobro el total manda sobre todo lo demás. */}
+        <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+          Total a cobrar
+        </p>
+        <p className="cifra text-5xl leading-none">{formatearARS(totales.totalCentavos)}</p>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
           {(puedeFiar ? [...MEDIOS, CUENTA_CORRIENTE] : MEDIOS).map(({ medio, tipoCuenta }) => (
@@ -320,7 +324,7 @@ export default function Cobro({
         )}
 
         {hayFiado && cliente ? (
-          <p className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+          <p className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
             Le vas a fiar <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
             <strong>{cliente.nombre}</strong>.{' '}
             {cliente.saldoCentavos > 0 ? (
@@ -359,7 +363,7 @@ export default function Cobro({
               <dd className="tabular">{formatearARS(cobro.pagadoCentavos)}</dd>
             </div>
             {cobro.faltanteCentavos > 0 ? (
-              <div className="flex justify-between font-semibold text-(--color-alerta)">
+              <div className="flex justify-between font-semibold text-(--color-alerta-tinta)">
                 <dt>Falta</dt>
                 <dd className="tabular">{formatearARS(cobro.faltanteCentavos)}</dd>
               </div>
@@ -376,7 +380,7 @@ export default function Cobro({
         ) : null}
 
         {problemas.length > 0 && pagos.length > 0 ? (
-          <ul className="mt-3 text-sm text-(--color-alerta)">
+          <ul className="mt-3 text-sm text-(--color-alerta-tinta)">
             {problemas.map((p) => (
               <li key={p}>{p}</li>
             ))}
@@ -386,7 +390,7 @@ export default function Cobro({
         {error ? (
           <p
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border border-(--color-error) bg-(--color-error)/10 p-3 text-sm font-medium"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-error-fondo) p-3 text-sm font-medium"
           >
             {error}
           </p>
@@ -395,7 +399,7 @@ export default function Cobro({
         {trabado ? (
           <div
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-3"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-error-fondo) p-3"
           >
             <p className="text-sm font-semibold text-(--color-error)">
               Este precio no se puede cobrar así
@@ -409,7 +413,7 @@ export default function Cobro({
             <button
               type="button"
               onClick={onCerrar}
-              className="mt-3 min-h-10 w-full rounded-(--radius-caja) bg-(--color-marca) text-sm font-semibold text-white"
+              className="mt-3 min-h-10 w-full rounded-(--radius-caja) bg-(--color-marca) text-sm font-semibold text-(--color-marca-texto)"
             >
               Volver al carrito
             </button>
@@ -419,9 +423,9 @@ export default function Cobro({
         {aConfirmar ? (
           <div
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/10 p-3"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3"
           >
-            <p className="text-sm font-semibold text-(--color-alerta)">
+            <p className="text-sm font-semibold text-(--color-alerta-tinta)">
               Frená: revisá el precio antes de cobrar
             </p>
             <p className="mt-1 text-sm">{aConfirmar}</p>
@@ -429,7 +433,7 @@ export default function Cobro({
               <button
                 type="button"
                 onClick={onCerrar}
-                className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-3 text-sm font-semibold text-white"
+                className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-3 text-sm font-semibold text-(--color-marca-texto)"
               >
                 Volver y revisar
               </button>
@@ -448,7 +452,7 @@ export default function Cobro({
           type="button"
           onClick={() => void confirmar()}
           disabled={problemas.length > 0 || enviando || aConfirmar !== null || trabado !== null}
-          className="mt-4 min-h-14 w-full rounded-(--radius-caja) bg-(--color-ok) text-lg font-bold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-4 min-h-14 w-full rounded-(--radius-caja) bg-(--color-accion) text-lg font-bold text-(--color-accion-texto) transition disabled:cursor-not-allowed disabled:opacity-40"
         >
           {enviando ? 'Confirmando…' : 'Confirmar venta e imprimir'}
         </button>

@@ -17,7 +17,7 @@ export default function FormularioApertura({ cuentas }: { cuentas: Cuenta[] }) {
 
   if (efectivo.length === 0) {
     return (
-      <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-4 text-sm">
+      <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4 text-sm">
         No hay ninguna caja en efectivo cargada. Creala antes de abrir el turno.
       </p>
     );
@@ -85,7 +85,7 @@ export default function FormularioApertura({ cuentas }: { cuentas: Cuenta[] }) {
       <button
         type="submit"
         disabled={pendiente}
-        className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+        className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
       >
         {pendiente ? 'Abriendo…' : 'Abrir caja'}
       </button>

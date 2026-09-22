@@ -84,7 +84,7 @@ export default function FormularioAnulacion({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-error) text-sm font-semibold text-white disabled:opacity-60"
+          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-error) text-sm font-semibold text-(--color-error-texto) disabled:opacity-60"
         >
           {pendiente ? 'Anulando…' : 'Anular la venta'}
         </button>

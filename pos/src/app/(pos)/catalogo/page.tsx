@@ -53,7 +53,7 @@ export default async function PaginaCatalogo({
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Catálogo</h1>
+          <h1 className="font-titulo text-2xl font-bold tracking-tight">Catálogo</h1>
           <p className="mt-1 text-sm text-(--color-tinta-suave)">
             Las fichas de WooCommerce se arreglan allá. Acá se ve cuáles y por qué, y se carga lo
             que todavía no está.
@@ -62,7 +62,7 @@ export default async function PaginaCatalogo({
         <div className="flex gap-2">
           <Link
             href="/catalogo/nuevo"
-            className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 leading-10 font-semibold text-white"
+            className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 leading-10 font-semibold text-(--color-marca-texto)"
           >
             Cargar un producto
           </Link>
@@ -79,7 +79,7 @@ export default async function PaginaCatalogo({
           importación redirige acá, así que un `ok` del formulario no
           sobreviviría al cambio de pantalla. */}
       {importados ? (
-        <p className="rounded-(--radius-caja) border-2 border-(--color-ok) bg-(--color-ok)/8 p-3 text-sm font-semibold text-(--color-ok)">
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-3 text-sm font-semibold text-(--color-ok)">
           Se cargaron {importados} productos de la planilla. Ya se pueden vender.
         </p>
       ) : null}
@@ -112,7 +112,7 @@ export default async function PaginaCatalogo({
                 key={t.tipo}
                 className={`rounded-(--radius-caja) border px-3 py-1.5 text-sm ${
                   BLOQUEANTES.includes(t.tipo)
-                    ? 'border-(--color-alerta) bg-(--color-alerta)/8'
+                    ? 'border-(--color-alerta) bg-(--color-alerta-fondo)'
                     : 'border-(--color-borde) bg-(--color-panel)'
                 }`}
               >
@@ -134,7 +134,7 @@ export default async function PaginaCatalogo({
       </nav>
 
       {informe.productos.length === 0 ? (
-        <p className="rounded-(--radius-caja) border border-(--color-ok) bg-(--color-ok)/8 p-6 text-center">
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-6 text-center">
           {soloBloqueantes
             ? 'No hay ninguna ficha con un problema que impida vender bien.'
             : 'El catálogo está limpio.'}
@@ -213,7 +213,7 @@ function Filtro({
       aria-current={activo ? 'page' : undefined}
       className={`min-h-9 rounded-(--radius-caja) border px-3 py-1.5 font-medium ${
         activo
-          ? 'border-(--color-marca) bg-(--color-marca) text-white'
+          ? 'border-(--color-marca) bg-(--color-marca) text-(--color-marca-texto)'
           : 'border-(--color-borde) bg-(--color-panel)'
       }`}
     >
@@ -228,7 +228,7 @@ function Chapa({ tipo }: { tipo: TipoDeProblema }) {
     <span
       className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold ${
         bloqueante
-          ? 'bg-(--color-alerta)/15 text-(--color-alerta)'
+          ? 'bg-(--color-alerta-fondo) text-(--color-alerta-tinta)'
           : 'bg-(--color-papel) text-(--color-tinta-suave)'
       }`}
     >
@@ -254,8 +254,10 @@ function Dato({
         alerta ? 'border-(--color-alerta)' : 'border-(--color-borde)'
       }`}
     >
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
       {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}
     </div>
   );

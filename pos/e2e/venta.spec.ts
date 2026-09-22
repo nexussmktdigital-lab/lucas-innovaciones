@@ -193,7 +193,7 @@ test('el cierre exige justificar la diferencia', async ({ page }) => {
 
   // Que sobre o que falte depende de lo que dejaron los tests anteriores; lo
   // que se comprueba es que una diferencia pida explicación.
-  await expect(form.getByText(/^(Falta|Sobra)\s/)).toBeVisible();
+  await expect(form.getByText(/^(Faltan|Sobran)\s/)).toBeVisible();
   await expect(form.getByLabel('¿A qué se debe?')).toBeVisible();
 });
 

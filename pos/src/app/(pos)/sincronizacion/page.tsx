@@ -31,7 +31,7 @@ export default async function PaginaSincronizacion() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Sincronización con la tienda</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Sincronización con la tienda</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           Cada venta descuenta el stock en el POS y deja el ajuste acá para que llegue a
           WooCommerce. Pasa sola al vender y cada diez minutos; esta pantalla es para cuando algo
@@ -52,7 +52,7 @@ export default async function PaginaSincronizacion() {
       <Botones hayFallidas={cola.fallidas > 0} />
 
       {operaciones.length === 0 ? (
-        <p className="rounded-(--radius-caja) border border-(--color-ok) bg-(--color-ok)/8 p-6 text-center text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-6 text-center text-sm">
           Está todo sincronizado. WooCommerce tiene el mismo stock que el POS.
         </p>
       ) : (
@@ -74,7 +74,7 @@ export default async function PaginaSincronizacion() {
                   <span
                     className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
                       o.estado === 'fallido'
-                        ? 'bg-(--color-error)/15 text-(--color-error)'
+                        ? 'bg-(--color-error-fondo) text-(--color-error)'
                         : 'bg-(--color-papel) text-(--color-tinta-suave)'
                     }`}
                   >

@@ -61,13 +61,13 @@ export default async function PaginaVender() {
 function CajaCerrada() {
   return (
     <div className="mx-auto max-w-lg pt-16 text-center">
-      <h1 className="text-2xl font-bold tracking-tight">La caja está cerrada</h1>
+      <h1 className="font-titulo text-2xl font-bold tracking-tight">La caja está cerrada</h1>
       <p className="mt-2 text-(--color-tinta-suave)">
         Para poder vender hay que abrir el turno declarando con cuánto efectivo arranca la caja.
       </p>
       <Link
         href="/caja"
-        className="mt-6 inline-flex min-h-12 items-center rounded-(--radius-caja) bg-(--color-marca) px-6 font-semibold text-white"
+        className="mt-6 inline-flex min-h-12 items-center rounded-(--radius-caja) bg-(--color-marca) px-6 font-semibold text-(--color-marca-texto)"
       >
         Abrir la caja
       </Link>

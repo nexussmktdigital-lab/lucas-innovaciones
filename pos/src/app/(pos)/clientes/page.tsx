@@ -24,7 +24,7 @@ export default async function PaginaClientes({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Clientes</h1>
         <Link href="/fiado" className="text-sm underline underline-offset-2">
           Ver solo los que deben
         </Link>
@@ -46,7 +46,7 @@ export default async function PaginaClientes({
         />
         <button
           type="submit"
-          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-white"
+          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-(--color-marca-texto)"
         >
           Buscar
         </button>
@@ -88,7 +88,7 @@ export default async function PaginaClientes({
                   ) : null}
 
                   {c.saldoCentavos > 0 ? (
-                    <span className="tabular ml-auto font-bold text-(--color-alerta)">
+                    <span className="tabular ml-auto font-bold text-(--color-alerta-tinta)">
                       Debe {formatearARS(c.saldoCentavos)}
                     </span>
                   ) : (

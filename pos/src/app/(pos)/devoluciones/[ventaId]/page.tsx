@@ -51,15 +51,15 @@ export default async function PaginaDevolverVenta({
         <Link href="/devoluciones" className="text-sm underline underline-offset-2">
           ← Devoluciones
         </Link>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">Devolver</h1>
+        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">Devolver</h1>
       </div>
 
       {problema ? (
-        <p role="alert" className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-4 text-sm">
+        <p role="alert" className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4 text-sm">
           {problema}
         </p>
       ) : !caja ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-4 text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4 text-sm">
           No hay una caja abierta. Una devolución mueve plata de un cajón concreto, así que hay que{' '}
           <Link href="/caja" className="font-semibold underline underline-offset-2">
             abrir la caja

@@ -72,37 +72,44 @@ export default async function PaginaFiado() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">Fiado</h1>
-        <Link href="/clientes" className="text-sm underline underline-offset-2">
-          Todos los clientes
-        </Link>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-titulo font-titulo text-2xl font-bold tracking-tight">Fiado</h1>
+          <p className="mt-1 text-sm text-(--color-tinta-suave)">
+            {total.clientes === 0
+              ? 'Nadie debe nada'
+              : `${total.clientes} ${total.clientes === 1 ? 'cliente' : 'clientes'} con saldo · ordenados por urgencia`}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+            Por cobrar
+          </p>
+          <p className="cifra text-4xl leading-none">{formatearARS(total.totalCentavos)}</p>
+        </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Dato titulo="En la calle" valor={formatearARS(total.totalCentavos)} />
-        <Dato
-          titulo="Clientes con deuda"
-          valor={total.clientes.toLocaleString('es-AR')}
-          detalle={total.clientes === 0 ? 'Nadie debe nada' : undefined}
-        />
-        {/* El número que se mira primero: quién se pasó de la fecha. */}
-        <Dato
-          titulo="Atrasados"
-          valor={atrasados.length.toLocaleString('es-AR')}
-          detalle={
-            atrasados.length > 0
-              ? `${formatearARS(atrasados.reduce((s, e) => s + e.vencidoCentavos, 0))} vencidos`
-              : 'Nadie se pasó de la fecha'
-          }
-          alerta={atrasados.length > 0}
-        />
-      </div>
+      {atrasados.length > 0 ? (
+        <p className="flex flex-wrap items-center gap-2 rounded-(--radius-caja) bg-(--color-error-fondo) p-4 text-base">
+          <span aria-hidden className="size-2.5 rounded-full bg-(--color-error)" />
+          <strong>
+            {atrasados.length} {atrasados.length === 1 ? 'cliente' : 'clientes'} con la cuota
+            vencida
+          </strong>
+          <span>
+            · deben{' '}
+            <span className="tabular">
+              {formatearARS(atrasados.reduce((s, e) => s + e.vencidoCentavos, 0))}
+            </span>{' '}
+            entre {atrasados.length === 1 ? 'ese' : 'todos'}.
+          </span>
+        </p>
+      ) : null}
 
       {aDevolver.length > 0 ? (
         <section
           aria-labelledby="devoluciones"
-          className="rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/8 p-4"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4"
         >
           <h2 id="devoluciones" className="text-sm font-semibold">
             Hay plata para devolver
@@ -130,7 +137,7 @@ export default async function PaginaFiado() {
       ) : null}
 
       {!caja ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           La caja está cerrada. Se puede mirar, pero para recibir un pago hay que abrir el turno: la
           plata tiene que entrar a una caja para que el arqueo cierre.{' '}
           <Link href="/caja" className="font-semibold underline underline-offset-2">
@@ -140,7 +147,7 @@ export default async function PaginaFiado() {
       ) : null}
 
       {lista.length === 0 ? (
-        <p className="rounded-(--radius-caja) border border-(--color-ok) bg-(--color-ok)/8 p-6 text-center text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-6 text-center text-sm">
           No hay nadie con deuda. {esDuenio ? 'Si tenés fichas de papel sin cargar, ' : ''}
           {esDuenio ? (
             <Link href="/clientes" className="font-semibold underline underline-offset-2">
@@ -150,7 +157,7 @@ export default async function PaginaFiado() {
           {esDuenio ? '.' : ''}
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
           {ordenada.map((d) => (
             <FilaDeudor
               key={d.customerId}
@@ -179,32 +186,6 @@ export default async function PaginaFiado() {
       <p className="text-xs text-(--color-tinta-suave)">
         Actualizado al {formatearFecha(new Date())}.
       </p>
-    </div>
-  );
-}
-
-function Dato({
-  titulo,
-  valor,
-  detalle,
-  alerta,
-}: {
-  titulo: string;
-  valor: string;
-  detalle?: string;
-  alerta?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-(--radius-caja) border p-4 ${
-        alerta
-          ? 'border-(--color-error) bg-(--color-error)/8'
-          : 'border-(--color-borde) bg-(--color-panel)'
-      }`}
-    >
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
-      {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}
     </div>
   );
 }

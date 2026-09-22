@@ -1,56 +1,113 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { Rol } from '@/auth/permisos';
 
 /**
- * Navegacion del POS.
+ * Navegación del POS.
  *
- * Los modulos que todavia no existen se muestran deshabilitados con la fase en
- * la que llegan, para que el equipo sepa que falta y no busque una pantalla que
- * no esta.
+ * Trece secciones no entran en una barra, y menos en la tablet del mostrador.
+ * Así que la barra lleva **las cinco de todos los días** —las mismas que usa el
+ * vendedor— y el resto vive en un cajón agrupado por para qué sirve: la plata,
+ * el catálogo y la atención al cliente. El dueño abre el cajón cuando necesita
+ * algo de ahí, que es unas pocas veces por día; el vendedor no lo ve porque
+ * ninguna de esas ocho es suya.
  *
- * Las teclas de funcion navegan de verdad: antes figuraban al lado de cada
- * seccion y no hacian nada, que es peor que no ponerlas. En una MacBook hay que
- * tener activado «usar F1, F2 como teclas de funcion estandar», o apretar Fn.
+ * Las teclas de función navegan de verdad, y siguen valiendo para lo que está
+ * en el cajón: F6 abre Gastos aunque Gastos no esté a la vista. En una MacBook
+ * hay que tener activado «usar F1, F2 como teclas de función estándar», o
+ * apretar Fn.
  */
-const SECCIONES = [
-  { href: '/', etiqueta: 'Inicio', tecla: 'F1', fase: 1 },
-  { href: '/vender', etiqueta: 'Vender', tecla: 'F2', fase: 2 },
-  { href: '/caja', etiqueta: 'Caja', tecla: 'F3', fase: 2 },
-  { href: '/ventas', etiqueta: 'Ventas', tecla: 'F4', fase: 3 },
-  { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5', fase: 4 },
-  { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', fase: 6, soloDuenio: true },
-  { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', fase: 3, soloDuenio: true },
-  { href: '/precios', etiqueta: 'Precios', tecla: 'F8', fase: 3, soloDuenio: true },
-  { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', fase: 3, soloDuenio: true },
-  // Sin tecla: es una pantalla de configuración, no de mostrador. Las teclas de
-  // función son escasas y valen para lo que se usa todos los días.
-  { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, fase: 5, soloDuenio: true },
-  { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, fase: 6, soloDuenio: true },
-  { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', fase: 9, soloDuenio: true },
-  { href: '/devoluciones', etiqueta: 'Devoluciones', tecla: null, fase: 10, soloDuenio: true },
-] as const;
+interface Seccion {
+  href: string;
+  etiqueta: string;
+  tecla: string | null;
+  soloDuenio?: boolean;
+}
 
-const FASE_ACTUAL = 10;
+/** Las cinco que se tocan todo el día. Son las mismas para los dos roles. */
+const PRINCIPALES: Seccion[] = [
+  { href: '/', etiqueta: 'Inicio', tecla: 'F1' },
+  { href: '/vender', etiqueta: 'Vender', tecla: 'F2' },
+  { href: '/caja', etiqueta: 'Caja', tecla: 'F3' },
+  { href: '/ventas', etiqueta: 'Ventas', tecla: 'F4' },
+  { href: '/fiado', etiqueta: 'Fiado', tecla: 'F5' },
+];
+
+/**
+ * El resto, agrupado por para qué sirve.
+ *
+ * El orden de los grupos no es casual: primero la plata, que es lo que el dueño
+ * viene a mirar; después el catálogo, que se toca cuando llega mercadería; y al
+ * final la atención, que son pantallas de rato libre.
+ */
+const GRUPOS: { titulo: string; items: Seccion[] }[] = [
+  {
+    titulo: 'Plata',
+    items: [
+      { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', soloDuenio: true },
+      { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, soloDuenio: true },
+      { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', soloDuenio: true },
+    ],
+  },
+  {
+    titulo: 'Catálogo',
+    items: [
+      { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', soloDuenio: true },
+      { href: '/precios', etiqueta: 'Precios', tecla: 'F8', soloDuenio: true },
+      { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', soloDuenio: true },
+    ],
+  },
+  {
+    titulo: 'Atención',
+    items: [
+      // Clientes también es del vendedor, pero entra desde Fiado: en la barra
+      // ocuparía un lugar que se usa mucho menos que las cinco de arriba.
+      { href: '/clientes', etiqueta: 'Clientes', tecla: null },
+      { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, soloDuenio: true },
+      { href: '/devoluciones', etiqueta: 'Devoluciones', tecla: null, soloDuenio: true },
+    ],
+  },
+];
+
+const TODAS = [...PRINCIPALES, ...GRUPOS.flatMap((g) => g.items)];
 
 export default function Navegacion({ rol }: { rol: Rol }) {
   const ruta = usePathname();
   const router = useRouter();
+  const [cajon, setCajon] = useState(false);
 
-  const visibles = useMemo(
-    () => SECCIONES.filter((s) => !('soloDuenio' in s && s.soloDuenio) || rol === 'owner'),
-    [rol],
+  const esDuenio = rol === 'owner';
+
+  const grupos = useMemo(
+    () =>
+      GRUPOS.map((g) => ({
+        ...g,
+        items: g.items.filter((s) => !s.soloDuenio || esDuenio),
+      })).filter((g) => g.items.length > 0),
+    [esDuenio],
   );
+
+  const enElCajon = useMemo(() => grupos.flatMap((g) => g.items), [grupos]);
+  const alcanzables = useMemo(
+    () => [...PRINCIPALES, ...enElCajon],
+    [enElCajon],
+  );
+
+  // El cajón se cierra al cambiar de pantalla: dejarlo abierto tapa media
+  // pantalla de la que se acaba de abrir.
+  useEffect(() => {
+    setCajon(false);
+  }, [ruta]);
 
   useEffect(() => {
     function alTeclado(e: KeyboardEvent) {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
-      const destino = visibles.find(
-        (s) => s.tecla !== null && s.tecla === e.key && s.fase <= FASE_ACTUAL,
-      );
+      if (e.key === 'Escape') return setCajon(false);
+
+      const destino = alcanzables.find((s) => s.tecla !== null && s.tecla === e.key);
       if (!destino) return;
 
       e.preventDefault();
@@ -61,40 +118,97 @@ export default function Navegacion({ rol }: { rol: Rol }) {
 
     window.addEventListener('keydown', alTeclado);
     return () => window.removeEventListener('keydown', alTeclado);
-  }, [ruta, router, visibles]);
+  }, [ruta, router, alcanzables]);
+
+  const enUnGrupo = enElCajon.some((s) => s.href === ruta);
 
   return (
-    <nav aria-label="Secciones" className="flex items-center gap-1">
-      {visibles.map((s) => {
-        const disponible = s.fase <= FASE_ACTUAL;
-        const activo = ruta === s.href;
+    <>
+      <nav aria-label="Secciones" className="flex min-w-0 items-center gap-0.5">
+        {PRINCIPALES.map((s) => (
+          <Pestania key={s.href} seccion={s} activa={ruta === s.href} />
+        ))}
 
-        if (!disponible) {
-          return (
-            <span
-              key={s.href}
-              title={`Llega en la fase ${s.fase}`}
-              className="cursor-not-allowed rounded-(--radius-caja) px-3 py-2 text-sm text-(--color-tinta-suave) opacity-45"
-            >
-              {s.etiqueta}
-            </span>
-          );
-        }
-
-        return (
-          <Link
-            key={s.href}
-            href={s.href}
-            aria-current={activo ? 'page' : undefined}
-            className={`rounded-(--radius-caja) px-3 py-2 text-sm font-medium ${
-              activo ? 'bg-(--color-marca) text-white' : 'hover:bg-(--color-papel)'
+        {enElCajon.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setCajon((x) => !x)}
+            aria-expanded={cajon}
+            aria-controls="cajon-secciones"
+            className={`ml-1 flex min-h-10 shrink-0 items-center gap-1.5 rounded-(--radius-caja) border border-(--color-barra-borde) px-3 text-sm font-semibold text-white ${
+              cajon || enUnGrupo ? 'bg-(--color-barra-borde)' : ''
             }`}
           >
-            {s.etiqueta}
-            {s.tecla ? <kbd className="ml-1.5 text-xs opacity-60">{s.tecla}</kbd> : null}
-          </Link>
-        );
-      })}
-    </nav>
+            Más
+            <span className="text-xs text-(--color-barra-tinta)">{enElCajon.length}</span>
+          </button>
+        ) : null}
+      </nav>
+
+      {cajon ? (
+        <div
+          id="cajon-secciones"
+          className="absolute inset-x-0 top-full z-40 border-t border-(--color-barra-borde) bg-(--color-barra) p-4 shadow-xl"
+        >
+          <div className="mx-auto grid max-w-7xl gap-4 sm:grid-cols-3">
+            {grupos.map((g) => (
+              <div key={g.titulo} className="flex flex-col gap-2">
+                <p className="text-xs font-bold tracking-[0.08em] text-(--color-barra-tinta) uppercase">
+                  {g.titulo}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.items.map((s) => (
+                    <Link
+                      key={s.href}
+                      href={s.href}
+                      aria-current={ruta === s.href ? 'page' : undefined}
+                      className={`flex min-h-10 items-center gap-1.5 rounded-(--radius-caja) border border-(--color-barra-borde) px-3 text-sm font-medium ${
+                        ruta === s.href ? 'bg-white text-(--color-barra)' : 'text-white'
+                      }`}
+                    >
+                      {s.etiqueta}
+                      {s.tecla ? (
+                        <kbd className="hidden font-mono text-xs text-(--color-barra-tinta) sm:inline">
+                          {s.tecla}
+                        </kbd>
+                      ) : null}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
+
+/** Una de las cinco de la barra. La activa se invierte: fondo blanco, tinta negra. */
+function Pestania({ seccion, activa }: { seccion: Seccion; activa: boolean }) {
+  return (
+    <Link
+      href={seccion.href}
+      aria-current={activa ? 'page' : undefined}
+      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-(--radius-caja) px-3 text-sm ${
+        activa
+          ? 'bg-white font-bold text-(--color-barra)'
+          : 'font-medium text-white hover:bg-(--color-barra-borde)'
+      }`}
+    >
+      {seccion.etiqueta}
+      {seccion.tecla ? (
+        <kbd
+          className={`hidden font-mono text-xs sm:inline ${
+            activa ? 'text-(--color-tinta-suave)' : 'text-(--color-barra-tinta)'
+          }`}
+        >
+          {seccion.tecla}
+        </kbd>
+      ) : null}
+    </Link>
+  );
+}
+
+/** Las secciones que existen, para que otra pantalla pueda nombrarlas. */
+export { TODAS as SECCIONES };

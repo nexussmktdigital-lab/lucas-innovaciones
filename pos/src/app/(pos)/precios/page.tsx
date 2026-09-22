@@ -33,7 +33,7 @@ export default async function PaginaPrecios({
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Precios</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Precios</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           En WooCommerce vive el precio de la tienda, que es el que cobra la web. El del mostrador
           se calcula descontándole el recargo, así no hay dos números que mantener por producto.
@@ -74,7 +74,7 @@ export default async function PaginaPrecios({
         />
         <button
           type="submit"
-          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-white"
+          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-(--color-marca-texto)"
         >
           Buscar
         </button>
@@ -183,8 +183,10 @@ function Precio({
 function Dato({ titulo, valor, detalle }: { titulo: string; valor: string; detalle: string }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
       <p className="text-xs text-(--color-tinta-suave)">{detalle}</p>
     </div>
   );

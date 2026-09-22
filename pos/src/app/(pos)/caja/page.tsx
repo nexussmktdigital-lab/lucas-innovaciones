@@ -27,9 +27,9 @@ export default async function PaginaCaja() {
   const cola = await pendientesDeSincronizar(db);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Caja</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Caja</h1>
         <span className="text-sm text-(--color-tinta-suave)">Terminal {terminal}</span>
       </div>
 
@@ -40,7 +40,7 @@ export default async function PaginaCaja() {
       )}
 
       {cola.pendientes + cola.fallidas > 0 ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           Hay <strong>{cola.pendientes + cola.fallidas}</strong> ajuste
           {cola.pendientes + cola.fallidas === 1 ? '' : 's'} de stock esperando llegar a
           WooCommerce. Las ventas están registradas: lo que falta es que la tienda online se entere.
@@ -68,14 +68,14 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
       {horasAbierta(abiertaEn) >= HORAS_PARA_AVISAR ? (
         <p
           role="alert"
-          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
         >
           Este turno está abierto <strong>{haceCuanto(abiertaEn)}</strong>. Mientras no se cierre
           no hay arqueo ni reporte del día, y todo lo que se vendió queda en la misma bolsa.
         </p>
       ) : null}
 
-      <div className="rounded-(--radius-caja) border border-(--color-ok) bg-(--color-ok)/8 p-4">
+      <div className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-4">
         <p className="text-sm font-semibold text-(--color-ok)">Turno abierto</p>
         <p className="text-sm text-(--color-tinta-suave)">
           Desde {formatearFechaHora(abiertaEn)} · {haceCuanto(abiertaEn)}
@@ -139,7 +139,7 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
                 <dt>
                   De eso, cobrado sin conexión ({resumen.ventasDiferidas})
                   {resumen.ventasDeOtroTurno > 0 ? (
-                    <span className="block text-xs font-medium text-(--color-alerta)">
+                    <span className="block text-xs font-medium text-(--color-alerta-tinta)">
                       {resumen.ventasDeOtroTurno} se{' '}
                       {resumen.ventasDeOtroTurno === 1 ? 'cobró' : 'cobraron'} antes de que abriera
                       este turno
@@ -255,7 +255,7 @@ async function SesionesAnteriores() {
                 {c.cerradaPor ? ` · ${c.cerradaPor}` : ''}
               </span>
               {c.seConto ? (
-                <span className="rounded bg-(--color-ok)/15 px-1.5 py-0.5 text-xs font-semibold text-(--color-ok)">
+                <span className="rounded bg-(--color-ok-fondo) px-1.5 py-0.5 text-xs font-semibold text-(--color-ok)">
                   Contado
                 </span>
               ) : (
@@ -266,7 +266,7 @@ async function SesionesAnteriores() {
 
               <span
                 className={`tabular ml-auto font-semibold ${
-                  c.diferenciaCentavos === 0 ? 'text-(--color-ok)' : 'text-(--color-alerta)'
+                  c.diferenciaCentavos === 0 ? 'text-(--color-ok)' : 'text-(--color-alerta-tinta)'
                 }`}
               >
                 {c.diferenciaCentavos === 0
@@ -305,8 +305,10 @@ function Dato({
 }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[28px] leading-tight">{valor}</p>
       {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}
     </div>
   );

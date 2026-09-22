@@ -1,40 +1,101 @@
 @import 'tailwindcss';
 
 /*
- * Sistema visual del POS.
+ * Sistema visual del POS — marca Lucas Innovaciones.
  *
- * Criterio: mostrador, no escritorio. Contraste alto, tipografia grande,
- * areas de toque de 44 px como minimo y foco siempre visible, porque el
- * cajero opera con teclado y a veces con el dedo sobre una tablet.
+ * Criterio: mostrador, no escritorio. Contraste alto, tipografía grande, áreas
+ * de toque de 44 px como mínimo y foco siempre visible, porque el cajero opera
+ * con teclado y a veces con el dedo sobre una tablet.
+ *
+ * Los colores salen del diseño de marca. Dos reglas que explican la paleta:
+ *
+ *  - **El negro es la acción, el verde es la plata.** La acción principal de
+ *    cada pantalla es negra (blanca en modo oscuro). El verde encendido queda
+ *    reservado para el único botón que mueve plata —cobrar una venta, cerrar
+ *    la caja—, así no compite con nada y se encuentra sin leer.
+ *  - **El color del estado no decora.** Verde, amarillo y rojo significan al
+ *    día, por vencer y vencido. Cada uno tiene su tinta y su fondo suave, y no
+ *    se usan para otra cosa.
  */
 
 @theme {
-  --color-tinta: oklch(0.21 0.02 260);
-  --color-tinta-suave: oklch(0.47 0.02 260);
-  --color-papel: oklch(0.98 0.004 260);
-  --color-panel: oklch(1 0 0);
-  --color-borde: oklch(0.9 0.008 260);
+  --color-tinta: #0a0a0a;
+  --color-tinta-media: #3a3a3a;
+  --color-tinta-suave: #6b6b6b;
+  --color-papel: #f4f4f4;
+  --color-panel: #ffffff;
+  --color-borde: #e5e5e5;
 
-  --color-marca: oklch(0.52 0.19 258);
-  --color-marca-fuerte: oklch(0.44 0.2 258);
-  --color-ok: oklch(0.58 0.15 155);
-  --color-alerta: oklch(0.72 0.16 75);
-  --color-error: oklch(0.56 0.21 26);
+  /* La acción principal: negra sobre claro, blanca sobre oscuro. */
+  --color-marca: #1a1a1a;
+  --color-marca-fuerte: #0a0a0a;
+  --color-marca-texto: #ffffff;
+
+  /* La acción que mueve plata. Es el único verde encendido de la interfaz. */
+  --color-accion: #00e64d;
+  --color-accion-texto: #0a0a0a;
+
+  --color-ok: #00a63a;
+  --color-ok-fondo: #e6f9ec;
+  --color-alerta: #e8a200;
+  --color-alerta-fondo: #fff4d6;
+  /* Ámbar oscuro: el amarillo de aviso no se lee sobre su propio fondo. */
+  --color-alerta-tinta: #8a6100;
+  --color-error: #d63131;
+  --color-error-fondo: #fce8e8;
+  --color-error-texto: #ffffff;
+
+  /* La barra de navegación es negra en los dos modos: ancla la pantalla. */
+  --color-barra: #0a0a0a;
+  --color-barra-borde: #2e2e2e;
+  --color-barra-tinta: #b8b8b8;
 
   --radius-caja: 0.625rem;
+
+  --font-ui: var(--fuente-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-titulo: var(--fuente-titulo), var(--fuente-ui), ui-sans-serif, sans-serif;
 }
 
 :root {
   color-scheme: light dark;
 }
 
+/*
+ * Modo oscuro.
+ *
+ * Va en `:root` y no en un `@theme` anidado, aunque eso último se lea mejor:
+ * Tailwind v4 saca los `@theme` de adentro del `@media` y los pega todos al
+ * final, así que un `@theme` oscuro deja la aplicación **siempre** oscura. Se
+ * descubrió con las capturas: la pantalla salía negra con el tema claro pedido.
+ *
+ * Redeclarar las variables acá alcanza porque todas las pantallas las usan con
+ * la forma `bg-(--color-panel)`, que resuelve la variable al pintar.
+ */
 @media (prefers-color-scheme: dark) {
-  @theme {
-    --color-tinta: oklch(0.95 0.008 260);
-    --color-tinta-suave: oklch(0.72 0.015 260);
-    --color-papel: oklch(0.19 0.012 260);
-    --color-panel: oklch(0.24 0.014 260);
-    --color-borde: oklch(0.33 0.016 260);
+  :root {
+    --color-tinta: #f2f2f2;
+    --color-tinta-media: #d4d4d4;
+    --color-tinta-suave: #b8b8b8;
+    --color-papel: #0a0a0a;
+    --color-panel: #171717;
+    --color-borde: #2e2e2e;
+
+    --color-marca: #ffffff;
+    --color-marca-fuerte: #d4d4d4;
+    --color-marca-texto: #0a0a0a;
+
+    /* El verde de la acción no cambia: es la misma tecla en los dos modos. */
+    --color-ok: #00e64d;
+    --color-ok-fondo: #06331a;
+    --color-alerta: #ffc24d;
+    --color-alerta-fondo: #3a2a00;
+    --color-alerta-tinta: #ffc24d;
+    --color-error: #ff6b6b;
+    --color-error-fondo: #3a1212;
+    /* En oscuro el rojo es claro: el texto encima va en tinta, no en blanco. */
+    --color-error-texto: #0a0a0a;
+
+    --color-barra: #000000;
   }
 }
 
@@ -46,15 +107,34 @@ body {
 body {
   background: var(--color-papel);
   color: var(--color-tinta);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
-/* El foco tiene que verse siempre: el POS se opera con teclado. */
+/*
+ * El foco tiene que verse siempre: el POS se opera con teclado.
+ *
+ * Va en verde encendido y no en el color de la acción, que es casi negro: sobre
+ * un botón negro, un foco negro no se ve.
+ */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--color-marca);
+  outline: 3px solid var(--color-accion);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/*
+ * Una cifra de plata.
+ *
+ * Space Grotesk con cifras tabulares y un poco de tracking negativo: es el
+ * número que se lee de costado, parado al lado de la tablet. Se usa para el
+ * total del carrito, los totales del día y la deuda de cada cliente.
+ */
+.cifra {
+  font-family: var(--font-titulo);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 /* Los numeros de plata se leen en columna, alineados. */

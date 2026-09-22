@@ -56,7 +56,7 @@ export default function FormularioDevolucion({
     const h = estado.hecha;
     return (
       <div className="space-y-4">
-        <div className="rounded-(--radius-caja) border-2 border-(--color-ok) bg-(--color-ok)/8 p-4">
+        <div className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-4">
           <p role="status" className="font-semibold text-(--color-ok)">
             {estado.ok}
           </p>
@@ -127,7 +127,7 @@ export default function FormularioDevolucion({
           {venta.cliente ? ` · ${venta.cliente}` : ''}
         </p>
         {venta.yaDevueltoCentavos > 0 ? (
-          <p className="mt-1 text-sm text-(--color-alerta)">
+          <p className="mt-1 text-sm text-(--color-alerta-tinta)">
             De esta venta ya se devolvieron {formatearARS(venta.yaDevueltoCentavos)}.
           </p>
         ) : null}
@@ -208,7 +208,7 @@ export default function FormularioDevolucion({
 
       {/* Si el cliente todavía debe de esta venta, lo primero es bajarle la deuda. */}
       {venta.deudaDelClienteCentavos > 0 && total > 0 ? (
-        <div className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <div className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           <p>
             {venta.cliente ?? 'El cliente'} debe{' '}
             <strong className="tabular">{formatearARS(venta.deudaDelClienteCentavos)}</strong>. Se
@@ -295,7 +295,7 @@ export default function FormularioDevolucion({
       <button
         type="submit"
         disabled={pendiente || total === 0}
-        className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+        className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
       >
         {pendiente ? 'Registrando…' : 'Registrar la devolución'}
       </button>

@@ -55,7 +55,7 @@ export default function FilaGasto({
           <span
             className={`rounded px-1.5 py-0.5 text-xs font-semibold ${
               vencido
-                ? 'bg-(--color-alerta)/15 text-(--color-alerta)'
+                ? 'bg-(--color-alerta-fondo) text-(--color-alerta-tinta)'
                 : 'bg-(--color-papel) text-(--color-tinta-suave)'
             }`}
           >
@@ -63,7 +63,7 @@ export default function FilaGasto({
           </span>
         ) : null}
         {anulado ? (
-          <span className="rounded bg-(--color-error)/15 px-1.5 py-0.5 text-xs font-semibold text-(--color-error)">
+          <span className="rounded bg-(--color-error-fondo) px-1.5 py-0.5 text-xs font-semibold text-(--color-error)">
             Anulado
           </span>
         ) : null}
@@ -113,7 +113,7 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="min-h-10 rounded-(--radius-caja) bg-(--color-ok) px-4 text-sm font-semibold text-white"
+        className="min-h-10 rounded-(--radius-caja) bg-(--color-accion) px-4 text-sm font-semibold text-(--color-accion-texto)"
       >
         Marcar como pagado
       </button>
@@ -178,7 +178,7 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-ok) text-sm font-semibold text-white disabled:opacity-60"
+          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-accion) text-sm font-semibold text-(--color-accion-texto) disabled:opacity-60"
         >
           {pendiente ? 'Registrando…' : `Pagar ${formatearARS(gasto.montoCentavos)}`}
         </button>
@@ -246,7 +246,7 @@ function Anular({ gasto }: { gasto: GastoEnLista }) {
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-error) text-sm font-semibold text-white disabled:opacity-60"
+          className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-error) text-sm font-semibold text-(--color-error-texto) disabled:opacity-60"
         >
           {pendiente ? 'Anulando…' : 'Anular el gasto'}
         </button>

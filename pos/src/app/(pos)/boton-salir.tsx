@@ -29,7 +29,7 @@ export default function BotonSalir({ salir }: { salir: () => Promise<void> }) {
     <form action={alSalir}>
       <button
         type="submit"
-        className="min-h-9 rounded-(--radius-caja) border border-(--color-borde) px-3 font-medium"
+        className="min-h-9 rounded-(--radius-caja) border border-(--color-barra-borde) px-3 text-sm font-medium text-white"
       >
         Salir
       </button>

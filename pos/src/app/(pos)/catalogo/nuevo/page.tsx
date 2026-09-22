@@ -42,7 +42,7 @@ export default async function PaginaNuevoProducto({
         <Link href="/vender" className="text-sm underline underline-offset-2">
           ← Volver a vender
         </Link>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">Cargar un producto</h1>
+        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">Cargar un producto</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           Queda vendible en el acto, sin esperar a la tienda online.
         </p>

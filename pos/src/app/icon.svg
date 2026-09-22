@@ -1,5 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#2f5ee0"/>
-  <path d="M9 8h3.2v12.6H22V24H9V8Z" fill="#fff"/>
-  <circle cx="22.5" cy="10.5" r="2.5" fill="#fff" opacity=".85"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Lucas Innovaciones">
+  <!-- El mismo monograma que /icono.svg, a 32 px: en la pestaña se ve la forma, no las letras. -->
+  <rect width="32" height="32" rx="7" fill="#0A0A0A"/>
+  <g fill="#FFFFFF">
+    <rect x="8" y="9" width="3" height="14"/>
+    <rect x="8" y="20" width="10" height="3"/>
+    <rect x="21" y="9" width="3" height="14"/>
+  </g>
 </svg>

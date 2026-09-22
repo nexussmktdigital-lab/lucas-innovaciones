@@ -51,7 +51,7 @@ export default function BarraOffline({
       {!disponible ? (
         <p
           role="alert"
-          className="rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-3 text-sm font-medium"
+          className="rounded-(--radius-caja) bg-(--color-error-fondo) p-3 text-sm font-medium"
         >
           Este navegador no puede guardar nada: si se corta internet, no se va a poder vender. Usá
           la tablet de siempre, sin ventana privada.
@@ -61,7 +61,7 @@ export default function BarraOffline({
       {!hayConexion ? (
         <div
           role="status"
-          className="rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
         >
           <p className="font-semibold">Sin conexión. Se puede vender igual.</p>
           <p className="mt-0.5 text-(--color-tinta-suave)">
@@ -106,7 +106,7 @@ export default function BarraOffline({
       {trabada ? (
         <p
           role="alert"
-          className="rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-error-fondo) p-3 text-sm"
         >
           <strong>Hay plata cobrada que no puede entrar sola:</strong> {trabada} Avisale al dueño
           antes de cerrar el turno.
@@ -116,7 +116,7 @@ export default function BarraOffline({
       {avisos.length > 0 ? (
         <div
           role="alert"
-          className="rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
         >
           <p className="font-semibold">Entraron ventas con algo para mirar:</p>
           <ul className="mt-1 list-disc pl-5">

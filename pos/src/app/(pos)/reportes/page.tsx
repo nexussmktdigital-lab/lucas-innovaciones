@@ -89,7 +89,7 @@ export default async function PaginaReportes({
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Reportes</h1>
+          <h1 className="font-titulo text-2xl font-bold tracking-tight">Reportes</h1>
           <p className="mt-1 text-sm text-(--color-tinta-suave)">
             {periodo.etiqueta} · del {periodo.desdeISO} al {periodo.hastaISO}
           </p>
@@ -445,8 +445,10 @@ function Dato({
 }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
       {/* Crecer desde cero no es «infinito por ciento»: es un período nuevo. */}
       {cambio === null ? (
         <p className="text-xs text-(--color-tinta-suave)">sin nada antes para comparar</p>

@@ -71,7 +71,7 @@ export default function FormularioImportar({ ejemplo }: { ejemplo: string }) {
           </div>
 
           {r.categoriasNuevas.length > 0 ? (
-            <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+            <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
               Estas categorías todavía no existen en el catálogo y se van a crear:{' '}
               <strong>{r.categoriasNuevas.join(', ')}</strong>. Si alguna está escrita distinto a
               como ya la tenés, corregila en la planilla antes de importar.
@@ -86,8 +86,8 @@ export default function FormularioImportar({ ejemplo }: { ejemplo: string }) {
                   x.destino === 'alta'
                     ? 'bg-(--color-papel)'
                     : x.destino === 'repetido'
-                      ? 'bg-(--color-alerta)/10'
-                      : 'bg-(--color-error)/10'
+                      ? 'bg-(--color-alerta-fondo)'
+                      : 'bg-(--color-error-fondo)'
                 }`}
               >
                 <span className="tabular w-8 shrink-0 text-xs text-(--color-tinta-suave)">
@@ -120,7 +120,7 @@ export default function FormularioImportar({ ejemplo }: { ejemplo: string }) {
               <button
                 type="submit"
                 disabled={importando}
-                className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+                className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
               >
                 {importando ? 'Cargando…' : `Cargar los ${r.altas}`}
               </button>

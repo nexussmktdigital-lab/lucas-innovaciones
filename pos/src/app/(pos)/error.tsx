@@ -35,9 +35,9 @@ export default function ErrorDelPos({
 
   return (
     <div className="mx-auto max-w-lg pt-12 text-center">
-      <h1 className="text-2xl font-bold tracking-tight">Esta pantalla no cargó</h1>
+      <h1 className="font-titulo text-2xl font-bold tracking-tight">Esta pantalla no cargó</h1>
 
-      <p className="mt-3 rounded-(--radius-caja) border-2 border-(--color-ok) bg-(--color-ok)/8 p-3 font-semibold text-(--color-ok)">
+      <p className="mt-3 rounded-(--radius-caja) bg-(--color-ok-fondo) p-3 font-semibold text-(--color-ok)">
         No se cobró nada y no se perdió ninguna venta.
       </p>
 
@@ -50,7 +50,7 @@ export default function ErrorDelPos({
         <button
           type="button"
           onClick={reset}
-          className="min-h-12 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-6 font-semibold text-white"
+          className="min-h-12 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-6 font-semibold text-(--color-marca-texto)"
         >
           Probar de nuevo
         </button>

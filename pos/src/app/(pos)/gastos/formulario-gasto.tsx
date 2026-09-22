@@ -57,7 +57,7 @@ export default function FormularioGasto({
         <button
           type="button"
           onClick={() => setAbierto(true)}
-          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-white"
+          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-(--color-marca-texto)"
         >
           + Cargar un gasto
         </button>
@@ -251,7 +251,7 @@ export default function FormularioGasto({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-11 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-white disabled:opacity-60"
+          className="min-h-11 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? 'Guardando…' : 'Guardar el gasto'}
         </button>

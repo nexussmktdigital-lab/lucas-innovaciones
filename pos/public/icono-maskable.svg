@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Lucas Innovaciones">
-  <rect width="512" height="512" fill="#1f2937"/>
-  <text x="256" y="316" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="180" font-weight="700" fill="#ffffff" letter-spacing="-6">LI</text>
+  <!--
+    La versión enmascarable: sangra hasta el borde y el monograma entra en el
+    80% central, que es lo único que Android garantiza que no se recorta.
+  -->
+  <rect width="512" height="512" fill="#0A0A0A"/>
+  <g fill="#FFFFFF">
+    <rect x="171" y="180" width="32" height="152"/>
+    <rect x="171" y="300" width="108" height="32"/>
+    <rect x="309" y="180" width="32" height="152"/>
+  </g>
 </svg>

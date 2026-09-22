@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { elegirVendedor } from './ayudas';
 
 /**
  * Gastos y cuentas monetarias, de punta a punta.
@@ -209,7 +210,7 @@ test('no se puede transferir más de lo que hay', async ({ page }) => {
 test('el vendedor no ve los gastos ni las cuentas', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();

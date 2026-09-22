@@ -57,7 +57,7 @@ export default function FormularioAlta({
   if (estado.ok && estado.creado) {
     return (
       <div className="space-y-4">
-        <div className="rounded-(--radius-caja) border-2 border-(--color-ok) bg-(--color-ok)/8 p-4">
+        <div className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-4">
           <p role="status" className="font-semibold text-(--color-ok)">
             {estado.ok}
           </p>
@@ -77,7 +77,7 @@ export default function FormularioAlta({
         <div className="flex flex-wrap gap-2">
           <Link
             href="/vender"
-            className="min-h-12 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-4 text-center leading-[3rem] font-semibold text-white"
+            className="min-h-12 flex-1 rounded-(--radius-caja) bg-(--color-marca) px-4 text-center leading-[3rem] font-semibold text-(--color-marca-texto)"
           >
             Venderlo ahora
           </Link>
@@ -148,7 +148,7 @@ export default function FormularioAlta({
                 {propuesta.esServicio ? ' · es un servicio' : ''}
               </p>
               {propuesta.confianza !== 'alta' ? (
-                <p className="mt-1 text-xs text-(--color-alerta)">
+                <p className="mt-1 text-xs text-(--color-alerta-tinta)">
                   No está seguro de esta lectura. Revisala antes de guardar.
                 </p>
               ) : null}
@@ -317,7 +317,7 @@ export default function FormularioAlta({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+          className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? 'Cargando…' : 'Cargar y poder venderlo'}
         </button>

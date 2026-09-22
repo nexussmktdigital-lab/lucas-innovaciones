@@ -22,7 +22,7 @@ export default function Devoluciones({ pendientes }: { pendientes: DevolucionPen
   return (
     <section
       aria-labelledby="devoluciones"
-      className="rounded-(--radius-caja) border-2 border-(--color-alerta) bg-(--color-alerta)/8 p-4"
+      className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4"
     >
       <h2 id="devoluciones" className="text-sm font-semibold">
         Le debemos {formatearARS(total)}
@@ -63,7 +63,7 @@ function Fila({ devolucion }: { devolucion: DevolucionPendiente }) {
         <button
           type="button"
           onClick={() => setAbierto(true)}
-          className="mt-2 min-h-10 rounded-(--radius-caja) bg-(--color-ok) px-4 text-sm font-semibold text-white"
+          className="mt-2 min-h-10 rounded-(--radius-caja) bg-(--color-accion) px-4 text-sm font-semibold text-(--color-accion-texto)"
         >
           Ya se le devolvió
         </button>
@@ -97,7 +97,7 @@ function Fila({ devolucion }: { devolucion: DevolucionPendiente }) {
           <button
             type="submit"
             disabled={pendiente}
-            className="min-h-10 rounded-(--radius-caja) bg-(--color-ok) px-4 text-sm font-semibold text-white disabled:opacity-60"
+            className="min-h-10 rounded-(--radius-caja) bg-(--color-accion) px-4 text-sm font-semibold text-(--color-accion-texto) disabled:opacity-60"
           >
             {pendiente ? 'Anotando…' : 'Confirmar'}
           </button>

@@ -148,7 +148,7 @@ export default function FormularioTransferencia({ cuentas }: { cuentas: CuentaCo
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-11 flex-1 rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+          className="min-h-11 flex-1 rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? 'Pasando…' : 'Pasar la plata'}
         </button>

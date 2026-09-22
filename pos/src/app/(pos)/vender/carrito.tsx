@@ -68,15 +68,6 @@ export default function Carrito({
             </span>
           ) : null}
         </h2>
-        {!vacio ? (
-          <button
-            type="button"
-            onClick={onVaciar}
-            className="text-sm text-(--color-tinta-suave) underline underline-offset-2"
-          >
-            Vaciar
-          </button>
-        ) : null}
       </div>
 
       {vacio ? (
@@ -218,7 +209,7 @@ export default function Carrito({
             ) : null}
 
             {puedeFiar && elegido && elegido.saldoCentavos > 0 ? (
-              <p className="mt-1 text-xs text-(--color-alerta)">
+              <p className="mt-1 text-xs text-(--color-alerta-tinta)">
                 Ya debe{' '}
                 <span className="tabular font-semibold">
                   {formatearARS(elegido.saldoCentavos)}
@@ -245,7 +236,7 @@ export default function Carrito({
                     }
                     className={`min-h-8 rounded-(--radius-caja) border px-2 font-medium ${
                       activo
-                        ? 'border-(--color-marca) bg-(--color-marca) text-white'
+                        ? 'border-(--color-marca) bg-(--color-marca) text-(--color-marca-texto)'
                         : 'border-(--color-borde)'
                     }`}
                   >
@@ -282,20 +273,40 @@ export default function Carrito({
               </div>
             ) : null}
             <div className="flex items-baseline justify-between pt-1">
-              <dt className="font-semibold">Total</dt>
-              <dd className="tabular text-2xl font-bold">
+              <dt className="text-base text-(--color-tinta-suave)">Total</dt>
+              {/* El número más grande de la pantalla: se lee de costado. */}
+              <dd className="cifra text-4xl leading-none">
                 {formatearARS(totales.totalCentavos)}
               </dd>
             </div>
           </dl>
 
+          {/*
+            Cobrar es el único verde de la interfaz: el verde está reservado
+            para lo que mueve plata, así se encuentra sin leer.
+          */}
           <button
             type="button"
             onClick={onCobrar}
-            className="min-h-14 w-full rounded-(--radius-caja) bg-(--color-marca) text-lg font-bold text-white transition hover:bg-(--color-marca-fuerte)"
+            className="min-h-15 w-full rounded-(--radius-caja) bg-(--color-accion) text-xl font-bold text-(--color-accion-texto)"
           >
-            Cobrar <kbd className="ml-1 text-sm font-normal opacity-75">F12</kbd>
+            Cobrar <kbd className="ml-1 text-sm font-semibold opacity-70">F12</kbd>
           </button>
+
+          {/*
+            Vaciar el carrito queda abajo, centrado y en contorno rojo, lejos
+            del botón de cobrar: es lo que no se toca por error con el cliente
+            esperando.
+          */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={onVaciar}
+              className="min-h-11 rounded-(--radius-caja) border-[1.5px] border-(--color-error) px-4 text-sm font-semibold text-(--color-error)"
+            >
+              Vaciar carrito
+            </button>
+          </div>
         </>
       ) : null}
     </div>

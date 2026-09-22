@@ -30,7 +30,7 @@ export default async function PaginaDevoluciones() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Devoluciones</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Devoluciones</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           Para una venta de un turno que ya se cerró. La venta queda como está y la plata sale del
           cajón de hoy.
@@ -38,7 +38,7 @@ export default async function PaginaDevoluciones() {
       </div>
 
       {!caja ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           No hay una caja abierta. Una devolución mueve plata de un cajón concreto, así que hay
           que{' '}
           <Link href="/caja" className="font-semibold underline underline-offset-2">

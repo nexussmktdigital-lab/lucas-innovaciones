@@ -39,7 +39,7 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
           <Link href="/caja" className="sin-imprimir text-sm underline underline-offset-2">
             ← Caja
           </Link>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">
+          <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">
             Lucas Innovaciones · turno de {r.terminal}
             {r.abierta ? ' · abierto' : ''}
           </h1>
@@ -54,7 +54,7 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
       </div>
 
       {r.abierta ? (
-        <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           Este turno sigue abierto, así que los números todavía se mueven.
         </p>
       ) : null}
@@ -127,7 +127,7 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
                 className={`flex justify-between font-bold ${
                   (r.diferenciaCentavos ?? 0) === 0
                     ? 'text-(--color-ok)'
-                    : 'text-(--color-alerta)'
+                    : 'text-(--color-alerta-tinta)'
                 }`}
               >
                 <dt>Diferencia</dt>
@@ -141,7 +141,7 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
             abrió declarando menos plata de la que había en el cajón. Dicho
             así se arregla mañana; como un signo menos, no lo mira nadie. */}
         {r.efectivoEsperadoCentavos < 0 ? (
-          <p className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm">
+          <p className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
             El esperado da negativo: del cajón salió más plata de la que se declaró al abrir el
             turno. La apertura quedó corta, no es un error de las ventas.
           </p>
@@ -269,8 +269,10 @@ export default async function PaginaReporte({ params }: { params: Promise<{ id: 
 function Dato({ titulo, valor }: { titulo: string; valor: string }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
     </div>
   );
 }

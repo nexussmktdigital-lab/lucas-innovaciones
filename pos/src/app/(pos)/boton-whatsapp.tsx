@@ -52,7 +52,7 @@ export default function BotonWhatsApp({
   }
 
   const clase = destacado
-    ? 'inline-flex min-h-10 items-center rounded-(--radius-caja) bg-(--color-ok) px-4 text-sm font-semibold text-white'
+    ? 'inline-flex min-h-10 items-center rounded-(--radius-caja) border-[1.5px] border-(--color-marca) px-4 text-sm font-semibold'
     : 'text-sm font-medium underline underline-offset-2';
 
   function alHacerClic(e: React.MouseEvent<HTMLAnchorElement>) {
@@ -74,7 +74,7 @@ export default function BotonWhatsApp({
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {aviso && confirmando ? (
-        <span role="alert" className="text-xs font-medium text-(--color-alerta)">
+        <span role="alert" className="text-xs font-medium text-(--color-alerta-tinta)">
           {aviso} ¿Le escribís igual?
         </span>
       ) : null}

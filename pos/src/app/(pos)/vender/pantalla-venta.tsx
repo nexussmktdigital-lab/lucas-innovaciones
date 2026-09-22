@@ -409,7 +409,7 @@ export default function PantallaVenta({
         {aviso ? (
           <p
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
           >
             {aviso}
           </p>
@@ -418,7 +418,7 @@ export default function PantallaVenta({
         {ultimoTicket ? (
           <p
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
           >
             La venta <strong>{ultimoTicket.numero}</strong> quedó registrada, pero el navegador
             bloqueó la ventana del comprobante.{' '}
@@ -439,7 +439,7 @@ export default function PantallaVenta({
         {ticketSinConexion ? (
           <p
             role="alert"
-            className="mt-3 rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+            className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
           >
             La venta quedó cobrada y guardada, pero el navegador bloqueó la ventana del
             comprobante.{' '}
@@ -471,13 +471,13 @@ export default function PantallaVenta({
           ) : (
             <>
               <span>·</span>
-              <span className="font-semibold text-(--color-alerta)">Sin cotización</span>
+              <span className="font-semibold text-(--color-alerta-tinta)">Sin cotización</span>
             </>
           )}
           {pendientesDeSync > 0 ? (
             <>
               <span>·</span>
-              <span className="font-semibold text-(--color-alerta)">
+              <span className="font-semibold text-(--color-alerta-tinta)">
                 {pendientesDeSync} sin sincronizar
               </span>
             </>

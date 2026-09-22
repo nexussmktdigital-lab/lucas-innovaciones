@@ -58,7 +58,7 @@ export default function FormularioPrecioLocal({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 text-sm font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? '…' : 'Guardar'}
         </button>
@@ -72,7 +72,7 @@ export default function FormularioPrecioLocal({
       </div>
 
       {esUsd ? (
-        <p className="max-w-72 text-right text-xs text-(--color-alerta)">
+        <p className="max-w-72 text-right text-xs text-(--color-alerta-tinta)">
           Este producto está en dólares: un precio fijo en pesos deja de seguir la cotización.
         </p>
       ) : null}

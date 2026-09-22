@@ -26,7 +26,7 @@ export default async function PaginaMensajes() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Mensajes de WhatsApp</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Mensajes de WhatsApp</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           El sistema arma el mensaje y abre el chat con el texto ya escrito. Enviar lo aprieta la
           persona: por eso acá dice «preparado» y nunca «enviado».
@@ -90,8 +90,10 @@ export default async function PaginaMensajes() {
 function Dato({ titulo, valor }: { titulo: string; valor: string }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
     </div>
   );
 }

@@ -61,60 +61,61 @@ export default async function PaginaInicio() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <h1 className="text-2xl font-bold tracking-tight">Estado del sistema</h1>
-
-      {cotizacion.aviso ? (
-        <p
-          role="alert"
-          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+      {/*
+        Una sola acción principal en toda la pantalla: «Ir a vender», negra y
+        arriba a la derecha, donde cae la mano. Todo lo demás de Inicio es
+        lectura, y por eso no compite con ningún otro botón.
+      */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Estado del sistema</h1>
+        <Link
+          href="/vender"
+          className="flex min-h-13 items-center rounded-(--radius-caja) bg-(--color-marca) px-6 font-bold text-(--color-marca-texto)"
         >
-          {cotizacion.aviso}{' '}
-          {esDuenio ? (
-            <Link href="/cotizacion" className="font-semibold underline underline-offset-2">
-              Cargar una a mano
-            </Link>
-          ) : null}
-        </p>
-      ) : null}
+          Ir a vender
+        </Link>
+      </div>
 
-      {cola.pendientes + cola.fallidas > 0 ? (
-        <p
-          className={`rounded-(--radius-caja) border p-3 text-sm ${
-            cola.fallidas > 0
-              ? 'border-(--color-error) bg-(--color-error)/10'
-              : 'border-(--color-alerta) bg-(--color-alerta)/10'
-          }`}
-        >
-          Hay <strong>{cola.pendientes + cola.fallidas}</strong> ajuste
-          {cola.pendientes + cola.fallidas === 1 ? '' : 's'} de stock esperando llegar a
-          WooCommerce
-          {cola.fallidas > 0
-            ? `, ${cola.fallidas} de ellos ya sin reintentos`
-            : ''}
-          . Las ventas están registradas.{' '}
-          {esDuenio ? (
-            <Link href="/sincronizacion" className="font-semibold underline underline-offset-2">
-              Ver la cola
-            </Link>
-          ) : null}
-        </p>
-      ) : null}
+      {/* Los avisos, todos con la misma forma: punto de color, fondo del color
+          y, si hay a dónde ir, un botón en contorno al costado. */}
+      <div className="flex flex-col gap-2.5 empty:hidden">
+        {cotizacion.aviso ? (
+          <Aviso
+            color="alerta"
+            alerta
+            accion={esDuenio ? { href: '/cotizacion', etiqueta: 'Cargar una a mano' } : null}
+          >
+            {cotizacion.aviso}
+          </Aviso>
+        ) : null}
+
+        {cola.pendientes + cola.fallidas > 0 ? (
+          <Aviso
+            color={cola.fallidas > 0 ? 'error' : 'alerta'}
+            accion={esDuenio ? { href: '/sincronizacion', etiqueta: 'Ver la cola' } : null}
+          >
+            Hay <strong>{cola.pendientes + cola.fallidas}</strong> ajuste
+            {cola.pendientes + cola.fallidas === 1 ? '' : 's'} de stock esperando llegar a
+            WooCommerce
+            {cola.fallidas > 0 ? `, ${cola.fallidas} de ellos ya sin reintentos` : ''}. Las ventas
+            están registradas.
+          </Aviso>
+        ) : null}
+
+        {aPagar.vencidos > 0 ? (
+          <Aviso
+            color="alerta"
+            alerta
+            accion={{ href: '/gastos', etiqueta: 'Ver los gastos' }}
+          >
+            Hay <strong>{aPagar.vencidos}</strong> gasto{aPagar.vencidos === 1 ? '' : 's'} vencido
+            {aPagar.vencidos === 1 ? '' : 's'} sin pagar, de un total pendiente de{' '}
+            <strong>{formatearARS(aPagar.totalCentavos)}</strong>.
+          </Aviso>
+        ) : null}
+      </div>
 
       {porConfigurar.length > 0 ? <PorConfigurar chequeos={porConfigurar} /> : null}
-
-      {aPagar.vencidos > 0 ? (
-        <p
-          role="alert"
-          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
-        >
-          Hay <strong>{aPagar.vencidos}</strong> gasto{aPagar.vencidos === 1 ? '' : 's'} vencido
-          {aPagar.vencidos === 1 ? '' : 's'} sin pagar, de un total pendiente de{' '}
-          <strong>{formatearARS(aPagar.totalCentavos)}</strong>.{' '}
-          <Link href="/gastos" className="font-semibold underline underline-offset-2">
-            Ver los gastos
-          </Link>
-        </p>
-      ) : null}
 
       <Marcador meses={marcador} />
 
@@ -125,7 +126,7 @@ export default async function PaginaInicio() {
         {cotizacion.vigente ? (
           <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
             <div className="flex flex-wrap items-baseline gap-x-3">
-              <p className="tabular text-2xl font-bold">
+              <p className="cifra text-[32px] leading-none">
                 {formatearARS(cotizacion.vigente.valorCentavos)}
               </p>
               <p className="text-sm text-(--color-tinta-suave)">
@@ -143,7 +144,7 @@ export default async function PaginaInicio() {
             </p>
           </div>
         ) : (
-          <p className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-4 text-sm">
+          <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-4 text-sm">
             No hay cotización cargada. Los productos en dólares no se pueden vender.
           </p>
         )}
@@ -185,6 +186,49 @@ export default async function PaginaInicio() {
 }
 
 /**
+ * Un aviso de Inicio.
+ *
+ * Todos iguales: punto de color, fondo del color y, si hay a dónde ir, un botón
+ * en contorno al costado. El color del estado no decora —dice de qué se trata—,
+ * así que el fondo alcanza y el borde sobra.
+ */
+function Aviso({
+  color,
+  alerta,
+  accion,
+  children,
+}: {
+  color: 'error' | 'alerta';
+  /** `role="alert"` para lo que hay que leer sí o sí. */
+  alerta?: boolean;
+  accion: { href: string; etiqueta: string } | null;
+  children: React.ReactNode;
+}) {
+  const fondo = color === 'error' ? 'bg-(--color-error-fondo)' : 'bg-(--color-alerta-fondo)';
+  const punto = color === 'error' ? 'bg-(--color-error)' : 'bg-(--color-alerta)';
+
+  return (
+    <div
+      role={alerta ? 'alert' : undefined}
+      className={`flex items-start gap-3 rounded-(--radius-caja) p-4 ${fondo}`}
+    >
+      <span className={`mt-2 size-2.5 shrink-0 rounded-full ${punto}`} aria-hidden />
+      <div className="flex flex-1 flex-wrap items-center justify-between gap-3">
+        <p className="flex-1 text-[15px] leading-snug">{children}</p>
+        {accion ? (
+          <Link
+            href={accion.href}
+            className="flex min-h-11 shrink-0 items-center rounded-(--radius-caja) border-[1.5px] border-(--color-tinta) px-4 text-sm font-semibold"
+          >
+            {accion.etiqueta}
+          </Link>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Lo que quedo sin configurar afuera del repositorio.
  *
  * Aparece solo cuando hay algo que arreglar y desaparece cuando se arregla: un
@@ -197,10 +241,8 @@ function PorConfigurar({ chequeos }: { chequeos: Chequeo[] }) {
   return (
     <section
       aria-labelledby="configuracion"
-      className={`rounded-(--radius-caja) border p-4 ${
-        hayFaltantes
-          ? 'border-(--color-error) bg-(--color-error)/8'
-          : 'border-(--color-alerta) bg-(--color-alerta)/8'
+      className={`rounded-(--radius-caja) p-4 ${
+        hayFaltantes ? 'bg-(--color-error-fondo)' : 'bg-(--color-alerta-fondo)'
       }`}
     >
       <h2 id="configuracion" className="text-sm font-semibold">
@@ -265,8 +307,8 @@ function Marcador({ meses }: { meses: MesDeFacturacion[] }) {
       <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
         <div className="flex flex-wrap items-baseline gap-x-3">
           <p
-            className={`tabular text-4xl font-bold ${
-              cumple ? 'text-(--color-ok)' : 'text-(--color-alerta)'
+            className={`cifra text-[40px] leading-none ${
+              cumple ? 'text-(--color-ok)' : 'text-(--color-alerta-tinta)'
             }`}
           >
             {actual.porcentaje}%
@@ -322,8 +364,10 @@ function porcentaje(parte: number, total: number): string {
 function Dato({ titulo, valor, detalle }: { titulo: string; valor: string; detalle?: string }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
       {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}
     </div>
   );

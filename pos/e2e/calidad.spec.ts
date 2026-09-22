@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { elegirVendedor } from './ayudas';
 
 /**
  * Dólares y calidad de datos.
@@ -151,7 +152,7 @@ test('al vendedor lo frena del todo, y le dice cómo salir', async ({ page }) =>
 test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
@@ -179,7 +180,7 @@ test('el dueño ve lo que quedó sin configurar, y el vendedor no', async ({ pag
   // Al vendedor no le sirve de nada y no es asunto suyo.
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();

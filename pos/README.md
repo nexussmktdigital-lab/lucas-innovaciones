@@ -955,6 +955,53 @@ producto en dólares.
 
 ---
 
+## Cómo se ve: el sistema visual de la marca
+
+Todas las pantallas están armadas sobre el diseño de marca de Lucas
+Innovaciones. Los colores, los tamaños y la tipografía viven en un solo lugar
+—`src/app/globals.css`— y las pantallas los usan siempre por nombre, nunca con
+un color escrito a mano.
+
+**Dos reglas explican toda la paleta.**
+
+1. **El negro es la acción, el verde es la plata.** La acción principal de cada
+   pantalla es negra (blanca en modo oscuro): «Ir a vender», «Recibir un pago»,
+   «Cerrar el turno». El verde encendido queda reservado para el único botón que
+   mueve plata de verdad —«Cobrar» en el carrito, «Cerrar caja» en el arqueo—,
+   así no compite con nada y se encuentra sin leer.
+2. **El color del estado no decora.** Verde, amarillo y rojo significan al día,
+   por vencer y vencido, y nada más. Cada uno tiene su tinta (`--color-alerta`)
+   y su fondo suave (`--color-alerta-fondo`); los avisos usan el fondo, sin
+   borde de color, para que el que importa se vea de lejos.
+
+**La tipografía.** Inter para leer e **Space Grotesk para las cifras**. La clase
+`.cifra` —Space Grotesk, cifras tabulares, tracking apretado— se usa en el total
+del carrito, en los totales del día y en la deuda de cada cliente: es el número
+que se lee parado, de costado, con el cliente enfrente. Las dos fuentes se
+sirven desde el propio dominio (`next/font/google`) porque la tablet del
+mostrador trabaja sin conexión.
+
+**La barra.** Negra en los dos modos, con las cinco secciones de todos los días
+(Inicio, Vender, Caja, Ventas, Fiado) y un cajón «Más» donde viven las otras
+ocho, agrupadas por para qué sirven: la plata, el catálogo y la atención. Las
+teclas de función siguen funcionando para lo que está guardado en el cajón: F6
+abre Gastos aunque Gastos no esté a la vista. Al lado del nombre del usuario, una
+pastilla dice si la caja está abierta: es el dato que decide qué se puede hacer.
+
+**El ícono** (`public/icono.svg`, `public/icono-maskable.svg`,
+`src/app/icon.svg`) es el monograma LI dibujado con rectángulos y no con texto:
+aparece a 28 px en la barra y a 512 en la pantalla de inicio de la tablet, y en
+ninguno de los dos casos se puede depender de que la fuente esté instalada.
+
+**Una trampa de Tailwind v4, anotada acá porque cuesta una tarde.** Un `@theme`
+adentro de un `@media (prefers-color-scheme: dark)` **no funciona**: Tailwind lo
+saca del `@media` y lo pega al final, así que la aplicación queda siempre
+oscura. El modo oscuro redeclara las variables en un `:root` común dentro del
+`@media`, y alcanza porque todas las pantallas las usan con la forma
+`bg-(--color-panel)`, que resuelve la variable al pintar.
+
+---
+
 ## Tests
 
 ```bash

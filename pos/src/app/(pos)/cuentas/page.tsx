@@ -47,7 +47,7 @@ export default async function PaginaCuentas({
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Cuentas</h1>
+          <h1 className="font-titulo text-2xl font-bold tracking-tight">Cuentas</h1>
           <p className="mt-1 text-sm text-(--color-tinta-suave)">
             Dónde está la plata del negocio. El saldo de cada cuenta es la suma de sus movimientos.
           </p>
@@ -60,7 +60,7 @@ export default async function PaginaCuentas({
       {problemas.length > 0 ? (
         <section
           role="alert"
-          className="rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-4 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-error-fondo) p-4 text-sm"
         >
           <p className="font-semibold text-(--color-error)">
             Hay {problemas.length === 1 ? 'una cuenta' : `${problemas.length} cuentas`} con el saldo

@@ -96,7 +96,7 @@ export default function FormularioPlantillas({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-white disabled:opacity-60"
+          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? 'Guardando…' : 'Guardar los textos'}
         </button>

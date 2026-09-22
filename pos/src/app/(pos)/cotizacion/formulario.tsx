@@ -38,7 +38,7 @@ export default function FormularioCotizacion() {
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-12 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-white disabled:opacity-60"
+          className="min-h-12 rounded-(--radius-caja) bg-(--color-marca) px-5 font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {pendiente ? 'Guardando…' : 'Guardar'}
         </button>
@@ -47,7 +47,7 @@ export default function FormularioCotizacion() {
       {estado.error ? (
         <div
           role="alert"
-          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
         >
           <p className="font-medium">{estado.error}</p>
           {estado.pideConfirmacion ? (

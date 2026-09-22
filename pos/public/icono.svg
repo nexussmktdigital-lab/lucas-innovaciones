@@ -1,5 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Lucas Innovaciones">
-  <rect width="512" height="512" rx="96" fill="#1f2937"/>
-  <text x="256" y="330" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="240" font-weight="700" fill="#ffffff" letter-spacing="-8">LI</text>
+  <!--
+    El monograma, dibujado con rectángulos y no con texto: el ícono aparece a
+    28 px en la barra negra del POS y a 512 en la pantalla de inicio de la
+    tablet, y en ninguno de los dos casos se puede depender de que la fuente
+    esté instalada.
+
+    Negro y blanco, sin verde: el verde está reservado para lo que mueve plata.
+  -->
+  <rect width="512" height="512" rx="112" fill="#0A0A0A"/>
+  <g fill="#FFFFFF">
+    <rect x="133" y="150" width="44" height="212"/>
+    <rect x="133" y="318" width="150" height="44"/>
+    <rect x="335" y="150" width="44" height="212"/>
+  </g>
 </svg>

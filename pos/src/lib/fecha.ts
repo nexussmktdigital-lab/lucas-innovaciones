@@ -28,8 +28,20 @@ const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-AR', {
   hour12: false,
 });
 
+/** Solo la hora, para las listas donde el día ya está dicho arriba. */
+const FORMATO_HORA = new Intl.DateTimeFormat('es-AR', {
+  timeZone: ZONA_HORARIA,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 export function formatearFecha(d: Date): string {
   return FORMATO_FECHA.format(d);
+}
+
+export function formatearHora(d: Date): string {
+  return FORMATO_HORA.format(d);
 }
 
 export function formatearFechaHora(d: Date): string {

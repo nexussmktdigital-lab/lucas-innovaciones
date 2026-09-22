@@ -23,7 +23,7 @@ export default function Botones({ hayFallidas }: { hayFallidas: boolean }) {
           type="button"
           disabled={enCurso}
           onClick={() => correr(sincronizarAhoraAccion)}
-          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-white disabled:opacity-60"
+          className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-semibold text-(--color-marca-texto) disabled:opacity-60"
         >
           {enCurso ? 'Sincronizando…' : 'Sincronizar ahora'}
         </button>

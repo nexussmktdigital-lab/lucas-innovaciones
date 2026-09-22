@@ -23,7 +23,7 @@ export default async function PaginaImportar() {
         <Link href="/catalogo" className="text-sm underline underline-offset-2">
           ← Catálogo
         </Link>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">Importar una planilla</h1>
+        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">Importar una planilla</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           Para cuando llega una entrega entera. Hasta {TOPE_RENGLONES} renglones por vez.
         </p>

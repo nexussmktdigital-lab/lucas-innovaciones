@@ -80,9 +80,11 @@ test('el reporte de hoy cuenta la venta que se acaba de hacer', async ({ page, c
   await asegurarCajaAbierta(page);
 
   await page.goto('/reportes?periodo=hoy');
+  // Las etiquetas de los recuadros van en versalitas por CSS, y `innerText`
+  // devuelve lo que se ve: «VENDIDO». Por eso el corte no mira mayúsculas.
   const antes = page.getByRole('region', { name: 'Lo vendido' });
   const vendidoAntes = aCentavosDeTexto(
-    (await antes.innerText()).split('Vendido')[1]?.split('Ventas')[0] ?? '$ 0,00',
+    (await antes.innerText()).split(/vendido/i)[1]?.split(/ventas/i)[0] ?? '$ 0,00',
   );
 
   await venderUnVidrio(page, context);
@@ -90,7 +92,7 @@ test('el reporte de hoy cuenta la venta que se acaba de hacer', async ({ page, c
   await page.goto('/reportes?periodo=hoy');
   const despues = page.getByRole('region', { name: 'Lo vendido' });
   const vendidoDespues = aCentavosDeTexto(
-    (await despues.innerText()).split('Vendido')[1]?.split('Ventas')[0] ?? '$ 0,00',
+    (await despues.innerText()).split(/vendido/i)[1]?.split(/ventas/i)[0] ?? '$ 0,00',
   );
 
   expect(vendidoDespues).toBeGreaterThan(vendidoAntes);

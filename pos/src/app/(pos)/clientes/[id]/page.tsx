@@ -53,7 +53,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
         <Link href="/clientes" className="text-sm underline underline-offset-2">
           ← Clientes
         </Link>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">{cliente.nombre}</h1>
+        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">{cliente.nombre}</h1>
         <div className="mt-1 flex flex-wrap gap-x-3 text-sm text-(--color-tinta-suave)">
           {cliente.telefonoRaw ? <span>{cliente.telefonoRaw}</span> : null}
           {cliente.dni ? <span>DNI {cliente.dni}</span> : null}
@@ -79,7 +79,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
             <p className="text-sm text-(--color-tinta-suave)">Deuda</p>
             <p
               className={`tabular text-3xl font-bold ${
-                cliente.saldoCentavos > 0 ? 'text-(--color-alerta)' : 'text-(--color-ok)'
+                cliente.saldoCentavos > 0 ? 'text-(--color-alerta-tinta)' : 'text-(--color-ok)'
               }`}
             >
               {formatearARS(cliente.saldoCentavos)}
@@ -94,7 +94,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           {cliente.saldoCentavos > 0 ? (
             <Link
               href="/fiado"
-              className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 py-2.5 font-semibold text-white"
+              className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 py-2.5 font-semibold text-(--color-marca-texto)"
             >
               Recibir un pago
             </Link>

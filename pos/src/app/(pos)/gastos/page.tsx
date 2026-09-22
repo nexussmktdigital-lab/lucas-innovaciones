@@ -55,7 +55,7 @@ export default async function PaginaGastos({
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gastos</h1>
+          <h1 className="font-titulo text-2xl font-bold tracking-tight">Gastos</h1>
           <p className="mt-1 text-sm text-(--color-tinta-suave)">
             Lo que sale del negocio. Un gasto en efectivo sale del cajón del turno y el arqueo lo
             descuenta; uno por transferencia sale del banco.
@@ -78,7 +78,7 @@ export default async function PaginaGastos({
           aria-labelledby="pendientes"
           className={`rounded-(--radius-caja) border-2 p-4 ${
             totales.vencidos > 0
-              ? 'border-(--color-alerta) bg-(--color-alerta)/8'
+              ? 'border-(--color-alerta) bg-(--color-alerta-fondo)'
               : 'border-(--color-borde) bg-(--color-panel)'
           }`}
         >
@@ -96,7 +96,7 @@ export default async function PaginaGastos({
                   <span
                     className={`text-xs ${
                       g.vencimiento < hoy
-                        ? 'font-semibold text-(--color-alerta)'
+                        ? 'font-semibold text-(--color-alerta-tinta)'
                         : 'text-(--color-tinta-suave)'
                     }`}
                   >
@@ -251,8 +251,10 @@ export default async function PaginaGastos({
 function Dato({ titulo, valor, detalle }: { titulo: string; valor: string; detalle?: string }) {
   return (
     <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
-      <p className="text-sm text-(--color-tinta-suave)">{titulo}</p>
-      <p className="tabular mt-1 text-2xl font-bold">{valor}</p>
+      <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
+        {titulo}
+      </p>
+      <p className="cifra mt-1 text-[32px] leading-tight">{valor}</p>
       {detalle ? <p className="text-xs text-(--color-tinta-suave)">{detalle}</p> : null}
     </div>
   );

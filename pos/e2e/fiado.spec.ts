@@ -454,7 +454,7 @@ test('se fía en cuotas y la pantalla dice cuándo vence cada una', async ({ pag
   await page.goto('/fiado');
   const tarjeta = page.getByRole('listitem').filter({ hasText: CLIENTE });
   await expect(tarjeta).toContainText('Al día');
-  await expect(tarjeta).toContainText('cuota 1 de 3');
+  await expect(tarjeta).toContainText('Cuota 1 de 3');
   await expect(tarjeta).toContainText('Paga por mes');
 });
 
@@ -468,7 +468,8 @@ test('el semáforo separa al atrasado del que está al día', async ({ page }) =
   await expect(atrasado).toContainText('Vencido y sin pagar');
 
   const porVencer = page.getByRole('listitem').filter({ hasText: 'Gaby González' });
-  await expect(porVencer).toContainText(/vence (hoy|en \d+ días)/);
+  // La pastilla dice «Vence en 2 días» y el cuerpo «vence el 24/09/2026».
+  await expect(porVencer).toContainText(/[Vv]ence (hoy|en \d+ días)/);
 
   const alDia = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
   await expect(alDia).toContainText('Al día');
@@ -477,8 +478,8 @@ test('el semáforo separa al atrasado del que está al día', async ({ page }) =
   const sinPlan = page.getByRole('listitem').filter({ hasText: 'Cristian Ludueña' });
   await expect(sinPlan).not.toContainText('cuota');
 
-  // Y el resumen de arriba cuenta a los atrasados.
-  await expect(page.getByText('Atrasados')).toBeVisible();
+  // Y el cartel rojo de arriba dice cuántos son y cuánto deben entre todos.
+  await expect(page.getByText(/\d+ clientes? con la cuota vencida/)).toBeVisible();
 });
 
 test('el mensaje de WhatsApp no es el mismo para el atrasado que para el que está al día', async ({

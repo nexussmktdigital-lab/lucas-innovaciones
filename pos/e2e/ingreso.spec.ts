@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { abrirCajon, elegirVendedor } from './ayudas';
 
 /**
  * Ingreso al POS.
@@ -20,29 +21,34 @@ test('sin sesión, cualquier ruta lleva al ingreso', async ({ page }) => {
 test('el vendedor entra con su PIN', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
 
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
-  await expect(page.getByText('Vendedor', { exact: true })).toBeVisible();
+  // La barra dice con qué nombre se está trabajando: en un mostrador con dos
+  // personas, entrar con el PIN de la otra es el error que hay que poder ver.
+  await expect(page.getByRole('banner')).toContainText('Vendedor de mostrador');
 });
 
 test('el vendedor no ve el menú de reportes', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
+  // Ni en la barra ni adentro del cajón: Reportes no es suyo.
   await expect(page.getByRole('navigation').getByText('Reportes')).toHaveCount(0);
+  const cajon = await abrirCajon(page);
+  await expect(cajon.getByRole('link', { name: 'Reportes' })).toHaveCount(0);
 });
 
 test('un PIN equivocado no deja pasar', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill('9876');
   await page.getByRole('button', { name: 'Entrar' }).click();
 
@@ -61,7 +67,9 @@ test('el dueño entra con email y contraseña y ve el estado del catálogo', asy
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
   // El seed carga 27 productos, 3 de ellos en dólares.
   await expect(page.getByText('Espejo del catálogo')).toBeVisible();
-  await expect(page.getByRole('navigation').getByText('Reportes')).toBeVisible();
+  // Reportes vive en el cajón de «Más» desde el rediseño.
+  const cajon = await abrirCajon(page);
+  await expect(cajon.getByRole('link', { name: 'Reportes' })).toBeVisible();
 });
 
 test('el dueño ve el tipo de cambio y la conversión de un iPhone', async ({ page }) => {
@@ -84,7 +92,7 @@ test('el dueño ve el tipo de cambio y la conversión de un iPhone', async ({ pa
 test('se puede salir de la sesión', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
-  await page.getByRole('radio', { name: 'Vendedor de mostrador' }).check();
+  await elegirVendedor(page, 'Vendedor de mostrador');
   await page.getByLabel('PIN').fill(PIN);
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();

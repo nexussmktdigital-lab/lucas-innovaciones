@@ -145,7 +145,7 @@ export default function Buscador({
               en el catálogo, que es del servidor. Se dice, en vez de ofrecer un
               botón que no va a hacer nada. */}
           {!hayConexion ? (
-            <p className="mt-2 text-(--color-alerta)">
+            <p className="mt-2 text-(--color-alerta-tinta)">
               Se está buscando en el catálogo guardado
               {catalogo ? '' : ', que todavía está vacío'}. Cargar un producto nuevo necesita
               conexión.
@@ -188,7 +188,7 @@ export default function Buscador({
                     {r.sku ? <span>{r.sku}</span> : null}
                     {r.marca ? <span>· {r.marca}</span> : null}
                     {disponible !== null ? (
-                      <span className={disponible <= 1 ? 'font-semibold text-(--color-alerta)' : ''}>
+                      <span className={disponible <= 1 ? 'font-semibold text-(--color-alerta-tinta)' : ''}>
                         · {disponible} en stock
                       </span>
                     ) : (

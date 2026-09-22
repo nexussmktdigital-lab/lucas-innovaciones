@@ -91,7 +91,7 @@ export default function FormularioCierre({
     return (
       <div
         role="alert"
-        className="rounded-(--radius-caja) border-2 border-(--color-error) bg-(--color-error)/10 p-4 text-sm"
+        className="rounded-(--radius-caja) bg-(--color-error-fondo) p-4 text-sm"
       >
         <p className="font-semibold">
           No se puede cerrar el turno: {esperando}{' '}
@@ -111,7 +111,7 @@ export default function FormularioCierre({
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="min-h-12 w-full rounded-(--radius-caja) border-2 border-(--color-borde) font-semibold"
+        className="min-h-13 w-full rounded-(--radius-caja) bg-(--color-marca) font-bold text-(--color-marca-texto)"
       >
         Cerrar el turno
       </button>
@@ -227,17 +227,27 @@ export default function FormularioCierre({
 
       {diferencia !== null && hayAlgoContado && diferencia !== 0 ? (
         <div
-          className={`rounded-(--radius-caja) p-3 text-sm ${
-            diferencia > 0
-              ? 'bg-(--color-alerta)/10 text-(--color-alerta)'
-              : 'bg-(--color-error)/10 text-(--color-error)'
+          className={`rounded-(--radius-caja) p-4 text-sm ${
+            diferencia > 0 ? 'bg-(--color-alerta-fondo)' : 'bg-(--color-error-fondo)'
           }`}
         >
-          <p className="font-semibold">
-            {diferencia > 0 ? 'Sobra' : 'Falta'}{' '}
-            <span className="tabular">{formatearARS(Math.abs(diferencia))}</span>
+          <p className="flex items-center gap-2 text-xs font-bold tracking-[0.08em] uppercase">
+            <span
+              aria-hidden
+              className={`size-2.5 rounded-full ${
+                diferencia > 0 ? 'bg-(--color-alerta)' : 'bg-(--color-error)'
+              }`}
+            />
+            Diferencia
           </p>
-          <label htmlFor="justificacion" className="mt-2 mb-1 block font-medium">
+          <p className="cifra mt-1 text-3xl leading-tight">
+            {diferencia > 0 ? 'Sobran' : 'Faltan'} {formatearARS(Math.abs(diferencia))}
+          </p>
+          <p className="mt-1 leading-relaxed">
+            Casi siempre es un vuelto que se dio de menos o una venta en efectivo cargada como
+            transferencia.
+          </p>
+          <label htmlFor="justificacion" className="mt-3 mb-1 block font-medium">
             ¿A qué se debe?
           </label>
           <input
@@ -252,7 +262,7 @@ export default function FormularioCierre({
       ) : null}
 
       {diferencia === 0 && hayAlgoContado ? (
-        <p className="rounded-(--radius-caja) bg-(--color-ok)/10 p-3 text-sm font-semibold text-(--color-ok)">
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-3 text-sm font-semibold text-(--color-ok)">
           Cuadra exacto.
         </p>
       ) : null}
@@ -288,7 +298,7 @@ export default function FormularioCierre({
         <button
           type="submit"
           disabled={pendiente}
-          className="min-h-12 flex-1 rounded-(--radius-caja) bg-(--color-marca) font-semibold text-white disabled:opacity-60"
+          className="min-h-13 flex-1 rounded-(--radius-caja) bg-(--color-accion) font-bold text-(--color-accion-texto) disabled:opacity-40"
         >
           {pendiente ? 'Cerrando…' : 'Cerrar caja'}
         </button>

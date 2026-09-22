@@ -78,7 +78,7 @@ function Fila({ ficha, wooUrl }: { ficha: FichaPendiente; wooUrl: string | null 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {estaEnLaTienda ? (
           <>
-            <span className="rounded bg-(--color-ok)/15 px-2 py-1 text-xs font-semibold text-(--color-ok)">
+            <span className="rounded bg-(--color-ok-fondo) px-2 py-1 text-xs font-semibold text-(--color-ok)">
               En la tienda
             </span>
             {wooUrl ? (

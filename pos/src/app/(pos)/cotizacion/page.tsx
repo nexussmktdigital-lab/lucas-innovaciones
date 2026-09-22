@@ -29,7 +29,7 @@ export default async function PaginaCotizacion() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Tipo de cambio</h1>
+        <h1 className="font-titulo text-2xl font-bold tracking-tight">Tipo de cambio</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
           El valor lo actualiza solo el plugin de WooCommerce dos veces por día, con el blue de
           Córdoba. Acá se puede ver el historial y forzar uno a mano si la fuente falla.
@@ -40,7 +40,7 @@ export default async function PaginaCotizacion() {
         <div
           className={`rounded-(--radius-caja) border p-4 ${
             estado.vencida
-              ? 'border-(--color-alerta) bg-(--color-alerta)/8'
+              ? 'border-(--color-alerta) bg-(--color-alerta-fondo)'
               : 'border-(--color-borde) bg-(--color-panel)'
           }`}
         >
@@ -65,7 +65,7 @@ export default async function PaginaCotizacion() {
       {estado.aviso ? (
         <p
           role="alert"
-          className="rounded-(--radius-caja) border border-(--color-alerta) bg-(--color-alerta)/10 p-3 text-sm"
+          className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm"
         >
           {estado.aviso}
         </p>

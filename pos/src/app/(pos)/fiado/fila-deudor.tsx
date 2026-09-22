@@ -34,32 +34,43 @@ function textoDeHace(dias: number): string {
  * interpreta mal, y un texto sin color no se ve cuando hay quince clientes en
  * la lista.
  */
-const SEMAFORO: Record<Color, { borde: string; fondo: string; texto: string; punto: string }> = {
+const SEMAFORO: Record<Color, { barra: string; chip: string; tinta: string }> = {
   rojo: {
-    borde: 'border-(--color-error)',
-    fondo: 'bg-(--color-error)/8',
-    texto: 'text-(--color-error)',
-    punto: 'bg-(--color-error)',
+    barra: 'bg-(--color-error)',
+    chip: 'bg-(--color-error-fondo)',
+    tinta: 'text-(--color-error)',
   },
   amarillo: {
-    borde: 'border-(--color-alerta)',
-    fondo: 'bg-(--color-alerta)/8',
-    texto: 'text-(--color-alerta)',
-    punto: 'bg-(--color-alerta)',
+    barra: 'bg-(--color-alerta)',
+    chip: 'bg-(--color-alerta-fondo)',
+    tinta: 'text-(--color-alerta-tinta)',
   },
   verde: {
-    borde: 'border-(--color-ok)',
-    fondo: 'bg-(--color-ok)/6',
-    texto: 'text-(--color-ok)',
-    punto: 'bg-(--color-ok)',
+    barra: 'bg-(--color-ok)',
+    chip: 'bg-(--color-ok-fondo)',
+    tinta: 'text-(--color-ok)',
   },
   gris: {
-    borde: 'border-(--color-borde)',
-    fondo: 'bg-(--color-panel)',
-    texto: 'text-(--color-tinta-suave)',
-    punto: 'bg-(--color-tinta-suave)',
+    barra: 'bg-(--color-borde)',
+    chip: 'bg-(--color-papel)',
+    tinta: 'text-(--color-tinta-suave)',
   },
 };
+
+/** El estado en dos o tres palabras, para la pastilla de la tarjeta. */
+function enPocasPalabras(estado: EstadoDeDeuda | null): string {
+  if (!estado) return 'Sin plan';
+  switch (estado.color) {
+    case 'rojo':
+      return `Atrasado ${estado.diasDeAtraso} ${estado.diasDeAtraso === 1 ? 'día' : 'días'}`;
+    case 'amarillo':
+      return estado.proxima?.enDias === 0 ? 'Vence hoy' : `Vence en ${estado.proxima?.enDias} días`;
+    case 'verde':
+      return estado.proxima ? 'Al día' : 'Terminó de pagar';
+    default:
+      return 'Sin plan';
+  }
+}
 
 /** Qué dice el botón de WhatsApp según el estado. */
 const ETIQUETA_WHATSAPP: Record<Color, string> = {
@@ -128,212 +139,219 @@ export default function FilaDeudor({
   const tono = SEMAFORO[color];
 
   return (
-    <li className={`rounded-(--radius-caja) border-2 p-3 ${tono.borde} ${tono.fondo}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <Link
-          href={`/clientes/${deudor.customerId}`}
-          className="font-medium underline underline-offset-2"
-        >
-          {deudor.nombre}
-        </Link>
-        {deudor.telefono ? (
-          <span className="text-xs text-(--color-tinta-suave)">{deudor.telefono}</span>
-        ) : null}
-        {deudor.origen === 'migrado_papel' ? (
-          <span className="rounded bg-(--color-papel) px-1.5 py-0.5 text-xs font-semibold text-(--color-tinta-suave)">
-            De la libreta
-          </span>
-        ) : null}
-        {pasadoDeLimite ? (
-          <span className="rounded bg-(--color-alerta)/15 px-1.5 py-0.5 text-xs font-semibold text-(--color-alerta)">
-            En el límite
-          </span>
-        ) : null}
+    <li
+      className={`flex flex-col overflow-hidden rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel)`}
+    >
+      {/* La barra de color se ve de lejos; la pastilla de al lado lo explica
+          con palabras, para quien no distingue rojo de verde. */}
+      <div className={`h-1.5 ${tono.barra}`} aria-hidden />
 
-        <span className="tabular ml-auto text-xl font-bold">
-          {formatearARS(deudor.saldoCentavos)}
-        </span>
-      </div>
-
-      {estado ? (
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-          <span className={`inline-block size-2.5 shrink-0 rounded-full ${tono.punto}`} aria-hidden />
-          <span className={`font-semibold ${tono.texto}`}>{estado.titulo}</span>
-          {estado.proxima ? (
-            <span className="text-(--color-tinta-media)">
-              — cuota {estado.proxima.numero} de {estado.cuotasTotales} ·{' '}
-              <span className="tabular font-medium">
-                {formatearARS(estado.proxima.faltaCentavos)}
-              </span>{' '}
-              {color === 'rojo' ? 'venció' : 'vence'} el {comoSeLee(estado.proxima.vencimiento)}
-            </span>
-          ) : (
-            <span className="text-(--color-tinta-media)">
-              — las {estado.cuotasTotales} cuotas están pagas
-            </span>
-          )}
-        </div>
-      ) : null}
-
-      {estado?.color === 'rojo' && estado.vencidoCentavos > 0 ? (
-        <p className="mt-1 text-sm">
-          Vencido y sin pagar:{' '}
-          <strong className="tabular text-(--color-error)">
-            {formatearARS(estado.vencidoCentavos)}
-          </strong>
-        </p>
-      ) : null}
-
-      <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-(--color-tinta-suave)">
-        {estado?.frecuencia ? (
-          <span>
-            Paga {comoSeDice(estado.frecuencia)} · {estado.cuotasPagadas} de{' '}
-            {estado.cuotasTotales} cuotas pagas
-          </span>
-        ) : null}
-        {deudor.ultimoMovimiento ? (
-          <span>Última actividad: {formatearFecha(deudor.ultimoMovimiento)}</span>
-        ) : null}
-        {deudor.limiteCentavos !== null ? (
-          <span>Tope: {formatearARS(deudor.limiteCentavos)}</span>
-        ) : esDuenio ? (
-          <span>Sin tope</span>
-        ) : null}
-      </div>
-
-      {resultado.ok ? (
-        <p role="status" className="mt-2 text-sm font-medium text-(--color-ok)">
-          {resultado.ok}
-        </p>
-      ) : null}
-
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        {recordatorio.listo ? (
-          <BotonWhatsApp
-            tipo={recordatorio.mensaje.tipo}
-            referenciaId={deudor.customerId}
-            enlace={recordatorio.mensaje.enlace}
-            etiqueta={ETIQUETA_WHATSAPP[color]}
-            aviso={
-              ultimoAviso?.reciente
-                ? `Ya se le recordó ${textoDeHace(ultimoAviso.hace)}.`
-                : null
-            }
-          />
-        ) : recordatorio.codigo === 'sin_telefono' ? (
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-2">
           <Link
             href={`/clientes/${deudor.customerId}`}
-            className="text-sm text-(--color-tinta-suave) underline underline-offset-2"
+            className="text-[17px] font-bold underline underline-offset-2"
           >
-            Sin teléfono: cargale el número para poder avisarle
+            {deudor.nombre}
           </Link>
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold tracking-[0.03em] uppercase ${tono.chip} ${tono.tinta}`}
+          >
+            {enPocasPalabras(estado)}
+          </span>
+        </div>
+
+        <p className="cifra text-[28px] leading-none">{formatearARS(deudor.saldoCentavos)}</p>
+
+        {estado ? (
+          <p className="text-sm text-(--color-tinta-media)">
+            {estado.proxima ? (
+              <>
+                Cuota {estado.proxima.numero} de {estado.cuotasTotales} ·{' '}
+                <span className="tabular">{formatearARS(estado.proxima.faltaCentavos)}</span> ·{' '}
+                {color === 'rojo' ? 'vencía el' : 'vence el'}{' '}
+                {comoSeLee(estado.proxima.vencimiento)}
+              </>
+            ) : (
+              <>Las {estado.cuotasTotales} cuotas están pagas</>
+            )}
+          </p>
+        ) : (
+          <p className="text-sm text-(--color-tinta-media)">Fiado suelto, sin fechas acordadas</p>
+        )}
+
+        {estado?.color === 'rojo' && estado.vencidoCentavos > 0 ? (
+          <p className="rounded-(--radius-caja) bg-(--color-error-fondo) px-3 py-2 text-sm">
+            Vencido y sin pagar:{' '}
+            <strong className="tabular text-(--color-error)">
+              {formatearARS(estado.vencidoCentavos)}
+            </strong>
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--color-tinta-suave)">
+          {deudor.telefono ? <span>{deudor.telefono}</span> : null}
+          {deudor.origen === 'migrado_papel' ? <span>De la libreta</span> : null}
+          {estado?.frecuencia ? (
+            <span>
+              Paga {comoSeDice(estado.frecuencia)} · {estado.cuotasPagadas} de{' '}
+              {estado.cuotasTotales} pagas
+            </span>
+          ) : null}
+          {deudor.ultimoMovimiento ? (
+            <span>Última actividad: {formatearFecha(deudor.ultimoMovimiento)}</span>
+          ) : null}
+          {deudor.limiteCentavos !== null ? (
+            <span className={pasadoDeLimite ? 'font-semibold text-(--color-alerta-tinta)' : ''}>
+              Tope: {formatearARS(deudor.limiteCentavos)}
+              {pasadoDeLimite ? ' — está en el límite' : ''}
+            </span>
+          ) : esDuenio ? (
+            <span>Sin tope</span>
+          ) : null}
+        </div>
+
+        {resultado.ok ? (
+          <p role="status" className="text-sm font-medium text-(--color-ok)">
+            {resultado.ok}
+          </p>
         ) : null}
 
         {ultimoAviso && !ultimoAviso.reciente ? (
-          <span className="text-xs text-(--color-tinta-suave)">
+          <p className="text-xs text-(--color-tinta-suave)">
             Último aviso {textoDeHace(ultimoAviso.hace)}
-          </span>
+          </p>
         ) : null}
-      </div>
 
-      {!abierto ? (
-        <button
-          type="button"
-          disabled={!hayCaja}
-          onClick={() => setAbierto(true)}
-          title={hayCaja ? undefined : 'Abrí la caja para poder recibir el pago'}
-          className="mt-2 min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Recibir un pago
-        </button>
-      ) : (
-        <form action={accion} className="mt-2 space-y-2 rounded-(--radius-caja) bg-(--color-papel) p-3">
-          <input type="hidden" name="clienteId" value={deudor.customerId} />
-          <input type="hidden" name="clave" value={clave} />
-
-          <div className="flex flex-wrap items-end gap-2">
-            <div>
-              <label
-                htmlFor={`monto-${deudor.customerId}`}
-                className="mb-1 block text-xs font-medium"
-              >
-                ¿Cuánto paga?
-              </label>
-              <input
-                id={`monto-${deudor.customerId}`}
-                name="monto"
-                type="text"
-                inputMode="decimal"
-                required
-                autoFocus
-                defaultValue={String(deudor.saldoCentavos / 100)}
-                className="tabular min-h-11 w-36 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
+        {/* Las dos acciones, en el mismo lugar en todas las tarjetas: recordar
+            queda en contorno y recibir el pago en negro, que es la que mueve
+            plata. */}
+        {!abierto ? (
+          <div className="mt-auto flex gap-2 pt-1">
+            {recordatorio.listo ? (
+              <BotonWhatsApp
+                tipo={recordatorio.mensaje.tipo}
+                referenciaId={deudor.customerId}
+                enlace={recordatorio.mensaje.enlace}
+                etiqueta={ETIQUETA_WHATSAPP[color]}
+                destacado
+                aviso={
+                  ultimoAviso?.reciente
+                    ? `Ya se le recordó ${textoDeHace(ultimoAviso.hace)}.`
+                    : null
+                }
               />
-            </div>
-
-            <div>
-              <label
-                htmlFor={`medio-${deudor.customerId}`}
-                className="mb-1 block text-xs font-medium"
+            ) : recordatorio.codigo === 'sin_telefono' ? (
+              <Link
+                href={`/clientes/${deudor.customerId}`}
+                className="flex min-h-11 flex-1 items-center justify-center rounded-(--radius-caja) border-[1.5px] border-(--color-borde) px-3 text-center text-sm text-(--color-tinta-suave)"
               >
-                Con qué
-              </label>
-              <select
-                id={`medio-${deudor.customerId}`}
-                name="medio"
-                defaultValue="efectivo"
-                className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
-              >
-                {MEDIOS.map((m) => (
-                  <option key={m.valor} value={m.valor}>
-                    {m.etiqueta}
-                  </option>
-                ))}
-              </select>
-            </div>
+                Cargale el teléfono
+              </Link>
+            ) : null}
 
-            <div className="min-w-40 flex-1">
-              <label
-                htmlFor={`nota-${deudor.customerId}`}
-                className="mb-1 block text-xs font-medium"
-              >
-                Nota (opcional)
-              </label>
-              <input
-                id={`nota-${deudor.customerId}`}
-                name="nota"
-                type="text"
-                maxLength={200}
-                placeholder="Ej.: a cuenta del celular"
-                className="min-h-11 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
-              />
-            </div>
-          </div>
-
-          {resultado.error ? (
-            <p role="alert" className="text-sm font-medium text-(--color-error)">
-              {resultado.error}
-            </p>
-          ) : null}
-
-          <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setAbierto(false)}
-              className="min-h-10 flex-1 rounded-(--radius-caja) border border-(--color-borde) text-sm font-medium"
+              disabled={!hayCaja}
+              onClick={() => setAbierto(true)}
+              title={hayCaja ? undefined : 'Abrí la caja para poder recibir el pago'}
+              className="min-h-11 shrink-0 rounded-(--radius-caja) bg-(--color-marca) px-4 text-sm font-bold whitespace-nowrap text-(--color-marca-texto) disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Volver
-            </button>
-            <button
-              type="submit"
-              disabled={pendiente}
-              className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-ok) text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {pendiente ? 'Registrando…' : 'Registrar el pago'}
+              Recibir un pago
             </button>
           </div>
-        </form>
-      )}
+        ) : (
+          <form
+            action={accion}
+            className="space-y-2 rounded-(--radius-caja) bg-(--color-papel) p-3"
+          >
+            <input type="hidden" name="clienteId" value={deudor.customerId} />
+            <input type="hidden" name="clave" value={clave} />
+
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label
+                  htmlFor={`monto-${deudor.customerId}`}
+                  className="mb-1 block text-xs font-medium"
+                >
+                  ¿Cuánto paga?
+                </label>
+                <input
+                  id={`monto-${deudor.customerId}`}
+                  name="monto"
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  autoFocus
+                  defaultValue={String(deudor.saldoCentavos / 100)}
+                  className="tabular min-h-11 w-36 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`medio-${deudor.customerId}`}
+                  className="mb-1 block text-xs font-medium"
+                >
+                  Con qué
+                </label>
+                <select
+                  id={`medio-${deudor.customerId}`}
+                  name="medio"
+                  defaultValue="efectivo"
+                  className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+                >
+                  {MEDIOS.map((m) => (
+                    <option key={m.valor} value={m.valor}>
+                      {m.etiqueta}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="min-w-40 flex-1">
+                <label
+                  htmlFor={`nota-${deudor.customerId}`}
+                  className="mb-1 block text-xs font-medium"
+                >
+                  Nota (opcional)
+                </label>
+                <input
+                  id={`nota-${deudor.customerId}`}
+                  name="nota"
+                  type="text"
+                  maxLength={200}
+                  placeholder="Ej.: a cuenta del celular"
+                  className="min-h-11 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+                />
+              </div>
+            </div>
+
+            {resultado.error ? (
+              <p role="alert" className="text-sm font-medium text-(--color-error)">
+                {resultado.error}
+              </p>
+            ) : null}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAbierto(false)}
+                className="min-h-10 flex-1 rounded-(--radius-caja) border border-(--color-borde) text-sm font-medium"
+              >
+                Volver
+              </button>
+              <button
+                type="submit"
+                disabled={pendiente}
+                className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-accion) text-sm font-semibold text-(--color-accion-texto) disabled:opacity-60"
+              >
+                {pendiente ? 'Registrando…' : 'Registrar el pago'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </li>
   );
 }

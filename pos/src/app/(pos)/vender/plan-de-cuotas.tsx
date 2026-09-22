@@ -151,7 +151,7 @@ function Opcion({
       aria-pressed={activa}
       className={`min-h-9 rounded-(--radius-caja) border px-2.5 text-sm font-medium ${
         activa
-          ? 'border-(--color-marca) bg-(--color-marca) text-white'
+          ? 'border-(--color-marca) bg-(--color-marca) text-(--color-marca-texto)'
           : 'border-(--color-borde) bg-(--color-panel)'
       }`}
     >

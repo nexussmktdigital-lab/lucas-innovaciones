@@ -17,9 +17,16 @@ export default async function PaginaIngresar() {
   return (
     <main className="grid min-h-dvh place-items-center p-4">
       <div className="w-full max-w-md">
-        <header className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Lucas Innovaciones</h1>
-          <p className="mt-1 text-sm text-(--color-tinta-suave)">Punto de venta</p>
+        {/* La pantalla de ingreso es el primer lugar donde se ve la marca. */}
+        <header className="mb-6 flex flex-col items-center gap-3 text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icono.svg" alt="" width={64} height={64} className="rounded-[14px]" />
+          <div>
+            <h1 className="font-titulo text-2xl font-bold tracking-tight">Lucas Innovaciones</h1>
+            <p className="mt-1 text-sm text-(--color-tinta-suave)">
+              Caseros 924 · Villa Santa Rosa
+            </p>
+          </div>
         </header>
         <FormularioIngreso vendedores={vendedores.filter((v) => v.rol === 'seller')} />
       </div>
