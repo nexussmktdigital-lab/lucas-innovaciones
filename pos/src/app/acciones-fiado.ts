@@ -198,6 +198,23 @@ export async function cobrarFiadoAccion(
     refrescar();
     revalidatePath('/caja');
 
+    /*
+     * Un cobro que ya existía no se anuncia como cobrado.
+     *
+     * La clave de idempotencia está para que un reintento no cobre dos veces, y
+     * eso funciona. Lo que no puede pasar es que la pantalla diga «Cobrado
+     * $10.000» cuando no entró nada: el mostrador cree que cobró, al cajón le
+     * sobra la plata y la deuda del cliente sigue arriba. Pasó de verdad —dos
+     * pagos seguidos desde la misma tarjeta— y lo encontró el recorrido a mano.
+     */
+    if (r.yaExistia) {
+      return {
+        error:
+          'Ese pago ya estaba registrado, así que no se cobró de nuevo. ' +
+          'Si el cliente está pagando otra vez, recargá la pantalla y cargalo.',
+      };
+    }
+
     return {
       ok:
         r.saldoCentavos === 0

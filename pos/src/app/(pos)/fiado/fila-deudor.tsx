@@ -98,13 +98,27 @@ export default function FilaDeudor({
 }) {
   const [resultado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
-  const [clave] = useState(nuevaClave);
+  const [clave, setClave] = useState(nuevaClave);
 
-  // Cobrado el pago, el formulario se cierra solo: dejarlo abierto con el monto
-  // adentro invita a volver a apretar. La clave de idempotencia igual impide
-  // que se cobre dos veces, pero el susto no hace falta.
+  /*
+   * Cobrado el pago, el formulario se cierra solo y la clave se renueva.
+   *
+   * Las dos cosas importan y la segunda costó un hallazgo: la clave nacía una
+   * sola vez al montar la tarjeta, así que **el segundo pago del mismo cliente
+   * sin recargar la pantalla llegaba con la clave del primero** y el servidor,
+   * con razón, lo tomaba por un reintento y no cobraba nada. La pantalla decía
+   * «Cobrado» igual. Con cuotas eso pasa todo el tiempo: el que paga de a poco
+   * paga dos veces en la misma semana.
+   *
+   * Renovarla acá no afloja la idempotencia: mientras el formulario está
+   * abierto la clave no cambia, y eso es lo que impide que un doble clic cobre
+   * dos veces el mismo pago.
+   */
   useEffect(() => {
-    if (resultado.ok) setAbierto(false);
+    if (resultado.ok) {
+      setAbierto(false);
+      setClave(nuevaClave());
+    }
   }, [resultado.ok]);
 
   const pasadoDeLimite =

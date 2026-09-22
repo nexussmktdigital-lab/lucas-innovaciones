@@ -527,3 +527,39 @@ test('cobrarle al atrasado lo saca del rojo', async ({ page }) => {
     { timeout: 15_000 },
   );
 });
+
+/**
+ * Dos pagos seguidos, sin recargar la pantalla.
+ *
+ * El caso que rompía: la clave de idempotencia nacía al montar la tarjeta y no
+ * cambiaba, así que el segundo pago llegaba con la clave del primero, el
+ * servidor lo tomaba por un reintento y no cobraba nada — mientras la pantalla
+ * decía «Cobrado». Con cuotas es el caso de todos los días: el que paga de a
+ * poco paga dos veces en la misma semana.
+ */
+test('dos pagos seguidos del mismo cliente entran los dos', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+
+  async function pagar(monto: string) {
+    await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+    await tarjeta.getByLabel('¿Cuánto paga?').fill(monto);
+    await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+    await expect(tarjeta.getByText(/Cobrado|ya estaba registrado/)).toBeVisible({
+      timeout: 15_000,
+    });
+  }
+
+  // Debe $240.000. Dos pagos de $10.000 tienen que dejarla en $220.000.
+  await pagar('10000');
+  await expect(tarjeta).toContainText('$ 230.000,00');
+
+  await pagar('10000');
+  await expect(tarjeta).toContainText('$ 220.000,00');
+
+  // Y el segundo quedó anotado como pago propio, no como reintento del primero.
+  await expect(tarjeta.getByText('ya estaba registrado')).toBeHidden();
+});
