@@ -6,6 +6,10 @@ drenaje programado simplemente no corre, y apuntarle a la tienda equivocada
 simplemente escribe el stock en el lugar equivocado—, así que están acá, con el
 paso a paso.
 
+Si lo que buscás es **dónde va alojado y cómo se llega a
+`pos.lucasinnovaciones.com.ar`**, eso está en el punto 0, que es el primero que
+hay que resolver.
+
 Para ver cómo está todo ahora mismo:
 
 ```bash
@@ -25,6 +29,76 @@ despliegue. No imprime ningún secreto: dice si están y a dónde apuntan.
 
 El POS también lo reclama solo: si algo quedó mal, aparece un panel rojo en
 **Estado del sistema**, que solo ve el dueño, y desaparece cuando se resuelve.
+
+---
+
+## 0. Dónde vive el POS, y el subdominio
+
+### El POS no puede ir en el hosting del WordPress
+
+El WordPress de DonWeb es PHP sobre un hosting compartido: recibe un pedido,
+corre un script y contesta. El POS es otra cosa —un proceso de Node.js que
+tiene que estar prendido todo el tiempo, con las acciones de servidor, el
+middleware de sesión y una conexión abierta a PostgreSQL—. **En un hosting
+compartido de PHP no corre**, y no es cuestión de configurarlo mejor.
+
+Así que son dos lugares distintos, y está bien que lo sean: el día que el
+WordPress se caiga por una actualización de plugin, el mostrador sigue
+vendiendo.
+
+### El subdominio sí, y no toca el WordPress
+
+`pos.lucasinnovaciones.com.ar` es un registro DNS más en la zona del dominio.
+El dominio sigue donde está, el WordPress de `lucasinnovaciones.com.ar` sigue
+respondiendo igual, y el subdominio nuevo apunta a otro lado. No hay ningún
+momento en que la tienda deje de funcionar.
+
+### Dónde alojarlo
+
+**Vercel** es lo que este proyecto asume: `vercel.json` trae la tarea
+programada que drena la cola hacia WooCommerce, y el despliegue es `git push`.
+Ojo con una cosa: el plan Hobby de Vercel es solo para uso no comercial, así
+que un POS de un negocio va en **Pro**, que son unos US$20 por mes.
+
+La alternativa, si se prefiere tener todo en un solo proveedor, es un **Cloud
+Server de DonWeb**, que sí corre Node.js. Cuesta menos y cuesta más: hay que
+mantener Nginx, PM2, los certificados y las actualizaciones del sistema, y la
+tarea programada de `vercel.json` hay que rehacerla como un `cron` del
+servidor. Se puede; es más trabajo por mes.
+
+### Los registros DNS, en el panel de DonWeb
+
+En **DonWeb → Zona DNS** del dominio (no en cPanel), un registro:
+
+| Tipo | Nombre | Valor |
+|---|---|---|
+| CNAME | `pos` | el que muestre Vercel al agregar el dominio |
+
+Vercel da un valor propio por proyecto, del estilo
+`xxxxxxxx.vercel-dns-0xx.com`. Se copia **tal cual**, con el punto final si lo
+trae.
+
+> **La trampa:** no hay que crear el subdominio desde **cPanel → Subdominios**.
+> Eso arma una carpeta en el hosting compartido y un registro A apuntando al
+> servidor del WordPress, que es justo lo contrario de lo que se quiere, y
+> después pelea con el CNAME. Solo el registro en la zona DNS.
+
+El certificado HTTPS lo emite Vercel solo, a los pocos minutos de que el DNS
+resuelva. La propagación puede tardar hasta 24 o 48 horas, aunque en la
+práctica suele ser bastante menos.
+
+### Lo que hay que ajustar una vez que el dominio está
+
+- **`AUTH_TRUST_HOST="true"`** en las variables de Vercel. Auth.js necesita
+  confiar en el host que le llega del proxy; sin eso el ingreso redirige mal.
+- **Los webhooks de WooCommerce** apuntan a
+  `https://pos.lucasinnovaciones.com.ar/api/webhooks/woo`.
+- **La tablet del mostrador tiene que abrir el POS desde este dominio**, con
+  internet, al menos una vez. El service worker guarda el catálogo por dominio:
+  hasta que eso no pasa, un corte deja la pantalla en blanco.
+- **`POS_TERMINAL`** es una por despliegue. Con la MacBook y la tablet entrando
+  a la misma dirección, las dos comparten la terminal `T1` y el mismo turno de
+  caja, que es lo que se quiere en un local con un solo mostrador.
 
 ---
 
@@ -219,6 +293,8 @@ migraciones nunca borran ni renombran**: agregan.
 
 Antes de que el mostrador empiece a usarlo:
 
+- [ ] `pos.lucasinnovaciones.com.ar` abre el POS con candado verde
+- [ ] `AUTH_TRUST_HOST="true"` cargado en Vercel
 - [ ] `npm run produccion:chequear -- --env .env.produccion --produccion` sin faltantes
 - [ ] Clave vieja de WooCommerce **revocada**, no solo reemplazada
 - [ ] Contraseña de Neon reseteada y `DATABASE_URL` actualizada con la cadena pooled
