@@ -18,7 +18,16 @@ if (descartados.length > 0) {
   console.log(`Se ignoran parámetros de libpq que el driver de Node no usa: ${descartados.join(', ')}`);
 }
 
-const sql = postgres(limpia, { max: 1 });
+/*
+ * `prepare: false` porque la cadena puede ser la del pooler de Neon.
+ *
+ * El pooler es PgBouncer en modo transacción y ahí las sentencias preparadas
+ * con nombre no sobreviven: cada consulta puede caer en otra conexión del
+ * fondo común. Para un script que corre unas pocas consultas y termina, las
+ * preparadas no aportan nada, así que se apagan y la cadena que se pegue
+ * —pooled o directa— anda igual.
+ */
+const sql = postgres(limpia, { max: 1, prepare: false });
 
 try {
   await migrate(drizzle(sql), { migrationsFolder: './drizzle' });

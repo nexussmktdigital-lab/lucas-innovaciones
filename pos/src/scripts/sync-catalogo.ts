@@ -68,7 +68,9 @@ async function main() {
     return;
   }
 
-  const sql = postgres(urlDeConexion(url), { max: 1 });
+  // `prepare: false`: la cadena puede ser la del pooler de Neon, que es
+  // PgBouncer en modo transacción y no conserva las sentencias preparadas.
+  const sql = postgres(urlDeConexion(url), { max: 1, prepare: false });
   const db = drizzle(sql, { schema, casing: 'snake_case' });
 
   try {

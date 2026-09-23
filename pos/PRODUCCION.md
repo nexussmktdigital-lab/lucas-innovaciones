@@ -125,9 +125,29 @@ git push origin main
 ### 2. Crear la base en Neon
 
 [neon.tech](https://neon.tech) → proyecto nuevo, región **South America (São
-Paulo)** para que el mostrador esté cerca. De la pantalla de conexión copiar la
-cadena **Pooled connection** (tiene `-pooler` en el host). Esa es la que va a
-Vercel.
+Paulo)** para que el mostrador esté cerca.
+
+En el panel del proyecto, el recuadro **Connect to your database** trae la
+cadena armada, con un interruptor **Connection pooling** que viene encendido.
+Hacen falta **las dos**:
+
+| | El interruptor | El host termina en | Para qué |
+|---|---|---|---|
+| **Pooled** | encendido (como viene) | `-pooler.…aws.neon.tech` | la variable `DATABASE_URL` de Vercel |
+| **Directa** | apagado | `…aws.neon.tech`, sin `-pooler` | los comandos que corrés desde tu PC |
+
+Guardá las dos en el gestor de contraseñas. La diferencia son esos siete
+caracteres y es fácil confundirlas después.
+
+**Por qué dos.** El pooler reparte muchas conexiones cortas entre pocas reales,
+que es justo lo que necesita una app en Vercel, donde cada pantalla abre y
+cierra la suya. Para migrar la base o sacarle una copia, en cambio, Neon
+recomienda la directa: son operaciones largas que quieren la conexión para
+ellas solas.
+
+> Los comandos del POS funcionan con cualquiera de las dos —están preparados
+> para eso—, así que si te equivocás no se rompe nada. La directa es la que
+> conviene igual.
 
 > El plan gratuito guarda 24 horas de historial para volver atrás. Para un
 > negocio conviene el pago; la razón está en el punto 5.
@@ -164,7 +184,7 @@ despliegue sin variables arranca y falla al abrir cualquier pantalla.
 
 | Variable | Qué va |
 |---|---|
-| `DATABASE_URL` | la cadena **pooled** de Neon |
+| `DATABASE_URL` | la cadena **pooled** de Neon (la del `-pooler`) |
 | `AUTH_SECRET` | el primero que generaste |
 | `AUTH_TRUST_HOST` | `true` |
 | `WOO_URL` | `https://lucasinnovaciones.com.ar` |
@@ -188,7 +208,7 @@ Las migraciones **no corren solas**, y es a propósito (**punto 4**). Se corren
 desde tu máquina, apuntando a la base de producción **sin tocar tu `.env`**:
 
 ```powershell
-$env:DATABASE_URL="<la cadena pooled de Neon>"
+$env:DATABASE_URL="<la cadena DIRECTA de Neon, sin -pooler>"
 npm run db:migrate
 npm run produccion:chequear
 Remove-Item Env:\DATABASE_URL
@@ -205,7 +225,7 @@ ingreso.
 La base está migrada pero vacía: no hay con qué entrar.
 
 ```powershell
-$env:DATABASE_URL="<la cadena pooled de Neon>"
+$env:DATABASE_URL="<la cadena DIRECTA de Neon, sin -pooler>"
 npm run preparar
 Remove-Item Env:\DATABASE_URL
 ```
@@ -245,7 +265,7 @@ Con el mismo `WOO_WEBHOOK_SECRET` que cargaste en Vercel.
 ### 11. Traer el catálogo y el histórico
 
 ```powershell
-$env:DATABASE_URL="<la cadena pooled de Neon>"
+$env:DATABASE_URL="<la cadena DIRECTA de Neon, sin -pooler>"
 npm run woo:sync -- --verificar     # confirma contra qué tienda habla
 npm run woo:sync                    # trae los productos
 npm run woo:historico -- --ensayo   # cuenta los pedidos, sin escribir

@@ -46,7 +46,16 @@ if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url) && !process.argv.includes('--si-i
   process.exit(1);
 }
 
-const conexion = postgres(urlDeConexion(url), { max: 1 });
+/*
+ * `prepare: false` porque la cadena puede ser la del pooler de Neon.
+ *
+ * El pooler es PgBouncer en modo transacción y ahí las sentencias preparadas
+ * con nombre no sobreviven: cada consulta puede caer en otra conexión del
+ * fondo común. Para un script que corre unas pocas consultas y termina, las
+ * preparadas no aportan nada, así que se apagan y la cadena que se pegue
+ * —pooled o directa— anda igual.
+ */
+const conexion = postgres(urlDeConexion(url), { max: 1, prepare: false });
 const db = drizzle(conexion, { schema, casing: 'snake_case' }) as BaseDatos;
 const uno = async <T,>(q: ReturnType<typeof sql>): Promise<T> =>
   filas<T>(await db.execute(q))[0]!;

@@ -82,7 +82,16 @@ const CATEGORIAS_GASTO = [
   'Otros',
 ];
 
-const sql = postgres(urlDeConexion(url), { max: 1 });
+/*
+ * `prepare: false` porque la cadena puede ser la del pooler de Neon.
+ *
+ * El pooler es PgBouncer en modo transacción y ahí las sentencias preparadas
+ * con nombre no sobreviven: cada consulta puede caer en otra conexión del
+ * fondo común. Para un script que corre unas pocas consultas y termina, las
+ * preparadas no aportan nada, así que se apagan y la cadena que se pegue
+ * —pooled o directa— anda igual.
+ */
+const sql = postgres(urlDeConexion(url), { max: 1, prepare: false });
 const db = drizzle(sql, { schema, casing: 'snake_case' });
 
 try {
