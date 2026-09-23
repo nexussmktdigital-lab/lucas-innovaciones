@@ -149,8 +149,10 @@ ellas solas.
 > para eso—, así que si te equivocás no se rompe nada. La directa es la que
 > conviene igual.
 
-> El plan gratuito guarda 24 horas de historial para volver atrás. Para un
-> negocio conviene el pago; la razón está en el punto 5.
+> Cuánto historial guarda Neon para volver atrás depende del plan, y el número
+> está en el panel: **Postgres → History retention**. En el plan Free de este
+> proyecto son **6 horas**. No frena el despliegue, pero antes de que el
+> mostrador cargue ventas de verdad hay que resolverlo: punto 5.
 
 ### 3. Rotar lo que quedó expuesto y generar los secretos
 
@@ -446,8 +448,14 @@ solo ahí. El catálogo se puede volver a traer de WooCommerce con
 
 1. **Cuánto historial guarda el proveedor.** Neon guarda un historial de cambios
    que permite abrir una copia de la base «como estaba» en un momento anterior.
-   En el plan gratuito son **24 horas**; en los planes pagos, más. Veinticuatro
-   horas alcanzan para el error de un rato, no para el que se descubre el lunes.
+   Cuánto, depende del plan, y el número real está a la vista en el panel del
+   proyecto: **Postgres → History retention**. El proyecto de Lucas, en el plan
+   Free, dice **6 horas**.
+
+   Seis horas alcanzan para el error que se ve en el momento —se borró algo
+   recién y se vuelve atrás—, y no alcanzan para nada más. El error que se
+   descubre al otro día, o el lunes, ya no está. Eso lo cubre la copia propia
+   de acá abajo, que es independiente del plan que se pague.
 2. **Cómo se restaura, probado una vez.** Un respaldo que nunca se restauró no
    es un respaldo. La forma de probarlo sin tocar producción es crear una rama
    de la base en el momento de ayer, apuntarle un `DATABASE_URL` local y ver que
@@ -504,6 +512,7 @@ Antes de que el mostrador empiece a usarlo:
       *(el procedimiento ya se probó entero contra una base local —dump, restore,
       invariantes y el POS abriendo con los datos puestos—; falta hacerlo una vez
       contra la de producción)*
-- [ ] Sabido cuánto historial guarda el plan de Neon que se está pagando
+- [ ] Leído el **History retention** del panel de Neon, y decidido si alcanza
+      (en el plan Free son 6 horas) o si hace falta la copia propia con `pg_dump`
 - [ ] `curl https://<dominio>/manifest.webmanifest` devuelve el JSON y no un redirect
       al login: si redirige, el POS no se puede instalar en la tablet
