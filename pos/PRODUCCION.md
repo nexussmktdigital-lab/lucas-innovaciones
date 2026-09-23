@@ -57,8 +57,19 @@ momento en que la tienda deje de funcionar.
 
 **Vercel** es lo que este proyecto asume: `vercel.json` trae la tarea
 programada que drena la cola hacia WooCommerce, y el despliegue es `git push`.
-Ojo con una cosa: el plan Hobby de Vercel es solo para uso no comercial, así
-que un POS de un negocio va en **Pro**, que son unos US$20 por mes.
+
+**Hace falta el plan Pro**, unos US$20 por mes, por dos razones independientes:
+el plan Hobby es solo para uso no comercial, y además limita las tareas
+programadas a una por día. La de este proyecto corre cada diez minutos, así que
+en Hobby **el despliegue se rechaza antes de construir**, con este error:
+
+```
+Hobby accounts are limited to daily cron jobs.
+This cron expression (*/10 * * * *) would run more than once per day.
+```
+
+No es un problema del código: es el plan. Se pasa a Pro y el mismo despliegue
+sale.
 
 La alternativa, si se prefiere tener todo en un solo proveedor, es un **Cloud
 Server de DonWeb**, que sí corre Node.js. Cuesta menos y cuesta más: hay que
