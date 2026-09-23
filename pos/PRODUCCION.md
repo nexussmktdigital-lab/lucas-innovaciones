@@ -79,20 +79,38 @@ servidor. Se puede; es más trabajo por mes.
 
 ### Los registros DNS, en el panel de DonWeb
 
-En **DonWeb → Zona DNS** del dominio (no en cPanel), un registro:
+El panel de DonWeb es **Ferozo**. Va en **Dominios → Zona DNS → Nuevo
+registro**, parado en la pantalla que arriba tiene el selector
+«Dominio: lucasinnovaciones.com.ar»:
 
-| Tipo | Nombre | Valor |
-|---|---|---|
-| CNAME | `pos` | el que muestre Vercel al agregar el dominio |
+| Tipo | Nombre | Contenido | TTL |
+|---|---|---|---|
+| CNAME | `pos.lucasinnovaciones.com.ar` | el que muestre Vercel | `3600` |
 
 Vercel da un valor propio por proyecto, del estilo
-`xxxxxxxx.vercel-dns-0xx.com`. Se copia **tal cual**, con el punto final si lo
-trae.
+`xxxxxxxx.vercel-dns-0xx.com`.
 
-> **La trampa:** no hay que crear el subdominio desde **cPanel → Subdominios**.
-> Eso arma una carpeta en el hosting compartido y un registro A apuntando al
-> servidor del WordPress, que es justo lo contrario de lo que se quiere, y
-> después pelea con el CNAME. Solo el registro en la zona DNS.
+Tres cosas que Ferozo no perdona, las tres encontradas peleándose con el panel:
+
+- **El nombre va completo**, `pos.lucasinnovaciones.com.ar`, aunque la lista de
+  registros y la ayuda del formulario sugieran que alcanza con `pos`. Con el
+  nombre corto contesta «El nombre del registro no es válido» y no aclara nada
+  más. Pasa igual con un registro A, así que el error es del campo Nombre y no
+  del tipo de registro.
+- **El TTL tiene que estar entre 900 y 86400.** Menos de eso lo rechaza.
+- **El punto final del valor, mejor sacarlo.** Vercel lo muestra porque así se
+  escribe en un archivo de zona; Ferozo lo agrega solo.
+
+> **La trampa grande:** no hay que crear el subdominio desde **Ferozo →
+> Dominios → Subdominios**. Eso arma una carpeta en el hosting compartido y un
+> registro A apuntando al servidor del WordPress, que es justo lo contrario de
+> lo que se quiere, y después pelea con el CNAME. Solo el registro en la Zona
+> DNS.
+>
+> **Y la otra:** en la pantalla de Domains de Vercel, la pestaña **Vercel DNS**
+> ofrece cambiar los nameservers a los de Vercel. Eso le entrega el dominio
+> entero y se lleva puestos el WordPress, el correo y el staging. La pestaña
+> que va es **DNS Records**.
 
 El certificado HTTPS lo emite Vercel solo, a los pocos minutos de que el DNS
 resuelva. La propagación puede tardar hasta 24 o 48 horas, aunque en la
