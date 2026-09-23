@@ -2,8 +2,14 @@ node_modules/
 .next/
 out/
 build/
-.env
-.env.local
+# Cualquier .env queda afuera, y el ejemplo se reincluye a mano.
+#
+# Antes decía `.env` y `.env.local` nada más, y eso alcanzaba hasta que
+# PRODUCCION.md empezó a nombrar `.env.produccion` y `vercel env pull` a
+# escribir archivos con el nombre que uno le pase. Un `git add -A` distraído y
+# las claves de producción terminaban en GitHub.
+.env*
+!.env.example
 *.tsbuildinfo
 next-env.d.ts
 coverage/
