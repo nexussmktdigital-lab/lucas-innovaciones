@@ -25,6 +25,13 @@ export interface InformeSincronizacion {
   /** Resumen por tipo de aviso, para mostrarlo de un vistazo. */
   resumen: Record<string, number>;
   duracionMs: number;
+  /**
+   * True si se cortó por tiempo y quedaron páginas sin traer.
+   *
+   * Lo mira el refresco programado: con esto en true **no** se puede avanzar la
+   * marca de agua, porque lo que faltó no se volvería a pedir nunca.
+   */
+  incompleto: boolean;
 }
 
 export interface OpcionesSincronizacion {
@@ -33,6 +40,18 @@ export interface OpcionesSincronizacion {
   porPagina?: number;
   /** Callback de progreso, para el script de consola. */
   alAvanzar?: (leidos: number) => void;
+  /**
+   * Traer solo lo modificado a partir de este instante, en vez del catálogo
+   * entero. Es lo que permite refrescar cada diez minutos sin pedir los 803
+   * productos cada vez.
+   */
+  modificadoDesde?: Date | null;
+  /**
+   * Cuánto tiempo como máximo. Al pasarse corta **entre páginas** —nunca a la
+   * mitad de una— y devuelve `incompleto: true`. Sin esto, una corrida contra
+   * un WooCommerce lento se come el límite de la función y muere a la mitad.
+   */
+  limiteMs?: number;
 }
 
 export async function sincronizarCatalogo(
@@ -47,14 +66,40 @@ export async function sincronizarCatalogo(
   let creados = 0;
   let actualizados = 0;
   let variantes = 0;
+  let incompleto = false;
+
+  /*
+   * `dates_are_gmt` va junto con `modified_after` a propósito.
+   *
+   * Sin eso WooCommerce interpreta la fecha en el huso del sitio —acá UTC-3— y
+   * el POS la manda en UTC: tres horas de corrimiento, y en la dirección que
+   * deja productos afuera. El refresco programado le suma además un margen
+   * holgado, por si el sitio ignora la bandera.
+   */
+  const filtro: Record<string, string | number> = {
+    status: 'any',
+    orderby: 'id',
+    order: 'asc',
+  };
+  if (opciones.modificadoDesde) {
+    filtro.modified_after = opciones.modificadoDesde.toISOString().slice(0, 19);
+    filtro.dates_are_gmt = 1;
+  }
 
   for await (const lote of cliente.listarTodo(
     'products',
     wooProducto,
-    { status: 'any', orderby: 'id', order: 'asc' },
+    filtro,
     opciones.porPagina ?? 100,
   )) {
     if (lote.length === 0) continue;
+
+    // El corte va antes de escribir, no después: así una página queda entera o
+    // no queda, y la marca de agua no puede avanzar sobre algo a medio guardar.
+    if (opciones.limiteMs !== undefined && Date.now() - inicio > opciones.limiteMs) {
+      incompleto = true;
+      break;
+    }
 
     const filas = lote.map((p) => mapearProducto(p, tc));
     for (const { avisos: a } of filas) avisos.push(...a);
@@ -126,7 +171,16 @@ export async function sincronizarCatalogo(
   const resumen: Record<string, number> = {};
   for (const a of avisos) resumen[a.tipo] = (resumen[a.tipo] ?? 0) + 1;
 
-  return { leidos, creados, actualizados, variantes, avisos, resumen, duracionMs: Date.now() - inicio };
+  return {
+    leidos,
+    creados,
+    actualizados,
+    variantes,
+    avisos,
+    resumen,
+    duracionMs: Date.now() - inicio,
+    incompleto,
+  };
 }
 
 async function sincronizarVariantes(

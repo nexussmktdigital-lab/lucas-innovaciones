@@ -120,8 +120,9 @@ práctica suele ser bastante menos.
 
 - **`AUTH_TRUST_HOST="true"`** en las variables de Vercel. Auth.js necesita
   confiar en el host que le llega del proxy; sin eso el ingreso redirige mal.
-- **Los webhooks de WooCommerce** apuntan a
-  `https://pos.lucasinnovaciones.com.ar/api/webhooks/woo`.
+- **Los cambios de la tienda entran solos cada diez minutos**, por la tarea
+  programada. Los webhooks quedaron descartados: el servidor de WordPress no
+  puede alcanzar el POS (ver el punto 10).
 - **La tablet del mostrador tiene que abrir el POS desde este dominio**, con
   internet, al menos una vez. El service worker guarda el catálogo por dominio:
   hasta que eso no pasa, un corte deja la pantalla en blanco.
@@ -282,16 +283,34 @@ Correrlo dos veces no duplica nada y no pisa las claves salvo que se lo pidas.
 CNAME que muestra y cargarlo en **DonWeb → Zona DNS**, como dice el punto 0.
 Esperar a que el candado aparezca.
 
-### 10. Los webhooks de WooCommerce
+### 10. Los cambios de la tienda: nada que configurar
 
-WordPress → **WooCommerce → Ajustes → Avanzado → Webhooks**. Uno por cada
-evento de producto (creado, actualizado, borrado), todos apuntando a:
+**No hay que dar de alta ningún webhook.** Se intentó y no se puede: al guardar
+el primero, WooCommerce contesta
 
 ```
-https://pos.lucasinnovaciones.com.ar/api/webhooks/woo
+No se puede acceder a la URL de entrega: cURL error 60: SSL certificate
+problem: EE certificate key too weak
 ```
 
-Con el mismo `WOO_WEBHOOK_SECRET` que cargaste en Vercel.
+Eso no es un problema del POS ni del certificado, que es el de Vercel y está
+bien. Es el OpenSSL del servidor de DonWeb, configurado con un nivel de
+seguridad que rechaza los certificados ECDSA modernos. Como la validación corre
+en el servidor de ellos, del lado nuestro no hay nada que tocar, y esperar a que
+DonWeb lo cambie no es un plan.
+
+Así que el POS pregunta en vez de esperar el aviso: **cada diez minutos, la
+misma tarea programada del punto siguiente le pide a WooCommerce solo lo que
+cambió** y actualiza el espejo. Un cambio de precio hecho en la tienda está en
+el mostrador en menos de diez minutos, y no depende de DonWeb para nada.
+
+Lo único que no llega por ahí es un producto **borrado definitivamente** en Woo
+—uno mandado a la papelera sí llega—. Para eso alcanza con correr
+`npm run woo:sync` de vez en cuando, que compara contra el catálogo entero.
+
+`WOO_WEBHOOK_SECRET` se deja cargado igual: el endpoint sigue existiendo y, si
+algún día el hosting arregla su OpenSSL, dar de alta los webhooks vuelve a ser
+un minuto de trabajo y los cambios pasan a llegar en el momento.
 
 ### 11. Traer el catálogo y el histórico
 
@@ -409,14 +428,23 @@ formato que el importador no pudo leer y **esa facturación falta**.
 
 ---
 
-## 3. El drenaje programado de la cola
+## 3. La tarea programada: la cola y el catálogo
 
-Cada venta descuenta el stock en el POS y deja el ajuste en una cola hacia
-WooCommerce. Esa cola se vacía al confirmar una venta **y** cada diez minutos,
-por la tarea programada de `vercel.json`. Sin `CRON_SECRET`, la ruta devuelve
-503 y el segundo camino no existe: si la tienda se cae después de la última
-venta del día, el stock queda desactualizado hasta la primera venta del día
-siguiente.
+Cada diez minutos, `/api/cron/sincronizar` hace dos cosas, en este orden.
+
+**Primero drena la cola.** Cada venta descuenta el stock en el POS y deja el
+ajuste en una cola hacia WooCommerce. Esa cola se vacía al confirmar una venta
+**y** acá. Sin el segundo camino, si la tienda se cae después de la última venta
+del día, el stock queda desactualizado hasta la primera venta del día siguiente.
+
+**Después refresca el catálogo** con lo que cambió en la tienda desde la corrida
+anterior: es lo que reemplaza a los webhooks (punto 10 de la sección anterior).
+
+El orden no es casual. La cola es stock —plata— y el refresco son precios. Si el
+tiempo no alcanza para los dos, el que se saltea es el refresco y va en la
+corrida siguiente, diez minutos después.
+
+Sin `CRON_SECRET` la ruta devuelve 503 y **no pasa ninguna de las dos cosas**.
 
 1. Generar el secreto:
 
@@ -438,7 +466,14 @@ siguiente.
    Tiene que contestar `{"ok":true,...}`. Un 401 es el secreto equivocado; un
    503, que la variable no llegó al despliegue.
 
----
+   En la respuesta, `catalogo` cuenta cómo le fue al refresco:
+
+   | Lo que dice | Qué significa |
+   |---|---|
+   | `"corrio": true` con `leidos: 0` | Lo normal: no cambió nada en la tienda. |
+   | `"corrio": true` con `leidos: 3` | Tres fichas cambiaron y ya están en el POS. |
+   | `"corrio": false` con un `motivo` sobre `woo:sync` | El espejo está vacío. Correr `npm run woo:sync` una vez y el refresco sigue solo. |
+   | `"saltado"` | La cola se llevó la corrida. Normal en un día de mucha venta; va en la siguiente. |
 
 ---
 
@@ -527,8 +562,8 @@ Antes de que el mostrador empiece a usarlo:
 - [ ] Clave vieja de WooCommerce **revocada**, no solo reemplazada
 - [ ] Contraseña de Neon reseteada y `DATABASE_URL` actualizada con la cadena pooled
 - [ ] El `.env` local apunta al staging
-- [ ] La tarea programada contestó `{"ok":true}`
-- [ ] Los webhooks de WooCommerce dados de alta con `WOO_WEBHOOK_SECRET`
+- [ ] La tarea programada contestó `{"ok":true}`, con `catalogo.corrio` en `true`
+- [ ] Un cambio de precio hecho en la tienda apareció en el POS dentro de los diez minutos
 - [ ] `npm run woo:historico` corrido contra la tienda real, con las cuentas cerrando
 - [ ] Sin panel rojo en **Estado del sistema**
 - [ ] La tablet del mostrador abrió el POS con internet al menos una vez **desde el

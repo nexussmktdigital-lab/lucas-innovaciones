@@ -931,9 +931,42 @@ este sistema viene a resolver:
 | `stock_ficticio` | Más de 1.000 unidades. Hay fichas con 9.708. |
 | `sin_sku` / `sin_imagen` | Ficha incompleta. |
 
-### Webhooks
+### Refresco periódico, sin depender de la tienda
 
-Configurar en **WooCommerce → Ajustes → Avanzado → Webhooks**, apuntando a
+Cada diez minutos, junto con el drenaje de la cola, la tarea programada le pide
+a WooCommerce **solo lo que cambió** desde la última corrida
+(`src/woo/refrescar.ts`). Con 803 productos eso es casi siempre una consulta que
+vuelve vacía, y un cambio de precio hecho en la tienda llega al mostrador en
+menos de diez minutos sin que nadie toque nada.
+
+Existe porque los webhooks no se pudieron dar de alta: el `curl` del servidor de
+WordPress rechaza el certificado del POS —`EE certificate key too weak`, el
+nivel de seguridad de OpenSSL del hosting contra un certificado ECDSA— y
+WooCommerce ni siquiera deja guardar un webhook cuya URL no puede alcanzar. Así
+que se da vuelta la dirección: en vez de que la tienda avise, el POS pregunta.
+
+Tres cosas que conviene saber:
+
+- **La marca de agua solo avanza si la corrida terminó.** Vive en `settings`,
+  bajo `woo.ultimo_refresco`. Si el refresco se corta por tiempo, la ventana se
+  vuelve a pedir entera: perder un cambio de precio es peor que pedirlo dos
+  veces.
+- **La ventana lleva seis horas de margen**, por si la tienda ignora
+  `dates_are_gmt` y lee la fecha en el huso local (serían tres horas de
+  corrimiento, justo en la dirección que deja productos afuera).
+- **Un producto borrado definitivamente en Woo no aparece por acá.** Uno mandado
+  a la papelera sí, porque cambia de estado. Para el borrado del todo está
+  `npm run woo:sync`, que compara contra el catálogo entero.
+
+La cola tiene prioridad sobre el refresco: si el drenaje se come la corrida, el
+refresco se saltea y va en la siguiente. La cola es stock, el refresco son
+precios.
+
+### Webhooks (opcionales)
+
+Si algún día el hosting deja de rechazar el certificado, los webhooks siguen
+andando y traen el cambio en el momento en vez de en diez minutos. Configurar en
+**WooCommerce → Ajustes → Avanzado → Webhooks**, apuntando a
 `https://<dominio-del-pos>/api/webhooks/woo` con el mismo secreto que
 `WOO_WEBHOOK_SECRET`:
 
@@ -1171,6 +1204,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | La aritmética de centavos y el redondeo al millar de D22 | `src/lib/dinero.test.ts` |
 | El error de los 9 iPhones se detecta al sincronizar | `src/woo/mapear.test.ts` |
 | Sincronizar dos veces actualiza en vez de duplicar | `src/woo/sincronizar.test.ts` |
+| El refresco cortado por tiempo **no** avanza la marca de agua | `src/woo/refrescar.test.ts` |
+| El refresco pide solo lo modificado, con el margen de seis horas | `src/woo/refrescar.test.ts` |
 | El webhook rechaza una firma inválida | `src/woo/webhook.test.ts` |
 | El webhook actualiza la ficha pero NO le pisa el stock al POS | `src/woo/espejo.test.ts` |
 | Una divergencia de stock con Woo queda registrada en vez de resolverse sola | `src/woo/espejo.test.ts` |

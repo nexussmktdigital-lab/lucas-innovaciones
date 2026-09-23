@@ -1472,3 +1472,62 @@ sistema. Efectivo, tarjeta, transferencia, Mercado Pago, mixto, fiado, seña,
 cobro de deuda vieja, gasto del cajón, gasto del banco, gasto pendiente, gasto
 anulado, depósito y retiro. Los tres tests nuevos de `gastos.test.ts` se
 comprobaron al revés: apagando el arreglo, fallan.
+
+---
+
+# Décima pasada — el catálogo, sin depender de DonWeb
+
+Al dar de alta el primer webhook, WooCommerce contestó:
+
+> No se puede acceder a la URL de entrega: cURL error 60: SSL certificate
+> problem: EE certificate key too weak
+
+No es el certificado del POS: es el de Vercel y está bien. Es el OpenSSL del
+servidor de DonWeb, con un nivel de seguridad que rechaza los certificados
+ECDSA. La validación corre del lado de ellos, así que del nuestro no hay nada
+que tocar, y WooCommerce ni siquiera deja **guardar** un webhook cuya URL no
+puede alcanzar. Dicho sin vueltas: el camino por el que la tienda avisaba de un
+cambio de precio no existe, y no depende de nosotros que vuelva a existir.
+
+## Lo que se hizo
+
+Se dio vuelta la dirección. En vez de esperar el aviso, el POS pregunta: cada
+diez minutos, con la tarea programada que ya drenaba la cola, le pide a
+WooCommerce **solo lo que cambió** desde la corrida anterior. Con 803 productos
+eso es casi siempre una consulta que vuelve vacía, y un cambio de precio hecho
+en la tienda llega al mostrador en menos de diez minutos.
+
+La cola va primero y el refresco después, con lo que sobre del tiempo. No es un
+detalle de implementación: la cola es stock que la tienda todavía no descontó
+—plata— y el refresco son precios. Si el tiempo alcanza para uno solo, tiene que
+ser la cola.
+
+## Las tres trampas
+
+**1. La marca de agua no puede avanzar sobre una corrida cortada.** Si el
+refresco se queda sin tiempo a la mitad, lo que no llegó a traerse no se pediría
+nunca más: sería un cambio de precio perdido para siempre, vendiendo a un precio
+viejo en el mostrador. Por eso `sincronizarCatalogo` ahora devuelve `incompleto`
+y la marca solo se guarda cuando eso es `false`. La prueba se comprobó al revés:
+guardando la marca siempre, falla.
+
+**2. El corte por tiempo va antes de escribir, no después.** Si no, una página
+podía quedar guardada a medias y la marca no tendría forma de saberlo. Ahora una
+página entra entera o no entra.
+
+**3. El instante de la marca se toma al arrancar, no al terminar.** Lo que
+cambie en la tienda **mientras** el refresco corre entra en la ventana de la
+corrida siguiente, en vez de caer en el hueco entre las dos.
+
+Y un margen de seis horas sobre la ventana, por si el sitio ignora
+`dates_are_gmt` y lee la fecha en el huso local: serían tres horas de
+corrimiento, justo en la dirección que deja productos afuera. El costo de pedir
+de más es una consulta vacía.
+
+## Lo que este camino no cubre
+
+Un producto **borrado definitivamente** en Woo no aparece en ninguna listada, así
+que el refresco no se entera. Uno mandado a la papelera sí, porque cambia de
+estado y se marca inactivo. Para el borrado del todo queda `npm run woo:sync`,
+que compara contra el catálogo entero. Está escrito en el README y en
+PRODUCCION.md, que es donde se va a buscar.
