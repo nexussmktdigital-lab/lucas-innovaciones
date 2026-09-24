@@ -1617,3 +1617,45 @@ Ahora, si la tienda no da cotización, se usa la última guardada y se dice de
 cuándo es. Una de ayer sirve de sobra: la tolerancia es 1,5x contra 0,66x, o sea
 que busca errores de magnitud, no diferencias de unos pesos. Lo único que no se
 puede hacer es verificar a ciegas y callarse.
+
+## Y las seiscientas no eran de los catorce
+
+La baja por ausencia dio catorce productos, exactamente los que faltaban. Pero
+las seiscientas variaciones siguieron activas, lo que desarmaba la explicación:
+si no se habían ido con ningún padre, sus padres estaban vivos.
+
+Lo estaban. Las dos consultas que lo cerraron:
+
+```
+woo_id 6484 · Vidrio templado | glass   · tipo simple · activo · 40 variantes
+woo_id 6487 · Hidrogel clear AA         · tipo simple · activo · 40 variantes
+…quince fichas, cuarenta variaciones cada una
+
+X-WP-Total: 0     (products?type=variable)
+```
+
+La tienda no tiene un solo producto variable: las quince fichas se aplanaron a
+«simple» en WooCommerce. Y WooCommerce, al aplanar, **no borra las
+variaciones**: quedan colgando, invisibles desde la tienda pero intactas en la
+base. El espejo las copió cuando todavía eran variables y después dejó de
+refrescarlas, porque solo se piden las variaciones de los productos variables.
+Seguían apareciendo en la pantalla de venta —`buscar.ts` las une por `v.activo`
+y no mira el tipo del padre— al precio del día en que se aplanaron.
+
+La baja de estas no necesita techo ni corrida completa: no se apoya en una
+ausencia sino en lo que la tienda dijo de cada ficha que devolvió. Vale igual en
+el refresco incremental, y así está probado.
+
+Queda una lección incómoda del camino. Antes de tener estos datos armé la
+hipótesis de que las variaciones eran de los productos borrados, y estuve a un
+paso de escribir el arreglo sobre esa base. Habría sido el arreglo correcto para
+el problema equivocado: si el campo `type` no hubiera estado llegando, dar de
+baja las variaciones dejaba al mostrador sin poder vender vidrios templados. Dos
+consultas de treinta segundos separaban una cosa de la otra.
+
+De ahí sale el último cambio: `type` es el único campo de la ficha sin valor por
+defecto en el esquema. De él depende que un producto conserve o pierda sus
+variaciones, y `.default('simple')` convertía «la tienda no mandó el campo» en
+«el producto es simple», que es la diferencia entre no enterarse de nada y
+aplanar seiscientas variaciones en silencio. Ahora la ficha se descarta y queda
+el aviso, que es la política declarada de ese archivo desde el principio.

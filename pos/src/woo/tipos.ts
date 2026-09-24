@@ -35,7 +35,17 @@ export const wooProducto = z
     id: z.number(),
     name: z.string(),
     slug: z.string().optional(),
-    type: z.string().default('simple'),
+    /*
+     * Obligatorio a propósito, cuando casi todo lo demás tiene valor por
+     * defecto.
+     *
+     * De este campo depende que un producto conserve o pierda sus variaciones.
+     * Con `.default('simple')`, una respuesta que no lo trajera aplanaría el
+     * catálogo entero sin que nadie se entere: seiscientas variaciones dadas de
+     * baja por un campo que no llegó. Prefiero que la ficha se descarte y quede
+     * el aviso en la consola, que es la política declarada de este archivo.
+     */
+    type: z.string(),
     status: z.string().default('publish'),
     catalog_visibility: z.string().default('visible'),
     sku: z.string().nullish(),

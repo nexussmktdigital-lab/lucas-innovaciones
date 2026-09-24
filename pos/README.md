@@ -941,6 +941,26 @@ resguardos:
   una corrida fallida, y un producto dado de baja por error es una venta que el
   mostrador no puede hacer.
 
+### Un producto que dejó de ser variable
+
+Pasar una ficha de «variable» a «simple» en WooCommerce **no borra sus
+variaciones**: quedan colgando, invisibles desde la tienda. El espejo las seguía
+mostrando en la pantalla de venta y ya no las refrescaba, porque solo se piden
+las variaciones de los productos variables — o sea que se vendían al precio del
+día en que el producto se aplanó. Pasó con quince fichas del catálogo real
+(vidrios, hidrogeles y fundas) y sus seiscientas variaciones.
+
+Ahora, cada corrida da de baja las variaciones de todo producto que la tienda
+haya devuelto como no variable. Esto **no** se apoya en una ausencia sino en lo
+que Woo dijo de cada ficha, así que vale igual en la corrida completa que en el
+refresco incremental, y no necesita el techo del 20%.
+
+Por lo mismo, `type` es el único campo de la ficha que **no** tiene valor por
+defecto en el esquema (`src/woo/tipos.ts`): de él depende que un producto
+conserve o pierda sus variaciones, y una respuesta que no lo trajera aplanaría
+el catálogo entero en silencio. Sin `type`, la ficha se descarta y queda el
+aviso en la consola.
+
 De paso arma un informe de calidad de carga, que es la mitad del problema que
 este sistema viene a resolver:
 
@@ -1230,6 +1250,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Lo borrado de la tienda se desactiva, con sus variaciones, y no se borra | `src/woo/sincronizar.test.ts` |
 | Si faltara más del 20% del catálogo no se da de baja nada | `src/woo/sincronizar.test.ts` |
 | Un producto nacido en el POS nunca se da de baja por no estar en Woo | `src/woo/sincronizar.test.ts` |
+| Un producto que dejó de ser variable pierde sus variaciones | `src/woo/sincronizar.test.ts` |
+| Una ficha sin `type` se descarta en vez de aplanar el catálogo | `src/woo/sincronizar.test.ts` |
 | El refresco pide solo lo modificado, con el margen de seis horas | `src/woo/refrescar.test.ts` |
 | El webhook rechaza una firma inválida | `src/woo/webhook.test.ts` |
 | El webhook actualiza la ficha pero NO le pisa el stock al POS | `src/woo/espejo.test.ts` |

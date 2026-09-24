@@ -186,6 +186,61 @@ describe('sincronizarCatalogo', () => {
     const informe = await sincronizarCatalogo(db, clienteDePrueba(conBasura), { tcCentavos: TC });
     expect(informe.leidos).toBe(3);
   });
+
+  it('una ficha sin `type` se descarta, no se asume simple', async () => {
+    // Si se asumiera, una respuesta rara de la tienda aplanaría el catálogo y
+    // se llevaría puestas todas las variaciones sin que nadie se entere.
+    const sinTipo = structuredClone(CATALOGO).map((p) => {
+      const copia: Record<string, unknown> = { ...p };
+      delete copia.type;
+      return copia;
+    });
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(sinTipo), { tcCentavos: TC });
+    expect(informe.leidos).toBe(0);
+    expect(await db.select().from(products)).toHaveLength(0);
+  });
+});
+
+describe('un producto que dejó de ser variable', () => {
+  it('pierde sus variaciones, que si no se siguen vendiendo congeladas', async () => {
+    await sincronizarCatalogo(db, clienteDePrueba(), { tcCentavos: TC });
+    expect(await db.select().from(productVariants)).toHaveLength(2);
+
+    // Lo mismo que hizo Lucas en la tienda: aplanar el vidrio a producto simple.
+    const aplanado = structuredClone(CATALOGO);
+    aplanado[0]!.type = 'simple';
+
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(aplanado), { tcCentavos: TC });
+
+    expect(informe.variantesDesactivadas).toBe(2);
+    const vs = await db.select().from(productVariants);
+    // Siguen en la base, porque una venta vieja puede nombrarlas.
+    expect(vs).toHaveLength(2);
+    expect(vs.every((v) => v.activo === false)).toBe(true);
+  });
+
+  it('mientras siga siendo variable no se le toca ninguna', async () => {
+    await sincronizarCatalogo(db, clienteDePrueba(), { tcCentavos: TC });
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(), { tcCentavos: TC });
+
+    expect(informe.variantesDesactivadas).toBe(0);
+    const vs = await db.select().from(productVariants);
+    expect(vs.every((v) => v.activo === true)).toBe(true);
+  });
+
+  it('el refresco incremental también las da de baja: no depende de una ausencia', async () => {
+    await sincronizarCatalogo(db, clienteDePrueba(), { tcCentavos: TC });
+
+    const aplanado = structuredClone(CATALOGO);
+    aplanado[0]!.type = 'simple';
+
+    const informe = await sincronizarCatalogo(db, clienteDePrueba([aplanado[0]!]), {
+      tcCentavos: TC,
+      modificadoDesde: new Date(Date.now() - 3_600_000),
+    });
+
+    expect(informe.variantesDesactivadas).toBe(2);
+  });
 });
 
 describe('lo que se borró de la tienda', () => {
