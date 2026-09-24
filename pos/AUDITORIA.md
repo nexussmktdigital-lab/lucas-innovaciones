@@ -1531,3 +1531,89 @@ que el refresco no se entera. Uno mandado a la papelera sí, porque cambia de
 estado y se marca inactivo. Para el borrado del todo queda `npm run woo:sync`,
 que compara contra el catálogo entero. Está escrito en el README y en
 PRODUCCION.md, que es donde se va a buscar.
+
+> **Corregido en la undécima pasada.** La frase de arriba era falsa cuando se
+> escribió: `woo:sync` traía el catálogo entero pero no daba de baja nada, así
+> que el borrado del todo no lo resolvía nadie. Ver más abajo.
+
+---
+
+# Undécima pasada — lo que se borró de la tienda seguía a la venta
+
+Al cargar el catálogo real en producción, la consulta de control devolvió algo
+que no cerraba:
+
+```
+productos: 846 · variables: 0 · variantes: 600 · con_imagen: 22
+```
+
+Seiscientas variaciones vivas y **cero** productos variables que las expliquen.
+
+## Lo que pasaba
+
+Un producto que se borra definitivamente en WooCommerce no aparece en ninguna
+listada, ni siquiera pidiendo `status=any`: deja de existir. Y
+`sincronizarCatalogo` solo escribía lo que la tienda devolvía, nunca miraba lo
+que faltaba. Así que la ficha borrada se quedaba en el espejo **activa**, con el
+precio y el stock del día que se borró, y el buscador de la pantalla de venta la
+seguía ofreciendo: `buscar.ts` une las variaciones con `LEFT JOIN … AND v.activo`
+y no pregunta por el tipo del padre.
+
+En números: catorce fichas borradas de la tienda —los vidrios templados y los
+hidrogeles, que son los variables— seguían a la venta con sus seiscientas
+variaciones congeladas doce días atrás. Vender a un precio de hace doce días en
+un negocio donde el dólar mueve la lista todas las semanas no es un detalle.
+
+Y lo peor no fue el agujero sino lo que decía la documentación. En la pasada
+anterior escribí, en el README, en PRODUCCION.md y en el encabezado de
+`refrescar.ts`, que para el borrado definitivo estaba `npm run woo:sync`, «que
+compara contra el catálogo entero». Traía el catálogo entero, sí. Comparar no
+comparaba nada. Un `grep` de dos segundos por `activo: false` en `src/woo/` lo
+habría mostrado, y no lo hice: di por cierto lo que quería que fuera cierto.
+
+## Lo que se hizo
+
+`sincronizarCatalogo` acepta `desactivarAusentes`, y el reconocimiento es por
+fecha: la corrida toca `last_synced_at` de todo lo que la tienda devolvió, así
+que lo que quedó con la fecha vieja es lo que no vino. Un producto nacido en el
+POS y todavía sin publicar tiene esa fecha en `NULL`, y `NULL < fecha` no es
+verdadero, así que queda afuera solo, sin necesitar una condición aparte.
+
+Tres resguardos, y cada uno tiene su prueba:
+
+1. **Se desactiva, nunca se borra.** Las ventas viejas lo siguen referenciando.
+   Las variaciones se dan de baja primero, mientras todavía se sabe de qué padre
+   son.
+2. **Nunca en el refresco incremental.** Con `modificadoDesde` puesto, la
+   ausencia no significa nada —el producto simplemente no cambió— y una corrida
+   cortada por tiempo tampoco da de baja: lo que faltó no está borrado.
+3. **Techo del 20%.** Si el cálculo dice que falta más de una quinta parte del
+   catálogo, no se toca nada y se explica por qué. Una tienda no pierde media
+   lista de un día para el otro: eso es una clave con permisos recortados o una
+   tienda a medio restaurar. Un producto dado de baja por error es una venta que
+   el mostrador no puede hacer.
+
+Los tests se comprobaron al revés: apagando la baja, cuatro fallan. El catálogo
+de prueba de ese bloque tiene cuarenta fichas y no tres, porque con tres
+cualquier baja pasa el techo —sacar una sola ya es el 33%— y el resguardo
+quedaba sin probar.
+
+## Y de paso, la cotización
+
+En la misma corrida apareció esto:
+
+```
+AVISO: no se pudo leer la cotización. Los precios en dólares no se van a verificar.
+```
+
+El script pedía la cotización al plugin de la tienda y, si no la conseguía,
+mandaba `null`. Con `null`, la verificación de precios en dólares —la que atrapa
+el error de los 9 iPhones, US$ 6.300 leídos como $6.300— no corre. Y el informe
+salía **sin un solo `usd_incoherente`**, que es exactamente lo que uno lee como
+«está todo bien» cuando en realidad nadie miró. Un silencio que se disfraza de
+buena noticia es peor que un error.
+
+Ahora, si la tienda no da cotización, se usa la última guardada y se dice de
+cuándo es. Una de ayer sirve de sobra: la tolerancia es 1,5x contra 0,66x, o sea
+que busca errores de magnitud, no diferencias de unos pesos. Lo único que no se
+puede hacer es verificar a ciegas y callarse.

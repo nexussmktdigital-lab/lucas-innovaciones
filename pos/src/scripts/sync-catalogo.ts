@@ -11,6 +11,7 @@ import 'dotenv/config';
 import { writeFile } from 'node:fs/promises';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { desc } from 'drizzle-orm';
 import * as schema from '@/db/schema';
 import { urlDeConexion } from '@/db/url';
 import { ClienteWoo } from '@/woo/cliente';
@@ -85,16 +86,51 @@ async function main() {
       console.log(
         `Cotización: ${formatearARS(cotizacion.valorCentavos)} por dólar (${cotizacion.origen}).`,
       );
-    } else {
-      console.warn(
-        'AVISO: no se pudo leer la cotización. Los precios en dólares no se van a verificar.',
-      );
+    }
+
+    /*
+     * Si Woo no dio cotización, se usa la última guardada.
+     *
+     * Antes se mandaba `null` y con eso el chequeo de precios en dólares —el
+     * que atrapa el error de los 9 iPhones, US$ 6.300 leídos como $6.300— no
+     * corría. Peor todavía: el informe salía sin un solo `usd_incoherente`, que
+     * se lee como «está todo bien» cuando en realidad nadie miró.
+     *
+     * Una cotización de ayer sirve perfecto para esto: la tolerancia es de 1,5x
+     * contra 0,66x, o sea que busca errores de magnitud, no diferencias de unos
+     * pesos. Lo único que no se puede hacer es verificar a ciegas y callarse.
+     */
+    let tcCentavos = cotizacion?.valorCentavos ?? null;
+    if (!cotizacion) {
+      const [ultima] = await db
+        .select()
+        .from(schema.exchangeRates)
+        .orderBy(desc(schema.exchangeRates.vigenteDesde))
+        .limit(1);
+
+      if (ultima) {
+        tcCentavos = ultima.valorCentavos;
+        const dias = Math.floor((Date.now() - ultima.vigenteDesde.getTime()) / 86_400_000);
+        console.warn(
+          `AVISO: no se pudo leer la cotización de la tienda. Se verifica con la última\n` +
+            `      guardada: ${formatearARS(tcCentavos)} por dólar, de hace ${dias} día(s).`,
+        );
+      } else {
+        console.warn(
+          'AVISO: no se pudo leer la cotización y no hay ninguna guardada.\n' +
+            '      Los precios en dólares NO se van a verificar. Cargá una a mano\n' +
+            '      desde el POS (Dólar, F9) y volvé a correr esto.',
+        );
+      }
     }
 
     // 2. Catálogo.
     console.log('Sincronizando catálogo…');
     const informe = await sincronizarCatalogo(db, cliente, {
-      tcCentavos: cotizacion?.valorCentavos ?? null,
+      tcCentavos,
+      // Solo la corrida completa ve el catálogo entero, así que es la única que
+      // puede concluir que algo se borró de la tienda.
+      desactivarAusentes: true,
       alAvanzar: (n) => process.stdout.write(`\r  ${n} productos leídos…`),
     });
     process.stdout.write('\r');
@@ -104,6 +140,13 @@ async function main() {
     console.log(`  Creados:      ${informe.creados}`);
     console.log(`  Actualizados: ${informe.actualizados}`);
     console.log(`  Variaciones:  ${informe.variantes}`);
+    if (informe.desactivados > 0) {
+      console.log(
+        `  Dados de baja: ${informe.desactivados} (ya no están en la tienda; quedan\n` +
+          `                 inactivos, no borrados, porque hay ventas que los nombran)`,
+      );
+    }
+    if (informe.bajasOmitidas) console.warn(`\nAVISO: ${informe.bajasOmitidas}`);
 
     if (informe.avisos.length > 0) {
       console.log(`\nCalidad de carga — ${informe.avisos.length} avisos:`);

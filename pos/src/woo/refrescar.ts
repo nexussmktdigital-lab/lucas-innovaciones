@@ -25,8 +25,10 @@
  *    margen lo cubren, y el costo de pedir de más es una consulta vacía.
  *  - **Un producto borrado del todo en Woo no aparece por acá.** Una ficha que
  *    se manda a la papelera sí —cambia de estado y se marca inactiva—, pero una
- *    borrada definitivamente no figura en ninguna listada. Eso lo resuelve
- *    `npm run woo:sync`, que compara contra el catálogo entero.
+ *    borrada definitivamente no figura en ninguna listada, y desde una ventana
+ *    de cambios no hay forma de distinguir «lo borraron» de «no lo tocaron».
+ *    Eso lo resuelve `npm run woo:sync`, que al ver el catálogo entero sí puede
+ *    dar de baja lo que falta (`desactivarAusentes` en `sincronizar.ts`).
  */
 import { eq, sql } from 'drizzle-orm';
 import { settings } from '@/db/schema';
