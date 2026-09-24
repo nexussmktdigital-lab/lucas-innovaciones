@@ -203,9 +203,16 @@ Lo que sí protege sigue estando, y no es un permiso:
 
 - **El tope de fiado por cliente**, que pone el dueño y hace cumplir el servidor.
 - **La guarda de cordura de precios**, que frena lo que quede muy por debajo del
-  catálogo. Ahora el vendedor la puede confirmar —reservarla al dueño no
-  protegía nada, porque el descuento no pasa por ella y habría empujado a rebajar
-  por el campo que se ve menos— y queda en la bitácora quién confirmó qué.
+  catálogo, y que distingue dos casos que antes iban juntos:
+  - **Un precio escrito a mano** lo confirma quien atiende. Reservarlo al dueño
+    no protegía nada, porque el descuento no pasa por esta guarda y habría
+    empujado a rebajar por el campo que se ve menos.
+  - **Una ficha mal cargada** —el iPhone con la cifra en dólares leída como
+    pesos— sigue siendo del dueño: ahí nadie eligió ese precio, y lo que
+    corresponde no es cobrar igual sino arreglar la ficha.
+
+  El filtro está en el dominio, no en la pantalla, y la bitácora guarda cuál de
+  los dos se confirmó.
 - **Cada venta, cada anulación y cada precio escrito quedan con su autor.**
 
 La lista de `src/auth/permisos.ts` es la de las **excepciones**, no la de lo
@@ -1291,6 +1298,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un precio muy por debajo del catálogo avisa y hay que confirmarlo | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | Corregir hacia arriba un precio viejo se cobra sin preguntar | `src/ventas/confirmar.test.ts` |
 | Cada permiso está clasificado: uno nuevo no se cuela sin decidirlo | `src/auth/pin.test.ts` |
+| El vendedor escribe precios, pero no fuerza una ficha mal cargada | `src/auth/pin.test.ts`, `e2e/calidad.spec.ts` |
+| Confirmar «escritas» no fuerza una sospecha de catálogo, ni desde el navegador | `src/ventas/confirmar.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |

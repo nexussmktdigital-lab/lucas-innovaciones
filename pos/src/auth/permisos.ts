@@ -24,6 +24,7 @@ export const PERMISOS = [
   'venta.anular',
   'venta.descuento',
   'venta.editar_precio',
+  'venta.forzar_ficha_dudosa',
   'fiado.cobrar',
   'fiado.crear',
   'stock.ver',
@@ -55,11 +56,17 @@ export type Permiso = (typeof PERMISOS)[number];
  *    sistema: crear cuentas y cambiar contraseñas, la del dueño incluida. Hoy
  *    no lo usa ninguna pantalla; queda reservado para que, el día que exista,
  *    no aparezca abierto sin que nadie lo haya decidido.
+ *  - `venta.forzar_ficha_dudosa` es cobrar igual un producto cuya ficha está
+ *    mal cargada: el iPhone con la cifra en dólares leída como pesos. No es
+ *    una decisión de venta —nadie eligió ese precio— sino tapar un problema de
+ *    catálogo, y lo que corresponde es arreglar la ficha. Escribir un precio a
+ *    mano, que sí es del mostrador, no pasa por acá.
  */
 const SOLO_DUENIO: readonly Permiso[] = [
   'reporte.ventas',
   'reporte.rentabilidad',
   'usuario.administrar',
+  'venta.forzar_ficha_dudosa',
 ];
 
 export function puede(rol: Rol, permiso: Permiso): boolean {

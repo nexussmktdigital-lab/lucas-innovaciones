@@ -1749,6 +1749,37 @@ bitácora registra quién confirmó.
 **Y el acceso a «Cargar al catálogo» ahora está también cuando hay resultados**,
 como un renglón discreto al pie de la búsqueda: *¿No está en la lista?*
 
+## Dos sospechas que eran una sola, y no lo eran
+
+Correr la suite entera destapó algo que la decisión de Lucas no cubría, porque
+nadie sabía que había que decidirlo.
+
+La guarda de precios tira `precio_sospechoso` en dos casos que no se parecen en
+nada:
+
+1. **Una ficha mal cargada.** El iPhone con la cifra en dólares leída como
+   pesos: el error de agosto. Nadie eligió ese precio.
+2. **Un precio escrito a mano muy por debajo del catálogo.** Alguien lo decidió,
+   en el mostrador, con el cliente enfrente.
+
+Los dos viajaban bajo el mismo `motivo` de texto libre, así que al habilitarle
+al vendedor «confirmar un precio sospechoso» se le habilitaron los dos de una.
+El e2e lo cazó: un test que decía *al vendedor lo frena del todo, y le dice cómo
+salir* —sobre el iPhone mal cargado— empezó a fallar porque ahora le aparecía el
+botón de cobrar igual.
+
+Habría sido fácil reescribir ese test y seguir. Lo correcto era separar los
+casos: `Sospecha` ahora lleva `tipo: 'catalogo' | 'escrito'`, y son dos permisos
+distintos. El precio escrito lo confirma quien atiende; la ficha mal cargada
+sigue siendo del dueño, porque ahí cobrar igual no es una decisión de venta sino
+tapar un problema de catálogo, y lo que corresponde es arreglar la ficha.
+
+El filtro vive en el dominio y no en la pantalla: `confirmarSospechas` es ahora
+`'escritas' | 'todas'` y `confirmarVenta` descuenta solo lo que vino a
+confirmarse. Un navegador manipulado que mande la bandera no fuerza una ficha
+dudosa. Y la bitácora guarda cuál de los dos se confirmó, que leído dentro de
+seis meses no es lo mismo que un `true`.
+
 ## Lo que quedó afuera a propósito
 
 `usuario.administrar` sigue siendo del dueño. Crear cuentas y cambiar

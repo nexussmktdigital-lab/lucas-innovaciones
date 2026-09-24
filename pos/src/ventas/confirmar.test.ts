@@ -506,6 +506,53 @@ describe('validación de cordura de precios', () => {
     expect(await db.select().from(sales)).toHaveLength(0);
   });
 
+  it('confirmar «escritas» NO fuerza una ficha mal cargada', async () => {
+    /*
+     * Es la guarda contra el navegador manipulado. El vendedor puede confirmar
+     * un precio que escribió él; si esa misma bandera sirviera para tapar una
+     * ficha mal cargada, el permiso que se le dio en el mostrador le abriría el
+     * error de los 9 iPhones. El filtro vive acá, en el dominio, no en la
+     * pantalla que manda la bandera.
+     */
+    const id = await iPhoneMalCargado();
+
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: id, cantidad: 1 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 630_000, monetaryAccountId: cajaId }],
+          confirmarSospechas: 'escritas',
+        }),
+      ),
+    ).rejects.toMatchObject({ motivo: 'precio_sospechoso' });
+
+    expect(await db.select().from(sales)).toHaveLength(0);
+  });
+
+  it('pero sí deja pasar el precio escrito, que es lo que vino a confirmar', async () => {
+    const [p] = await db
+      .insert(products)
+      .values({
+        wooId: 7098,
+        nombre: 'Cargador rápido 20W',
+        categoria: 'Accesorios',
+        precioCentavos: 2_000_000,
+        stock: 5,
+      })
+      .returning();
+
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: p!.id, cantidad: 1, precioManualCentavos: 100 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
+        confirmarSospechas: 'escritas',
+      }),
+    );
+    expect(r.totalCentavos).toBe(100);
+  });
+
   it('el dueño puede confirmarla a sabiendas, y queda auditado', async () => {
     const id = await iPhoneMalCargado();
 
@@ -514,17 +561,19 @@ describe('validación de cordura de precios', () => {
       solicitud({
         lineas: [{ productId: id, cantidad: 1 }],
         pagos: [{ medio: 'efectivo', montoCentavos: 630_000, monetaryAccountId: cajaId }],
-        confirmarPreciosSospechosos: true,
+        confirmarSospechas: 'todas',
       }),
     );
 
     expect(r.totalCentavos).toBe(630_000);
 
+    // La bitácora guarda QUÉ se confirmó, no solo que se confirmó algo: leer
+    // «escritas» seis meses después no es lo mismo que leer «todas».
     const [bitacora] = await db.select().from(auditLog);
     expect(
-      (bitacora!.valorNuevo as { preciosSospechososConfirmados: boolean })
+      (bitacora!.valorNuevo as { preciosSospechososConfirmados: string | false })
         .preciosSospechososConfirmados,
-    ).toBe(true);
+    ).toBe('todas');
   });
 
   it('no molesta con los accesorios, que son la mayoría del catálogo', async () => {
@@ -885,7 +934,7 @@ describe('precio escrito en el mostrador', () => {
       solicitud({
         lineas: [{ productId: p!.id, cantidad: 1, precioManualCentavos: 100 }],
         pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
-        confirmarPreciosSospechosos: true,
+        confirmarSospechas: 'todas',
       }),
     );
     expect(r.totalCentavos).toBe(100);

@@ -72,6 +72,14 @@ describe('permisos', () => {
     expect(puede('seller', 'usuario.administrar')).toBe(false);
   });
 
+  it('ni cobra igual una ficha mal cargada: eso se arregla, no se fuerza', () => {
+    // Escribir un precio sí es suyo; forzar el iPhone con la cifra en dólares
+    // leída como pesos, no. Son dos cosas distintas y por eso son dos permisos.
+    expect(puede('seller', 'venta.editar_precio')).toBe(true);
+    expect(puede('seller', 'venta.forzar_ficha_dudosa')).toBe(false);
+    expect(puede('owner', 'venta.forzar_ficha_dudosa')).toBe(true);
+  });
+
   it('cada permiso está clasificado: uno nuevo no se cuela sin decidirlo', () => {
     /*
      * La lista de excepciones se escribe a mano y la de permisos crece sola.
@@ -85,6 +93,7 @@ describe('permisos', () => {
       'venta.anular',
       'venta.descuento',
       'venta.editar_precio',
+      'venta.forzar_ficha_dudosa',
       'fiado.cobrar',
       'fiado.crear',
       'stock.ver',

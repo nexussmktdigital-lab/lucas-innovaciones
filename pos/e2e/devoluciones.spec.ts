@@ -212,10 +212,11 @@ test('el reporte del turno también lo explica', async ({ page }) => {
   await expect(arqueo).toContainText('Devuelto por ventas de otros turnos');
 });
 
-test('el vendedor no devuelve', async ({ page }) => {
-  // Devolver plata de una venta de otro turno es una decisión sobre el cajón de
-  // hoy, no una corrección de carga.
+test('el vendedor devuelve', async ({ page }) => {
+  // Un cliente que vuelve con el producto el martes no puede esperar a que
+  // llegue el dueño. Lo que cuida el cajón no es el permiso sino el arqueo:
+  // la devolución sale de la caja del turno y el cierre la muestra.
   await entrarComoVendedor(page);
   await page.goto('/devoluciones');
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).not.toHaveURL(/\/$/);
 });

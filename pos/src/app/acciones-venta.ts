@@ -12,13 +12,14 @@ import { after } from 'next/server';
 import { z } from 'zod';
 import { auth } from '@/auth';
 import { db } from '@/db';
-import { puede } from '@/auth/permisos';
+import { puede, type Rol } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { CUOTAS_MAXIMAS } from '@/fiado/plan';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { calcularTotales } from '@/ventas/carrito';
+import type { Sospecha } from '@/ventas/cordura';
 import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
 import { ErrorFiado } from '@/fiado/cuenta';
 import { drenarEnSegundoPlano } from '@/woo/cola';
@@ -96,6 +97,31 @@ export type ResultadoDeVenta =
       puedeConfirmar?: boolean;
     };
 
+/**
+ * Quién puede cobrar igual cuando la guarda de precios saltó.
+ *
+ * Depende de por qué saltó, no de quién es:
+ *
+ *  - **Un precio escrito en el mostrador** es una decisión de venta —un precio
+ *    acordado, una punta que se cierra— y la toma quien está atendiendo. Antes
+ *    era del dueño, y quedó inconsistente cuando el vendedor pasó a descontar
+ *    sin tope: el descuento no pasa por esta guarda, así que reservar el precio
+ *    escrito no protegía nada y empujaba a rebajar por el campo que se ve menos.
+ *  - **Una ficha mal cargada** no la eligió nadie. Es el error de los 9 iPhones
+ *    de agosto: la cifra en dólares leída como pesos. Ahí cobrar igual no es
+ *    una decisión de mostrador sino tapar un problema de catálogo, y lo que
+ *    corresponde es arreglar la ficha. Sigue siendo del dueño.
+ *
+ * Con las dos cosas mezcladas —lo estaban, bajo un `motivo` de texto libre—
+ * abrirle una al vendedor abría la otra sin que nadie lo decidiera.
+ */
+function puedeSeguir(rol: Rol, sospechas: readonly Sospecha[] | undefined): boolean {
+  if (!sospechas || sospechas.length === 0) return false;
+  return sospechas.some((s) => s.tipo === 'catalogo')
+    ? puede(rol, 'venta.forzar_ficha_dudosa')
+    : puede(rol, 'venta.editar_precio');
+}
+
 export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVenta> {
   const sesion = await auth();
   if (!sesion?.user) return { ok: false, error: 'Se cerró la sesión. Volvé a entrar.' };
@@ -143,21 +169,16 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
   }
 
   /*
-   * Confirmar un precio sospechoso lo puede hacer quien puede escribirlo.
-   *
-   * Era del dueño solo, y quedó inconsistente cuando el vendedor pasó a poder
-   * descontar sin tope: el descuento **no** pasa por la guarda de cordura, así
-   * que reservar el precio escrito no protegía nada, solo empujaba a rebajar
-   * por el otro campo, que se ve menos. La guarda sigue estando —nadie cobra
-   * un iPhone a mil pesos sin que aparezca el cartel— y quién la confirmó
-   * queda en la bitácora de la venta.
-   *
-   * La bandera igual se recalcula acá: lo que decide es el permiso del
-   * servidor, no lo que diga la pantalla.
+   * La bandera se recalcula acá: lo que decide es el servidor, no la pantalla.
+   * Quién puede seguir de largo depende de POR QUÉ saltó la guarda, y eso lo
+   * resuelve `puedeSeguir` unas líneas más abajo.
    */
-  const salteaGuardaDePrecios =
-    (validado.data.confirmarPreciosSospechosos ?? false) &&
-    puede(sesion.user.rol, 'venta.editar_precio');
+  const confirmaSospechas: 'escritas' | 'todas' | undefined = !validado.data
+    .confirmarPreciosSospechosos
+    ? undefined
+    : puede(sesion.user.rol, 'venta.forzar_ficha_dudosa')
+      ? 'todas'
+      : 'escritas';
 
   try {
     const venta = await confirmarVenta(db, {
@@ -184,7 +205,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       idempotencyKey: validado.data.idempotencyKey,
       nota: validado.data.nota ?? null,
       autorizadaPorId: hayDescuento ? sesion.user.id : null,
-      confirmarPreciosSospechosos: salteaGuardaDePrecios,
+      confirmarSospechas: confirmaSospechas,
       // Un plan sin fiado no es nada: si no quedó deuda, no hay qué financiar.
       plan: hayFiado ? (validado.data.plan ?? null) : null,
     });
@@ -209,9 +230,8 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
         ok: false,
         error: error.message,
         motivo: error.motivo,
-        // Quien puede escribir el precio puede confirmarlo; ver arriba.
         puedeConfirmar:
-          error.motivo === 'precio_sospechoso' && puede(sesion.user.rol, 'venta.editar_precio'),
+          error.motivo === 'precio_sospechoso' && puedeSeguir(sesion.user.rol, error.sospechas),
       };
     }
     // El límite de crédito lo frena el dominio: su mensaje explica qué pasó y

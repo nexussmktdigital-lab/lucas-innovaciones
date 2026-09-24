@@ -119,7 +119,19 @@ export interface SolicitudDeVenta {
   /** Dueño que autorizó un descuento o un precio editado, si hizo falta. */
   autorizadaPorId?: string | null;
   /** El dueño vio el cartel de precio sospechoso y decidió vender igual. */
-  confirmarPreciosSospechosos?: boolean;
+  /**
+   * Qué sospechas viene a confirmar quien cobra, si viene a confirmar alguna.
+   *
+   *  - `'escritas'`: los precios que alguien escribió a mano. Es una decisión
+   *    de venta y la toma el mostrador.
+   *  - `'todas'`: incluye las fichas mal cargadas, que no las eligió nadie.
+   *    Cobrar igual ahí es tapar un problema de catálogo, así que es del dueño.
+   *
+   * Era un booleano, y con los dos casos bajo la misma bandera habilitarle uno
+   * al vendedor le habilitaba el otro. Quién manda cada valor lo decide
+   * `acciones-venta.ts` contra los permisos, nunca la pantalla.
+   */
+  confirmarSospechas?: 'escritas' | 'todas';
   /** Presente solo si la venta se cobró sin conexión y entra ahora. */
   diferida?: CobroDiferido | null;
   /**
@@ -444,15 +456,16 @@ export async function confirmarVenta(
     //    servicios se cobran escribiendo el precio, así que no se puede pedir
     //    permiso para escribirlo; lo que sí se puede es frenar el $1.
     //
-    //    En los dos casos no se bloquea de forma definitiva: se avisa y lo
-    //    confirma el dueño, que es el único que puede saltear la guarda.
+    //    Ninguno se bloquea de forma definitiva, pero no los confirma el
+    //    mismo: el precio escrito lo confirma quien atiende, y la ficha mal
+    //    cargada el dueño, porque ahí lo que hay que hacer es arreglarla.
     //
     //    Una venta diferida no pasa por acá: ya se cobró, el cliente se fue con
     //    el producto y frenarla ahora no deshace nada, solo la deja trabada en
     //    el navegador. Lo que la reemplaza es el desvío anotado arriba, que el
     //    dueño ve en la lista de ventas cargadas después.
-    if (!solicitud.confirmarPreciosSospechosos && !solicitud.diferida) {
-      const sospechas = [
+    if (solicitud.confirmarSospechas !== 'todas' && !solicitud.diferida) {
+      const todas = [
         ...revisarVenta(
           lineas.map((l) => {
             const p = catalogo.get(l.productId)!;
@@ -477,6 +490,12 @@ export async function confirmarVenta(
           return s ? [s] : [];
         }),
       ];
+
+      // Lo que vino a confirmar se descuenta; lo que quede frena la venta.
+      const sospechas =
+        solicitud.confirmarSospechas === 'escritas'
+          ? todas.filter((s) => s.tipo !== 'escrito')
+          : todas;
 
       if (sospechas.length > 0) {
         throw new ErrorVenta(explicarSospechas(sospechas), 'precio_sospechoso', sospechas);
@@ -782,7 +801,7 @@ export async function confirmarVenta(
         unidades: totales.unidades,
         medios: solicitud.pagos.map((p) => p.medio),
         autorizadaPor: solicitud.autorizadaPorId ?? null,
-        preciosSospechososConfirmados: solicitud.confirmarPreciosSospechosos ?? false,
+        preciosSospechososConfirmados: solicitud.confirmarSospechas ?? false,
         // Lo que hace falta para reconstruir qué pasó con una venta diferida.
         ...(solicitud.diferida
           ? {

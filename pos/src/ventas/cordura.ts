@@ -29,6 +29,20 @@ export interface Sospecha {
   precioCentavos: number;
   pisoCentavos: number;
   motivo: string;
+  /**
+   * De dónde salió la sospecha. No es decorativo: decide quién puede seguir.
+   *
+   *  - `catalogo`: la ficha está mal cargada. Nadie eligió ese precio —es el
+   *    caso de los 9 iPhones de agosto, la cifra en dólares leída como pesos—
+   *    y lo que corresponde no es cobrar igual sino arreglar la ficha. Sigue
+   *    siendo del dueño.
+   *  - `escrito`: alguien escribió ese precio a propósito, en el mostrador. Es
+   *    una decisión de venta, y la toma quien está atendiendo.
+   *
+   * Los dos vivían bajo el mismo `motivo` de texto libre, y por eso abrirle uno
+   * al vendedor abría el otro sin que nadie lo decidiera.
+   */
+  tipo: 'catalogo' | 'escrito';
 }
 
 /**
@@ -134,6 +148,7 @@ export function revisarLinea(
       descripcion: p.nombre,
       precioCentavos,
       pisoCentavos: 1,
+      tipo: 'catalogo',
       motivo:
         'Está cargado sin precio y se cobraría $0. Revisá la ficha antes de vender: ' +
         'el stock se descuenta igual.',
@@ -156,6 +171,7 @@ export function revisarLinea(
     descripcion: p.nombre,
     precioCentavos,
     pisoCentavos: piso,
+    tipo: 'catalogo',
     motivo,
   };
 }
@@ -190,6 +206,7 @@ export function revisarPrecioEscrito(
     descripcion,
     precioCentavos: precioEscritoCentavos,
     pisoCentavos: piso,
+    tipo: 'escrito',
     motivo:
       `En el catálogo figura a $${(precioReferenciaCentavos / 100).toLocaleString('es-AR')}. ` +
       'Si es un precio acordado está bien: confirmalo y la venta sigue.',
