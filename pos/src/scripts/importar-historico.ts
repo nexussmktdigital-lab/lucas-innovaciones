@@ -11,6 +11,16 @@
  *
  * Es seguro repetirlo: lo que ya está no se vuelve a cargar.
  */
+/*
+ * Como los otros seis scripts: `dotenv/config` y no `--env-file` de Node.
+ *
+ * `--env-file=.env` **exige** que el archivo exista y aborta con un críptico
+ * `node: .env: not found` si no está, aunque las variables ya estén exportadas
+ * en la terminal —que es justo como se corre esto contra producción, para no
+ * dejar la cadena de la base escrita en un archivo—. `dotenv/config` lee el
+ * `.env` si lo hay y no molesta si no.
+ */
+import 'dotenv/config';
 import { db } from '@/db';
 import { ClienteWoo, ErrorWoo } from '@/woo/cliente';
 import { estadoDelHistorico, importarHistorico } from '@/woo/historico';
