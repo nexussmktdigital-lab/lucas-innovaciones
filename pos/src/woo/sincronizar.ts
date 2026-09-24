@@ -34,6 +34,8 @@ export interface InformeSincronizacion {
   incompleto: boolean;
   /** Productos dados de baja por no estar más en la tienda. */
   desactivados: number;
+  /** Variaciones dadas de baja porque su producto dejó de ser variable. */
+  variantesDesactivadas: number;
   /**
    * Por qué no se dieron de baja los ausentes, si correspondía hacerlo.
    *
@@ -208,6 +210,8 @@ export async function sincronizarCatalogo(
       ? await desactivarAusentes(db, desde)
       : { desactivados: 0 };
 
+  const variantesDesactivadas = leidos > 0 ? await desactivarVariacionesHuerfanas(db, desde) : 0;
+
   return {
     leidos,
     creados,
@@ -217,8 +221,41 @@ export async function sincronizarCatalogo(
     resumen,
     duracionMs: Date.now() - inicio,
     incompleto,
+    variantesDesactivadas,
     ...baja,
   };
+}
+
+/**
+ * Da de baja las variaciones de un producto que dejó de ser variable.
+ *
+ * En WooCommerce, pasar una ficha de «variable» a «simple» no borra sus
+ * variaciones: quedan colgando, invisibles desde la tienda. El espejo, en
+ * cambio, las seguía mostrando en la pantalla de venta —`buscar.ts` las une por
+ * `v.activo` y no pregunta por el tipo del padre— y además ya no las
+ * refrescaba, porque solo se piden las variaciones de los productos variables.
+ *
+ * Resultado: se vendían al precio del día en que el producto se aplanó. Pasó en
+ * el catálogo real con quince fichas —vidrios, hidrogeles y fundas— y sus
+ * seiscientas variaciones, congeladas doce días.
+ *
+ * Esto no se apoya en una ausencia sino en lo que la tienda dijo de cada ficha
+ * que devolvió, así que vale igual en una corrida completa que en el refresco
+ * incremental, y no necesita el techo de las bajas por ausencia.
+ */
+async function desactivarVariacionesHuerfanas(db: BaseDatos, desde: Date): Promise<number> {
+  const filas = filasDe<{ id: string }>(
+    await db.execute(sql`
+      UPDATE product_variants v SET activo = false
+      FROM products p
+      WHERE v.product_id = p.id
+        AND v.activo
+        AND p.tipo <> 'variable'
+        AND p.last_synced_at >= ${desde.toISOString()}
+      RETURNING v.id
+    `),
+  );
+  return filas.length;
 }
 
 /**

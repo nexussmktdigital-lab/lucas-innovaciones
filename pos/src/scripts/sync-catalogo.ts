@@ -146,6 +146,12 @@ async function main() {
           `                 inactivos, no borrados, porque hay ventas que los nombran)`,
       );
     }
+    if (informe.variantesDesactivadas > 0) {
+      console.log(
+        `  Variaciones dadas de baja: ${informe.variantesDesactivadas} (su producto dejó\n` +
+          `                 de ser variable en la tienda)`,
+      );
+    }
     if (informe.bajasOmitidas) console.warn(`\nAVISO: ${informe.bajasOmitidas}`);
 
     if (informe.avisos.length > 0) {
