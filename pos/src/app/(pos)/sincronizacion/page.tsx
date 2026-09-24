@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { desc } from 'drizzle-orm';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { syncConflicts } from '@/db/schema';
 import { formatearFechaHora } from '@/lib/fecha';
@@ -18,7 +19,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaSincronizacion() {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'configuracion.editar')) redirect('/');
 
   const cola = await pendientesDeSincronizar(db);
   const operaciones = await operacionesEnCola(db);

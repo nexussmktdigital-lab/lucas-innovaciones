@@ -178,6 +178,43 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 
 ---
 
+## Quién puede qué
+
+**El vendedor puede hacer todo menos ver el balance del mes.** Vender, fiar,
+cobrar, descontar, anular, escribir un precio, cargar un gasto, dar de alta un
+producto, tocar el dólar. Reportes es lo único que queda del lado del dueño, y
+es lo único que pidió reservarse.
+
+No arrancó así. El diseño original tenía tres niveles —lo del vendedor, lo del
+dueño, y un tercero «el vendedor puede con el PIN del dueño al lado»— y la
+primera semana con gente de verdad lo desarmó entero. Dos cosas:
+
+1. **El tercer nivel nunca existió.** `requiereAutorizacion` estaba escrito y no
+   se llamaba desde ninguna pantalla: los controles simplemente no se mostraban
+   y la única salida era que el dueño se logueara él. Un permiso que en la
+   práctica es «andá a buscar a Lucas» no es un permiso, es una traba.
+2. **Lo que se frenaba era el trabajo, no el riesgo.** Llegó mercadería con
+   aumento y la ficha quedó vieja; un cliente quiere fiar un martes a la tarde;
+   hay que anular una venta cargada mal. Nada de eso es una decisión que
+   convenga tomar dos horas después, y el costo de frenarlo es el papel: se
+   anota a mano y el sistema se entera tarde o nunca.
+
+Lo que sí protege sigue estando, y no es un permiso:
+
+- **El tope de fiado por cliente**, que pone el dueño y hace cumplir el servidor.
+- **La guarda de cordura de precios**, que frena lo que quede muy por debajo del
+  catálogo. Ahora el vendedor la puede confirmar —reservarla al dueño no
+  protegía nada, porque el descuento no pasa por ella y habría empujado a rebajar
+  por el campo que se ve menos— y queda en la bitácora quién confirmó qué.
+- **Cada venta, cada anulación y cada precio escrito quedan con su autor.**
+
+La lista de `src/auth/permisos.ts` es la de las **excepciones**, no la de lo
+permitido: así el permiso que alguien agregue mañana nace del lado del vendedor,
+que es la regla. `pin.test.ts` obliga a clasificar cada permiso nuevo para que
+la excepción no se cuele por olvido.
+
+---
+
 ## Cómo funciona una venta
 
 1. **Se abre la caja** declarando el efectivo inicial. Sin caja abierta no se vende.
@@ -306,10 +343,12 @@ la carga de la ficha de papel.
 
 Las reglas están en la transacción, no en la pantalla:
 
-- **Fiar es del dueño.** `fiado.crear` no está entre los permisos del vendedor:
-  dar crédito no es una decisión de mostrador. **Cobrar sí** lo puede hacer el
-  vendedor: que venga alguien a pagar y no se le pueda recibir la plata sería
-  peor que cualquier control.
+- **Fiar y cobrar son del vendedor.** Al principio fiar era del dueño —dar
+  crédito no parecía una decisión de mostrador—, y en la primera semana de uso
+  real se vio el costo: el fiado es el corazón del negocio, y mandar al cliente
+  a esperar a que llegue Lucas es exactamente lo que hacía que se siguiera
+  usando la libreta. Lo que protege no es el permiso sino el **tope por
+  cliente**, que lo pone el dueño y el servidor lo hace cumplir.
 - **No se fía sin cliente.** El botón está apagado hasta elegir uno.
 - **El tope se comprueba contra la deuda de ese instante**, no contra la que
   había cuando se abrió la pantalla. La pantalla avisa antes de confirmar; el
@@ -1081,13 +1120,26 @@ oscura. El modo oscuro redeclara las variables en un `:root` común dentro del
 
 ```bash
 npm test          # unitarios y de integración (Vitest)
-npm run test:e2e  # de punta a punta (Playwright)
+npm run test:e2e  # de punta a punta (Playwright). Compila primero, a propósito
 npm run typecheck # TypeScript en modo estricto
 npm run lint      # ESLint con el conjunto de Next
 npm run auditar   # invariantes de plata contra la base de verdad
 npm run carreras  # dos personas haciendo lo mismo al mismo tiempo
 npm run caja      # el cajón contra todas las formas de mover plata
 ```
+
+**Por qué `test:e2e` compila antes.** Playwright levanta el POS con
+`next start`, que sirve lo que haya en `.next`, y la configuración reusa un
+servidor que ya esté arriba. Sin compilar, la suite corre los tests nuevos
+contra el código viejo: los cambios de la aplicación no están y las pruebas
+fallan —o peor, pasan— por un motivo que no tiene nada que ver con el código que
+se acaba de escribir. Costó un ciclo entero descubrirlo. Para iterar sobre los
+tests sin tocar la aplicación está `npm run test:e2e:rapido`, que no compila.
+
+**Y reseteá la base antes de dar un veredicto**: la suite es con estado y deja
+stock consumido, así que correrla dos veces seguidas sin `npm run db:seed --
+--reset` inventa fallas que no existen.
+
 
 Y uno que no es de prueba sino de puesta en marcha:
 
@@ -1188,7 +1240,7 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un salto del dólar mayor al 15% pide confirmación | `src/cotizacion/cotizacion.test.ts` |
 | Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
-| El vendedor no llega a las pantallas del dueño ni por URL | `e2e/calidad.spec.ts` |
+| El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |
 | Fiar deja la deuda registrada y no mueve plata | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | El tope de fiado frena la venta antes de que entre | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
@@ -1220,14 +1272,14 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una vista previa de Vercel no se toma por producción, aunque `NODE_ENV` lo diga | `src/lib/produccion.test.ts` |
 | El staging se reconoce por ruta y por subdominio, y un dominio que empieza con «dev» no lo es | `src/lib/produccion.test.ts` |
 | Sin `CRON_SECRET` en producción el POS lo reclama; en desarrollo no molesta | `src/lib/produccion.test.ts` |
-| El vendedor no puede fiar, pero sí recibir un pago | `e2e/fiado.spec.ts` |
+| El vendedor fía y recibe pagos | `e2e/fiado.spec.ts` |
 | Un teléfono argentino se normaliza como lo escriban | `src/clientes/clientes.test.ts` |
 | El mismo teléfono no se puede cargar en dos clientes | `src/clientes/clientes.test.ts`, `e2e/fiado.spec.ts` |
 | Una variación se cobra a su precio y no al del producto padre | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | Una variación de otro producto se rechaza | `src/ventas/confirmar.test.ts` |
 | Dos pagos en efectivo descuentan el vuelto una sola vez | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | Quitar un renglón de pago no deja la pantalla mostrando otro número | `e2e/venta.spec.ts` |
-| El vendedor no puede escribir el precio de un servicio ni saltear la guarda | `e2e/venta.spec.ts` |
+| El vendedor anula, descuenta y escribe precios | `e2e/venta.spec.ts` |
 | Anular repone el stock en la variación de la que salió y revierte la caja | `src/ventas/anular.test.ts` |
 | Una venta anulada no cuenta en el arqueo, y no se anula dos veces | `src/ventas/anular.test.ts` |
 | Una venta de un turno cerrado no se puede anular | `src/ventas/anular.test.ts` |
@@ -1236,7 +1288,9 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un servicio no lleva recargo: no se vende por la web | `src/precios/mostrador.test.ts` |
 | Un precio de mostrador escrito a mano manda sobre el cálculo | `src/precios/mostrador.test.ts` |
 | El recargo que cubre una comisión del 6% es 6,38%, no 6% | `src/precios/mostrador.test.ts` |
-| El vendedor escribe el precio de un servicio, pero no lo puede regalar | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
+| Un precio muy por debajo del catálogo avisa y hay que confirmarlo | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
+| Corregir hacia arriba un precio viejo se cobra sin preguntar | `src/ventas/confirmar.test.ts` |
+| Cada permiso está clasificado: uno nuevo no se cuela sin decidirlo | `src/auth/pin.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |
 | Un producto en USD sin precio en dólares no entra | `src/db/esquema.test.ts` |

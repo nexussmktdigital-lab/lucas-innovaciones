@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { formatearARS } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
@@ -32,7 +33,7 @@ export default async function PaginaGastos({
   searchParams: Promise<{ mes?: string; categoria?: string; estado?: string }>;
 }) {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'gasto.ver')) redirect('/');
 
   const hoy = fechaLocalISO();
   const { mes = hoy.slice(0, 7), categoria, estado } = await searchParams;

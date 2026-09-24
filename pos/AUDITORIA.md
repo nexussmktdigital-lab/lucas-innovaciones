@@ -1659,3 +1659,100 @@ variaciones, y `.default('simple')` convertía «la tienda no mandó el campo» 
 «el producto es simple», que es la diferencia entre no enterarse de nada y
 aplanar seiscientas variaciones en silencio. Ahora la ficha se descarta y queda
 el aviso, que es la política declarada de ese archivo desde el principio.
+
+---
+
+# Duodécima pasada — el permiso que frenaba el trabajo, no el riesgo
+
+Los vendedores empezaron a usar el sistema y en el primer día pidieron tres
+cosas, todas la misma:
+
+> **Fede:** que podamos editar un precio antes de venderlo por las dudas algo
+> tenga precio viejo · No veo que se pueda hacer descuento tampoco
+>
+> **Valentina:** si se puede que nosotros carguemos las cosas mejor, porque si
+> compran algo que recién llega no podemos anotarlo hasta que vos lo cargues
+
+Y reportaron un cuarto: una venta en cuenta corriente que no aparecía en Fiado.
+
+## El que no era un bug
+
+Lo primero fue reproducir el fiado contra una base real, porque una deuda que no
+se registra es plata que se va:
+
+```
+credit_accounts  → saldo $ 1.200,00 (origen sistema)
+deudores()       → aparece con $ 1.200,00
+sales.tipo       → fiado
+```
+
+El dominio estaba bien. Lo que pasaba es que **el vendedor no podía hacer esa
+venta**: en la pantalla de cobro el botón «+ Cuenta corriente» solo se dibujaba
+para el dueño (`puedeFiar={esDuenio}`). Así que la venta que probaron se cobró
+con otro medio y no había deuda que mostrar. El síntoma decía «no aparece en
+Fiado»; la causa era «no se puede fiar».
+
+Eso tiene una cola: esa venta entró al cajón como cobrada. No es un error del
+arqueo —el arqueo cuenta lo que le declararon— pero conviene mirarla.
+
+## Los otros tres, y el hueco que tenían debajo
+
+- **Editar precio:** solo existía en los productos marcados `precioEditable`, que
+  son los servicios. Para un producto normal con la ficha vieja no había forma,
+  ni para el dueño.
+- **Descuento:** `puedeDescontar={esDuenio}`.
+- **Cargar productos:** el vendedor **ya tenía el permiso** y la pantalla lo
+  dejaba entrar. El problema era llegar: el botón «Cargar al catálogo» aparecía
+  únicamente cuando la búsqueda no devolvía nada. Buscar «auricular» traía otros
+  diez y el botón desaparecía.
+
+Debajo de los tres estaba lo mismo: el diseño definía un tercer nivel de permiso
+—*el vendedor puede, con el PIN del dueño al lado*— para anular, descontar,
+editar precio, ajustar stock y cargar gastos. **Ese nivel no tenía pantalla.**
+`requiereAutorizacion` estaba escrito, exportado, probado… y no se llamaba desde
+ningún lado. Los controles simplemente no se mostraban.
+
+Un permiso que en la práctica significa «andá a buscar a Lucas» no es un
+permiso: es una traba, y la salida que encuentra el mostrador es el papel.
+
+## Lo que decidió Lucas
+
+> los vendedores pueden hacer todo menos ver y hacer reportes de balance mensual
+
+## Lo que se hizo
+
+La lista de `permisos.ts` pasó a ser la de las **excepciones**: `puede()`
+devuelve true salvo para los dos de reportes y `usuario.administrar`. Con eso el
+permiso que alguien agregue mañana nace del lado del vendedor, que es la regla, y
+volverlo del dueño es una decisión explícita. Un test recorre `PERMISOS` y falla
+si aparece uno sin clasificar, que es el precio de invertir la regla y se paga
+una sola vez.
+
+Y apareció la duplicación de siempre: **ocho páginas guardaban por rol**
+(`if (sesion?.user.rol !== 'owner') redirect('/')`) en vez de por permiso, y la
+barra de navegación tenía su propio `soloDuenio`. Tres lugares donde decir lo
+mismo, que es una forma seria de que digan cosas distintas: abrirle una pantalla
+al vendedor exigía acordarse de los tres. Ahora los tres preguntan `puede()`.
+
+**El precio escrito vale en cualquier producto.** Lo que reemplaza a la
+prohibición no es confianza: es la guarda de cordura, que compara contra el
+catálogo y frena lo que quede muy por debajo. Cobrar **de más** no la despierta,
+y es justo el caso de Fede: el proveedor aumentó y la ficha quedó vieja.
+
+**Confirmar un precio sospechoso pasó a ser del que puede escribirlo.** Esta la
+pensé dos veces, porque es la guarda emparentada con el error de los 9 iPhones.
+Lo que la decidió es que **el descuento no pasa por la guarda**: con el vendedor
+descontando sin tope, reservar el precio escrito no protegía nada —solo empujaba
+a rebajar por el campo que se ve menos—. La guarda sigue avisando siempre y la
+bitácora registra quién confirmó.
+
+**Y el acceso a «Cargar al catálogo» ahora está también cuando hay resultados**,
+como un renglón discreto al pie de la búsqueda: *¿No está en la lista?*
+
+## Lo que quedó afuera a propósito
+
+`usuario.administrar` sigue siendo del dueño. Crear cuentas y cambiar
+contraseñas —la del dueño incluida— no es atender el mostrador, es controlar el
+sistema. Hoy no lo usa ninguna pantalla; queda reservado para que el día que
+exista no aparezca abierto sin que nadie lo haya decidido. Está dicho en el
+código y en la respuesta a Matías, no escondido en un commit.

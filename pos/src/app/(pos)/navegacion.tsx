@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import type { Rol } from '@/auth/permisos';
+import { puede, type Permiso, type Rol } from '@/auth/permisos';
 
 /**
  * Navegación del POS.
@@ -24,7 +24,14 @@ interface Seccion {
   href: string;
   etiqueta: string;
   tecla: string | null;
-  soloDuenio?: boolean;
+  /**
+   * El permiso que hace falta para verla. Sin esto, la ven los dos roles.
+   *
+   * Antes acá decía `soloDuenio: true`, que escondía ocho de las nueve: la
+   * barra decidía por rol y el modelo de permisos por permiso, así que abrirle
+   * una pantalla al vendedor exigía acordarse de los dos lados. Ahora es uno.
+   */
+  permiso?: Permiso;
 }
 
 /** Las cinco que se tocan todo el día. Son las mismas para los dos roles. */
@@ -47,17 +54,18 @@ const GRUPOS: { titulo: string; items: Seccion[] }[] = [
   {
     titulo: 'Plata',
     items: [
-      { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', soloDuenio: true },
-      { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, soloDuenio: true },
-      { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', soloDuenio: true },
+      { href: '/gastos', etiqueta: 'Gastos', tecla: 'F6', permiso: 'gasto.ver' },
+      { href: '/cuentas', etiqueta: 'Cuentas', tecla: null, permiso: 'gasto.ver' },
+      // La única del cajón que el vendedor no ve: el balance del mes.
+      { href: '/reportes', etiqueta: 'Reportes', tecla: 'F10', permiso: 'reporte.ventas' },
     ],
   },
   {
     titulo: 'Catálogo',
     items: [
-      { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', soloDuenio: true },
-      { href: '/precios', etiqueta: 'Precios', tecla: 'F8', soloDuenio: true },
-      { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', soloDuenio: true },
+      { href: '/catalogo', etiqueta: 'Catálogo', tecla: 'F7', permiso: 'producto.editar' },
+      { href: '/precios', etiqueta: 'Precios', tecla: 'F8', permiso: 'producto.editar' },
+      { href: '/cotizacion', etiqueta: 'Dólar', tecla: 'F9', permiso: 'cotizacion.cambiar' },
     ],
   },
   {
@@ -66,8 +74,8 @@ const GRUPOS: { titulo: string; items: Seccion[] }[] = [
       // Clientes también es del vendedor, pero entra desde Fiado: en la barra
       // ocuparía un lugar que se usa mucho menos que las cinco de arriba.
       { href: '/clientes', etiqueta: 'Clientes', tecla: null },
-      { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, soloDuenio: true },
-      { href: '/devoluciones', etiqueta: 'Devoluciones', tecla: null, soloDuenio: true },
+      { href: '/mensajes', etiqueta: 'Mensajes', tecla: null, permiso: 'configuracion.editar' },
+      { href: '/devoluciones', etiqueta: 'Devoluciones', tecla: null, permiso: 'venta.anular' },
     ],
   },
 ];
@@ -79,15 +87,13 @@ export default function Navegacion({ rol }: { rol: Rol }) {
   const router = useRouter();
   const [cajon, setCajon] = useState(false);
 
-  const esDuenio = rol === 'owner';
-
   const grupos = useMemo(
     () =>
       GRUPOS.map((g) => ({
         ...g,
-        items: g.items.filter((s) => !s.soloDuenio || esDuenio),
+        items: g.items.filter((s) => !s.permiso || puede(rol, s.permiso)),
       })).filter((g) => g.items.length > 0),
-    [esDuenio],
+    [rol],
   );
 
   const enElCajon = useMemo(() => grupos.flatMap((g) => g.items), [grupos]);

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
@@ -23,7 +24,10 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaFiado() {
   const sesion = await auth();
-  const esDuenio = sesion?.user.rol === 'owner';
+  // Quien puede fiar es quien necesita ver el tope y cargar la ficha de papel.
+  // Cobrar, en cambio, lo puede cualquiera: que venga alguien a pagar y no se
+  // le pueda recibir la plata sería peor que cualquier control.
+  const puedeFiar = sesion?.user ? puede(sesion.user.rol, 'fiado.crear') : false;
 
   const lista = await deudores(db);
   const total = await totalFiado(db);
@@ -148,13 +152,13 @@ export default async function PaginaFiado() {
 
       {lista.length === 0 ? (
         <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-6 text-center text-sm">
-          No hay nadie con deuda. {esDuenio ? 'Si tenés fichas de papel sin cargar, ' : ''}
-          {esDuenio ? (
+          No hay nadie con deuda. {puedeFiar ? 'Si tenés fichas de papel sin cargar, ' : ''}
+          {puedeFiar ? (
             <Link href="/clientes" className="font-semibold underline underline-offset-2">
               cargalas desde el cliente
             </Link>
           ) : null}
-          {esDuenio ? '.' : ''}
+          {puedeFiar ? '.' : ''}
         </p>
       ) : (
         <ul className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
@@ -164,7 +168,7 @@ export default async function PaginaFiado() {
               deudor={d}
               estado={estados.get(d.customerId) ?? null}
               hayCaja={Boolean(caja)}
-              esDuenio={esDuenio}
+              puedeFiar={puedeFiar}
               recordatorio={recordatorioDe(
                 { ...d, estado: estados.get(d.customerId) ?? null },
                 ajustes,

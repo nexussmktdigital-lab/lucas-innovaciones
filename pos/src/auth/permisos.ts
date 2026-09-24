@@ -1,8 +1,21 @@
 /**
  * Permisos por rol.
  *
- * El dueno puede todo. El vendedor puede vender, cobrar fiado, consultar stock
- * y manejar su caja. Lo demas exige autorizacion del dueno con PIN en pantalla.
+ * La regla del local, dicha por Lucas: **el vendedor puede hacer todo menos ver
+ * los números del negocio**. Vender, fiar, descontar, anular, cargar un gasto,
+ * dar de alta un producto, tocar precios: todo eso es atender el mostrador, y
+ * frenarlo con un permiso lo único que lograba era que el vendedor tuviera que
+ * ir a buscar al dueño con un cliente esperando.
+ *
+ * Por eso la lista que se escribe acá es la de las excepciones y no la de lo
+ * permitido: así el permiso nuevo que alguien agregue mañana nace del lado del
+ * vendedor, que es la regla, y volverlo del dueño es una decisión explícita.
+ * `permisos.test.ts` obliga a clasificar cada permiso nuevo para que la
+ * excepción no se cuele por olvido.
+ *
+ * Antes existía un tercer nivel —el vendedor puede, con el PIN del dueño al
+ * lado— que nunca tuvo pantalla: `requiereAutorizacion` no se llamaba desde
+ * ningún lado y los controles simplemente no se mostraban. Se fue con esto.
  */
 export type Rol = 'owner' | 'seller';
 
@@ -31,31 +44,27 @@ export const PERMISOS = [
 
 export type Permiso = (typeof PERMISOS)[number];
 
-const DEL_VENDEDOR: readonly Permiso[] = [
-  'venta.crear',
-  'fiado.cobrar',
-  'stock.ver',
-  'caja.abrir',
-  'caja.cerrar',
-  'producto.alta_rapida',
-];
-
-/** Permisos que el vendedor puede ejercer si el dueno lo autoriza con su PIN. */
-export const REQUIEREN_AUTORIZACION: readonly Permiso[] = [
-  'venta.anular',
-  'venta.descuento',
-  'venta.editar_precio',
-  'stock.ajustar',
-  'gasto.cargar',
+/**
+ * Lo único que no es del vendedor.
+ *
+ *  - Los dos de reportes son el balance del mes: facturación, márgenes, cuánto
+ *    quedó. Es lo que Lucas quiere para él, y es lo único que pidió reservarse.
+ *    Ojo que la pantalla de **Ventas** no está acá: el vendedor tiene que poder
+ *    ver lo que vendió en el turno, y su hoja de cierre de caja también.
+ *  - `usuario.administrar` no es trabajo de mostrador sino el control del
+ *    sistema: crear cuentas y cambiar contraseñas, la del dueño incluida. Hoy
+ *    no lo usa ninguna pantalla; queda reservado para que, el día que exista,
+ *    no aparezca abierto sin que nadie lo haya decidido.
+ */
+const SOLO_DUENIO: readonly Permiso[] = [
+  'reporte.ventas',
   'reporte.rentabilidad',
-  'cotizacion.cambiar',
+  'usuario.administrar',
 ];
 
 export function puede(rol: Rol, permiso: Permiso): boolean {
-  return rol === 'owner' ? true : DEL_VENDEDOR.includes(permiso);
+  return rol === 'owner' || !SOLO_DUENIO.includes(permiso);
 }
 
-/** True si un vendedor puede hacerlo pidiendo el PIN del dueno. */
-export function requiereAutorizacion(rol: Rol, permiso: Permiso): boolean {
-  return rol !== 'owner' && REQUIEREN_AUTORIZACION.includes(permiso);
-}
+/** Para el test que obliga a clasificar cada permiso nuevo. */
+export const RESERVADOS_AL_DUENIO = SOLO_DUENIO;

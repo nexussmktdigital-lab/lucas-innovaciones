@@ -210,7 +210,7 @@ describe('revisarPrecioEscrito', () => {
     expect(s).not.toBeNull();
     expect(s!.pisoCentavos).toBe(3_525_00);
     expect(s!.motivo).toMatch(/7\.050/);
-    expect(s!.motivo).toMatch(/confirmar el dueño/);
+    expect(s!.motivo).toMatch(/confirmalo y la venta sigue/);
   });
 
   it('justo en la mitad no salta', () => {

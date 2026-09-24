@@ -192,7 +192,7 @@ export function revisarPrecioEscrito(
     pisoCentavos: piso,
     motivo:
       `En el catálogo figura a $${(precioReferenciaCentavos / 100).toLocaleString('es-AR')}. ` +
-      'Si es un precio acordado está bien, pero lo tiene que confirmar el dueño.',
+      'Si es un precio acordado está bien: confirmalo y la venta sigue.',
   };
 }
 

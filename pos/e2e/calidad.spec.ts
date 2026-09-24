@@ -149,7 +149,9 @@ test('al vendedor lo frena del todo, y le dice cómo salir', async ({ page }) =>
   await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toBeHidden();
 });
 
-test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
+test('el vendedor ve las pantallas del mostrador, y solo Reportes le queda afuera', async ({
+  page,
+}) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
   await elegirVendedor(page, 'Vendedor de mostrador');
@@ -157,15 +159,16 @@ test('el vendedor no ve las pantallas del dueño', async ({ page }) => {
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
-  const navegacion = page.getByRole('navigation', { name: 'Secciones' });
-  await expect(navegacion.getByText('Catálogo')).toHaveCount(0);
-  await expect(navegacion.getByText('Dólar')).toHaveCount(0);
-
-  // Y si entra por la URL, lo saca.
-  for (const ruta of ['/catalogo', '/precios', '/sincronizacion']) {
+  // Cargar mercadería que acaba de llegar y corregir un precio viejo es
+  // atender: si hay que esperar al dueño, se anota en un papel.
+  for (const ruta of ['/catalogo', '/precios', '/cotizacion', '/sincronizacion']) {
     await page.goto(ruta);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).not.toHaveURL(/\/$/);
   }
+
+  // El balance del mes sí es del dueño, y por la URL tampoco entra.
+  await page.goto('/reportes');
+  await expect(page).toHaveURL(/\/$/);
 });
 
 test('el dueño ve lo que quedó sin configurar, y el vendedor no', async ({ page }) => {

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
@@ -36,7 +37,7 @@ const COLUMNAS =
  */
 export default async function PaginaVentas() {
   const sesion = await auth();
-  const esDuenio = sesion?.user.rol === 'owner';
+  const puedeAnular = sesion?.user ? puede(sesion.user.rol, 'venta.anular') : false;
   const terminal = config().POS_TERMINAL;
   const caja = await sesionAbierta(db, terminal);
 
@@ -228,7 +229,7 @@ export default async function PaginaVentas() {
                       />
                     ) : null}
 
-                    {esDuenio && !anulada ? (
+                    {puedeAnular && !anulada ? (
                       <FormularioAnulacion ventaId={v.id} numero={v.numero} />
                     ) : null}
                   </div>

@@ -170,7 +170,7 @@ test('el tope frena la venta antes de que entre', async ({ page }) => {
   await expect(page.getByText(/Sin tope/)).toBeVisible();
 });
 
-test('el vendedor no puede fiar, pero sí recibir un pago', async ({ page }) => {
+test('el vendedor fía y recibe pagos', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
@@ -189,10 +189,12 @@ test('el vendedor no puede fiar, pero sí recibir un pago', async ({ page }) => 
 
   await page.getByRole('button', { name: /^Cobrar/ }).click();
   const cobro = page.getByRole('dialog', { name: 'Cobrar' });
-  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toHaveCount(0);
+  // Fiar dejó de ser del dueño: el fiado es el corazón del mostrador y mandar
+  // al cliente a esperar era el motivo por el que se seguía usando la libreta.
+  await expect(cobro.getByRole('button', { name: '+ Cuenta corriente' })).toBeVisible();
+  await cobro.getByRole('button', { name: 'Volver' }).click();
 
-  // Cobrar sí puede: que venga alguien a pagar y no se le pueda recibir la
-  // plata sería peor que cualquier control.
+  // Y cobrar, como siempre.
   await page.goto('/fiado');
   const fila = page.getByRole('listitem').filter({ hasText: CLIENTE });
   await expect(fila.getByRole('button', { name: 'Recibir un pago' })).toBeVisible();

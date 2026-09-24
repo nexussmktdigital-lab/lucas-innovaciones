@@ -174,7 +174,11 @@ export default function Cobro({
         productId: l.productId,
         variantId: l.variantId ?? null,
         cantidad: l.cantidad,
-        precioManualCentavos: l.precioEditable ? l.precioUnitarioCentavos : null,
+        // Un servicio viaja siempre con precio escrito —no tiene otro—, y un
+        // producto normal solo si alguien lo tocó. Declararlo es lo que hace
+        // que corra la guarda de cordura y que quede registrado el desvío.
+        precioManualCentavos:
+          l.precioEditable || l.precioTocado ? l.precioUnitarioCentavos : null,
         descuentoCentavos: l.descuentoCentavos,
       })),
       pagos: pagos.map((p) => ({

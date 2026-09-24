@@ -312,18 +312,23 @@ describe('stock', () => {
 });
 
 describe('el servidor no confía en el cliente', () => {
-  it('ignora el precio que manda el navegador y usa el del catálogo', async () => {
-    const r = await confirmarVenta(
-      db,
-      solicitud({
-        // El vidrio no es editable: este precio tiene que ser rechazado.
-        lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 1 }],
-        pagos: [{ medio: 'efectivo', montoCentavos: 500_000, monetaryAccountId: cajaId }],
-      }),
-    ).catch((e: Error) => e);
-
-    expect(r).toBeInstanceOf(Error);
-    expect((r as Error).message).toMatch(/No se puede cambiar el precio/);
+  it('un precio de risa lo frena la guarda, aunque el navegador insista', async () => {
+    /*
+     * Escribir el precio dejó de estar prohibido en un producto normal, porque
+     * el catálogo se queda viejo y el mostrador tiene que poder corregirlo. Lo
+     * que reemplaza a la prohibición no es confianza: es la guarda de cordura,
+     * que compara contra el precio de catálogo y frena lo que quede muy por
+     * debajo. Un vidrio de $5.000 cobrado a un centavo no pasa.
+     */
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 1 }],
+          pagos: [{ medio: 'efectivo', montoCentavos: 1, monetaryAccountId: cajaId }],
+        }),
+      ),
+    ).rejects.toMatchObject({ motivo: 'precio_sospechoso' });
   });
 
   it('acepta el precio escrito solo en un producto editable', async () => {
@@ -898,15 +903,36 @@ describe('precio escrito en el mostrador', () => {
     ).rejects.toThrow(/Escribí el precio/);
   });
 
-  it('sigue sin aceptarse en un producto que no es de precio escrito', async () => {
-    await expect(
-      confirmarVenta(
-        db,
-        solicitud({
-          lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 100 }],
-          pagos: [{ medio: 'efectivo', montoCentavos: 100, monetaryAccountId: cajaId }],
-        }),
-      ),
-    ).rejects.toThrow(/No se puede cambiar el precio/);
+  it('corregir hacia arriba un precio viejo se cobra sin preguntar nada', async () => {
+    /*
+     * El pedido del mostrador: llegó mercadería con aumento, la ficha todavía
+     * dice lo de antes. La guarda mira el precio que queda por DEBAJO del de
+     * catálogo, así que cobrar de más no la despierta — y tiene que ser así,
+     * porque es el caso para el que existe esto.
+     */
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 620_000 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 620_000, monetaryAccountId: cajaId }],
+      }),
+    );
+    expect(r.totalCentavos).toBe(620_000);
+  });
+
+  it('y queda registrado el desvío contra el catálogo, también en un producto normal', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: vidrioId, cantidad: 1, precioManualCentavos: 620_000 }],
+        pagos: [{ medio: 'efectivo', montoCentavos: 620_000, monetaryAccountId: cajaId }],
+      }),
+    );
+
+    const [bitacora] = await db.select().from(auditLog);
+    const escritos = (bitacora!.valorNuevo as { preciosEscritos: { centavos: number }[] })
+      .preciosEscritos;
+    expect(escritos).toHaveLength(1);
+    expect(escritos[0]!.centavos).toBe(620_000);
   });
 });

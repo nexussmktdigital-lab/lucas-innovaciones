@@ -302,7 +302,7 @@ test('el dueño anula una venta del turno y todo vuelve atrás', async ({ page }
   ).toBeVisible();
 });
 
-test('el vendedor no puede anular, pero sí escribe el precio de un servicio', async ({ page }) => {
+test('el vendedor anula y escribe precios: atiende el mostrador entero', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
@@ -311,11 +311,7 @@ test('el vendedor no puede anular, pero sí escribe el precio de un servicio', a
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
-  await page.goto('/ventas');
-  await expect(page.getByRole('button', { name: 'Anular' })).toHaveCount(0);
-
-  // El precio del servicio sí lo escribe: cada reparación es distinta. Lo que
-  // no puede es alejarlo del de referencia sin que lo confirme el dueño.
+  // El precio lo escribe en cualquier renglón, no solo en un servicio.
   await page.goto('/vender');
   await agregar(page, 'Limpieza de virus', /Limpieza de virus/);
   const carrito = page.getByRole('complementary', { name: 'Carrito' });
@@ -328,9 +324,17 @@ test('el vendedor no puede anular, pero sí escribe el precio de un servicio', a
   await cobro.getByRole('button', { name: '+ Efectivo' }).click();
   await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
   await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  /*
+   * Y esa misma venta la puede anular él. Va después de venderla a propósito:
+   * una venta solo se anula dentro del turno abierto (D29), así que preguntar
+   * antes de que exista dependía de lo que hubiera dejado la semilla.
+   */
+  await page.goto('/ventas');
+  await expect(page.getByRole('button', { name: 'Anular' }).first()).toBeVisible();
 });
 
-test('el vendedor no puede regalar un servicio, y el dueño sí a sabiendas', async ({ page }) => {
+test('regalar algo avisa, y hay que confirmarlo a sabiendas', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
@@ -349,9 +353,15 @@ test('el vendedor no puede regalar un servicio, y el dueño sí a sabiendas', as
   await cobro.getByRole('button', { name: '+ Efectivo' }).click();
   await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
 
-  // Al vendedor se le avisa y no se le ofrece salida.
+  /*
+   * La guarda sigue estando y es lo que reemplazó a la prohibición: nadie
+   * cobra un servicio de $7.050 a un peso sin que aparezca el cartel. Lo que
+   * cambió es que ahora el vendedor puede confirmarlo, y queda en la bitácora
+   * quién lo hizo. Reservarlo al dueño ya no protegía nada: el descuento, que
+   * ahora también es del vendedor, no pasa por esta guarda.
+   */
   await expect(cobro.getByText(/En el catálogo figura a/)).toBeVisible();
-  await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toHaveCount(0);
+  await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toBeVisible();
 });
 
 test('el mostrador cobra menos que la tienda, con el recargo puesto', async ({ page }) => {

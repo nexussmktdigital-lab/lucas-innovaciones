@@ -57,12 +57,30 @@ export interface LineaEnPantalla extends LineaCarrito {
   stockDisponible: number;
   gestionaStock: boolean;
   precioEditable: boolean;
+  /**
+   * True si alguien escribió el precio de este renglón a mano.
+   *
+   * Se guarda en vez de comparar contra el precio de catálogo: si el cajero
+   * escribe justo el mismo número, comparar diría que no lo tocó, y la venta
+   * viajaría sin declarar que hubo un precio escrito. El desvío quedaría sin
+   * registrar y la guarda de cordura no correría sobre ese renglón.
+   */
+  precioTocado: boolean;
 }
 
 interface Props {
   terminal: string;
   vendedor: string;
-  esDuenio: boolean;
+  /**
+   * Lo que puede quien está atendiendo.
+   *
+   * Sale de `puede()` en el servidor y no de «es el dueño»: la regla del local
+   * es que el vendedor atiende el mostrador entero, y atarlo al rol hacía que
+   * cambiar la regla no alcanzara para que aparecieran los botones.
+   */
+  puedeDescontar: boolean;
+  puedeFiar: boolean;
+  puedeEditarPrecio: boolean;
   tcCentavos: number | null;
   cuentas: Cuenta[];
   clientes: Cliente[];
@@ -78,7 +96,9 @@ interface Props {
 export default function PantallaVenta({
   terminal,
   vendedor,
-  esDuenio,
+  puedeDescontar,
+  puedeFiar,
+  puedeEditarPrecio,
   tcCentavos,
   cuentas,
   clientes,
@@ -178,6 +198,7 @@ export default function PantallaVenta({
             stockDisponible: disponible,
             gestionaStock: r.gestionaStock,
             precioEditable: r.precioEditable,
+            precioTocado: false,
           },
         ];
       });
@@ -201,7 +222,9 @@ export default function PantallaVenta({
 
   const cambiarPrecio = useCallback((clave: string, centavos: number) => {
     setLineas((previas) =>
-      previas.map((l) => (l.clave === clave ? { ...l, precioUnitarioCentavos: centavos } : l)),
+      previas.map((l) =>
+        l.clave === clave ? { ...l, precioUnitarioCentavos: centavos, precioTocado: true } : l,
+      ),
     );
   }, []);
 
@@ -389,11 +412,12 @@ export default function PantallaVenta({
           lineas={lineas}
           totales={totales}
           descuentoGlobal={descuentoGlobal}
-          puedeDescontar={esDuenio}
+          puedeDescontar={puedeDescontar}
+          puedeEditarPrecio={puedeEditarPrecio}
           clientes={todosLosClientes}
           faltanClientes={faltanClientes}
           clienteId={clienteId}
-          puedeFiar={esDuenio}
+          puedeFiar={puedeFiar}
           tcCentavos={tcCentavos}
           onCantidad={cambiarCantidad}
           onPrecio={cambiarPrecio}
@@ -492,7 +516,7 @@ export default function PantallaVenta({
           descuentoGlobal={descuentoGlobal}
           clienteId={clienteId}
           cliente={todosLosClientes.find((c) => c.id === clienteId) ?? null}
-          puedeFiar={esDuenio}
+          puedeFiar={puedeFiar}
           cuentas={cuentas}
           onCerrar={() => setCobrando(false)}
           onConfirmar={confirmar}

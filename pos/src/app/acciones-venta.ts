@@ -142,11 +142,22 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
     return { ok: false, error: 'Para fiar hace falta elegir un cliente.' };
   }
 
-  // Saltear la guarda de precios es decisión del dueño. Si no lo es, se ignora
-  // la bandera y la venta vuelve a pasar por el control: la pantalla no es la
-  // que decide esto.
+  /*
+   * Confirmar un precio sospechoso lo puede hacer quien puede escribirlo.
+   *
+   * Era del dueño solo, y quedó inconsistente cuando el vendedor pasó a poder
+   * descontar sin tope: el descuento **no** pasa por la guarda de cordura, así
+   * que reservar el precio escrito no protegía nada, solo empujaba a rebajar
+   * por el otro campo, que se ve menos. La guarda sigue estando —nadie cobra
+   * un iPhone a mil pesos sin que aparezca el cartel— y quién la confirmó
+   * queda en la bitácora de la venta.
+   *
+   * La bandera igual se recalcula acá: lo que decide es el permiso del
+   * servidor, no lo que diga la pantalla.
+   */
   const salteaGuardaDePrecios =
-    (validado.data.confirmarPreciosSospechosos ?? false) && sesion.user.rol === 'owner';
+    (validado.data.confirmarPreciosSospechosos ?? false) &&
+    puede(sesion.user.rol, 'venta.editar_precio');
 
   try {
     const venta = await confirmarVenta(db, {
@@ -198,8 +209,9 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
         ok: false,
         error: error.message,
         motivo: error.motivo,
-        // Saltear la guarda de precios es decisión del dueño, no del vendedor.
-        puedeConfirmar: error.motivo === 'precio_sospechoso' && sesion.user.rol === 'owner',
+        // Quien puede escribir el precio puede confirmarlo; ver arriba.
+        puedeConfirmar:
+          error.motivo === 'precio_sospechoso' && puede(sesion.user.rol, 'venta.editar_precio'),
       };
     }
     // El límite de crédito lo frena el dominio: su mensaje explica qué pasó y

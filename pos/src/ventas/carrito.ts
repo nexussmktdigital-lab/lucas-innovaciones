@@ -101,7 +101,13 @@ export function descripcionDeLinea(p: ProductoVendible, v?: VarianteVendible | n
  * Arma una línea a partir de un producto del catálogo.
  *
  * @param tcCentavos Cotización vigente, obligatoria si el producto está en USD.
- * @param precioManualCentavos Solo se acepta en productos con `precioEditable`.
+ * @param precioManualCentavos El precio que se escribió en el mostrador, si se
+ *   escribió uno. Se acepta en cualquier producto: el catálogo se queda viejo
+ *   —un proveedor que aumentó ayer, una ficha que nadie actualizó— y hasta acá
+ *   la única salida era vender al precio equivocado o ir a buscar al dueño con
+ *   el cliente enfrente. Lo que protege del error de tipeo no es prohibirlo,
+ *   es la guarda de cordura de `revisarPrecioEscrito`, que compara contra el
+ *   precio de catálogo y frena lo que quede muy por debajo.
  * @param variante Variación elegida, con su propio precio y su propio nombre.
  */
 export function armarLinea(
@@ -150,12 +156,12 @@ export function armarLinea(
       opciones.recargoTiendaBp ?? 0,
     );
   } else if (opciones.precioManualCentavos != null) {
-    if (!p.precioEditable) {
-      throw new ErrorCarrito(`No se puede cambiar el precio de "${descripcion}" desde la venta.`);
-    }
     if (opciones.precioManualCentavos < 0) {
       throw new ErrorCarrito('El precio no puede ser negativo.');
     }
+    // El cero lo ataja `confirmarVenta`, con un mensaje solo: dos controles
+    // del mismo caso terminan diciendo dos cosas distintas según por dónde se
+    // entre.
     precioUnitarioCentavos = opciones.precioManualCentavos;
   } else {
     // Una variación tiene su propio precio: cobrar el del padre es cobrar mal.

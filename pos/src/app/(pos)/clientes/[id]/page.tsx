@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { clientePorId } from '@/clientes/clientes';
 import { cuentaDe, movimientosDe } from '@/fiado/cuenta';
@@ -28,7 +29,7 @@ function comoSeLee(iso: string): string {
 export default async function PaginaCliente({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const sesion = await auth();
-  const esDuenio = sesion?.user.rol === 'owner';
+  const puedeFiar = sesion?.user ? puede(sesion.user.rol, 'fiado.crear') : false;
 
   const cliente = await clientePorId(db, id);
   if (!cliente) notFound();
@@ -156,7 +157,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           </p>
         ) : null}
 
-        {esDuenio ? (
+        {puedeFiar ? (
           <div className="mt-4 space-y-3 border-t border-(--color-borde) pt-3">
             <FormularioLimite clienteId={cliente.id} limiteCentavos={cliente.limiteCentavos} />
             {cliente.saldoCentavos === 0 && movimientos.length === 0 ? (

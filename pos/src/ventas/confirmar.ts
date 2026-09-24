@@ -96,7 +96,11 @@ export interface LineaSolicitada {
   productId: string;
   variantId?: string | null;
   cantidad: number;
-  /** Solo se acepta en productos marcados como `precioEditable`. */
+  /**
+   * El precio escrito en el mostrador, en cualquier producto. Lo que lo cuida
+   * no es prohibirlo sino la guarda de cordura, que frena lo que quede muy por
+   * debajo del catálogo y solo el dueño puede saltear.
+   */
   precioManualCentavos?: number | null;
   descuentoCentavos?: number;
 }

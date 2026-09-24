@@ -40,20 +40,25 @@ export default async function PaginaVender() {
 
   const cola = await pendientesDeSincronizar(db);
 
+  // Lo que puede quien atiende se resuelve acá, en el servidor, y viaja como
+  // un sí o un no. La pantalla no tiene por qué saber qué rol tiene nadie.
+  const rol = sesion?.user.rol ?? null;
+  const puedeEn = (p: Parameters<typeof puede>[1]) => (rol ? puede(rol, p) : false);
+
   return (
     <PantallaVenta
       terminal={terminal}
       vendedor={sesion?.user.name ?? ''}
-      esDuenio={sesion?.user.rol === 'owner'}
+      puedeDescontar={puedeEn('venta.descuento')}
+      puedeFiar={puedeEn('fiado.crear')}
+      puedeEditarPrecio={puedeEn('venta.editar_precio')}
       tcCentavos={tc?.valorCentavos ?? null}
       cuentas={cuentas}
       clientes={clientes}
       faltanClientes={clientes.length >= TOPE_DE_CLIENTES}
       pendientesDeSync={cola.pendientes + cola.fallidas}
       cashSessionId={caja.id}
-      puedeCargarProductos={
-        sesion?.user ? puede(sesion.user.rol, 'producto.alta_rapida') : false
-      }
+      puedeCargarProductos={puedeEn('producto.alta_rapida')}
     />
   );
 }
