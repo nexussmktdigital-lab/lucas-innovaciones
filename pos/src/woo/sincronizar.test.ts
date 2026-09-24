@@ -188,6 +188,142 @@ describe('sincronizarCatalogo', () => {
   });
 });
 
+describe('lo que se borró de la tienda', () => {
+  /*
+   * Acá el catálogo de prueba es grande a propósito.
+   *
+   * El techo del 20% es una proporción, así que con tres fichas cualquier baja
+   * lo pasa: sacar una sola ya es el 33%. Con cuarenta, sacar una es el 2,5% —el
+   * orden de magnitud del caso real, donde faltaban catorce de ochocientas— y el
+   * techo se puede probar de verdad sacando treinta.
+   */
+  const CUARENTA = [
+    CATALOGO[0]!, // el vidrio, que es el variable y tiene variaciones
+    ...Array.from({ length: 39 }, (_, i) => ({
+      id: 9000 + i,
+      name: `Accesorio de prueba ${i}`,
+      type: 'simple',
+      status: 'publish',
+      sku: `ACC${i}`,
+      price: '25000',
+      manage_stock: true,
+      stock_quantity: 3,
+      categories: [{ name: 'Accesorios' }],
+      brands: [],
+      images: [{ src: 'https://ejemplo/acc.jpg' }],
+      meta_data: [],
+    })),
+  ];
+
+  const sin = (...ids: number[]) => CUARENTA.filter((p) => !ids.includes(p.id));
+
+  async function catalogoInicial() {
+    await sincronizarCatalogo(db, clienteDePrueba(CUARENTA), { tcCentavos: TC });
+  }
+
+  it('un producto que ya no está en Woo se desactiva, no se borra', async () => {
+    await catalogoInicial();
+
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(sin(9000)), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+    });
+
+    expect(informe.desactivados).toBe(1);
+    const [ido] = await db.select().from(products).where(eq(products.wooId, 9000));
+    // Sigue en la base —las ventas viejas lo nombran— pero ya no se vende.
+    expect(ido).toBeDefined();
+    expect(ido!.activo).toBe(false);
+  });
+
+  it('y sus variaciones se van con él, que es lo que el mostrador ve', async () => {
+    await catalogoInicial();
+    expect(await db.select().from(productVariants)).toHaveLength(2);
+
+    await sincronizarCatalogo(db, clienteDePrueba(sin(6485)), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+    });
+
+    const vs = await db.select().from(productVariants);
+    expect(vs).toHaveLength(2);
+    expect(vs.every((v) => v.activo === false)).toBe(true);
+  });
+
+  it('sin pedirlo no se toca nada: el comportamiento viejo sigue igual', async () => {
+    await catalogoInicial();
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(sin(9000)), { tcCentavos: TC });
+
+    expect(informe.desactivados).toBe(0);
+    const activos = await db.select().from(products).where(eq(products.activo, true));
+    expect(activos).toHaveLength(40);
+  });
+
+  it('una corrida incremental nunca da de baja: la ausencia ahí no significa nada', async () => {
+    await catalogoInicial();
+
+    // Woo devuelve solo el que cambió. Los otros no están «ausentes»:
+    // simplemente no se tocaron desde la marca de agua.
+    const informe = await sincronizarCatalogo(db, clienteDePrueba([CUARENTA[1]!]), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+      modificadoDesde: new Date(Date.now() - 3_600_000),
+    });
+
+    expect(informe.desactivados).toBe(0);
+    const activos = await db.select().from(products).where(eq(products.activo, true));
+    expect(activos).toHaveLength(40);
+  });
+
+  it('una corrida cortada por tiempo tampoco: lo que faltó no está borrado', async () => {
+    await catalogoInicial();
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(CUARENTA), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+      limiteMs: -1,
+    });
+
+    expect(informe.incompleto).toBe(true);
+    expect(informe.desactivados).toBe(0);
+  });
+
+  it('si faltara media tienda no da de baja nada y explica por qué', async () => {
+    await catalogoInicial();
+
+    const treintaMenos = CUARENTA.slice(0, 10);
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(treintaMenos), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+    });
+
+    expect(informe.desactivados).toBe(0);
+    expect(informe.bajasOmitidas).toMatch(/30 de 40/);
+    const activos = await db.select().from(products).where(eq(products.activo, true));
+    expect(activos).toHaveLength(40);
+  });
+
+  it('un producto nacido en el POS, todavía sin publicar, no se da de baja', async () => {
+    await catalogoInicial();
+    await db.insert(products).values({
+      nombre: 'Funda cargada a mano en el mostrador',
+      precioCentavos: 1_500_000,
+      moneda: 'ARS',
+    });
+
+    const informe = await sincronizarCatalogo(db, clienteDePrueba(sin(9000)), {
+      tcCentavos: TC,
+      desactivarAusentes: true,
+    });
+
+    expect(informe.desactivados).toBe(1);
+    const [propio] = await db
+      .select()
+      .from(products)
+      .where(eq(products.nombre, 'Funda cargada a mano en el mostrador'));
+    expect(propio!.activo).toBe(true);
+  });
+});
+
 describe('ClienteWoo', () => {
   it('reintenta ante un 500 y sale adelante', async () => {
     let llamadas = 0;

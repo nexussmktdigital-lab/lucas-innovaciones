@@ -920,6 +920,27 @@ La sincronización trae productos y variaciones, y **nunca pisa** los campos que
 son solo del POS: el costo cargado desde una compra a proveedor y el stock
 comprometido por pedidos web.
 
+### Lo que se borró de la tienda
+
+La corrida completa —y solo ella— **da de baja lo que ya no está en Woo**. Un
+producto borrado definitivamente no aparece en ninguna listada, ni con
+`status=any`, así que en el espejo se quedaba activo, con el precio y el stock
+del día que se borró, y el mostrador lo podía seguir vendiendo. Pasó de verdad:
+catorce fichas borradas seguían a la venta, con seiscientas variaciones
+congeladas doce días atrás.
+
+Se reconoce por la fecha: la corrida toca `last_synced_at` de todo lo que la
+tienda devolvió, y lo que quedó con la fecha vieja es lo que no vino. Tres
+resguardos:
+
+- **Se desactiva, nunca se borra.** Las ventas viejas lo siguen nombrando.
+- **Nada de esto pasa en el refresco incremental.** Ahí la ausencia no significa
+  nada: el producto simplemente no cambió.
+- **Si faltara más del 20% del catálogo no se da de baja nada** y se avisa por
+  qué. Una tienda no pierde la mitad del catálogo de un día para el otro: eso es
+  una corrida fallida, y un producto dado de baja por error es una venta que el
+  mostrador no puede hacer.
+
 De paso arma un informe de calidad de carga, que es la mitad del problema que
 este sistema viene a resolver:
 
@@ -955,8 +976,9 @@ Tres cosas que conviene saber:
   `dates_are_gmt` y lee la fecha en el huso local (serían tres horas de
   corrimiento, justo en la dirección que deja productos afuera).
 - **Un producto borrado definitivamente en Woo no aparece por acá.** Uno mandado
-  a la papelera sí, porque cambia de estado. Para el borrado del todo está
-  `npm run woo:sync`, que compara contra el catálogo entero.
+  a la papelera sí, porque cambia de estado. Desde una ventana de cambios no hay
+  forma de distinguir «lo borraron» de «no lo tocaron», así que el borrado del
+  todo lo resuelve `npm run woo:sync` (ver abajo).
 
 La cola tiene prioridad sobre el refresco: si el drenaje se come la corrida, el
 refresco se saltea y va en la siguiente. La cola es stock, el refresco son
@@ -1205,6 +1227,9 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El error de los 9 iPhones se detecta al sincronizar | `src/woo/mapear.test.ts` |
 | Sincronizar dos veces actualiza en vez de duplicar | `src/woo/sincronizar.test.ts` |
 | El refresco cortado por tiempo **no** avanza la marca de agua | `src/woo/refrescar.test.ts` |
+| Lo borrado de la tienda se desactiva, con sus variaciones, y no se borra | `src/woo/sincronizar.test.ts` |
+| Si faltara más del 20% del catálogo no se da de baja nada | `src/woo/sincronizar.test.ts` |
+| Un producto nacido en el POS nunca se da de baja por no estar en Woo | `src/woo/sincronizar.test.ts` |
 | El refresco pide solo lo modificado, con el margen de seis horas | `src/woo/refrescar.test.ts` |
 | El webhook rechaza una firma inválida | `src/woo/webhook.test.ts` |
 | El webhook actualiza la ficha pero NO le pisa el stock al POS | `src/woo/espejo.test.ts` |

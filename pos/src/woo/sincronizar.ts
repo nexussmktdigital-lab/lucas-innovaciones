@@ -11,7 +11,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { productVariants, products } from '@/db/schema';
-import type { BaseDatos } from '@/db/tipos';
+import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import type { ClienteWoo } from './cliente';
 import { mapearProducto, mapearVariante, type Aviso } from './mapear';
 import { wooProducto, wooVariacion } from './tipos';
@@ -32,6 +32,15 @@ export interface InformeSincronizacion {
    * marca de agua, porque lo que faltó no se volvería a pedir nunca.
    */
   incompleto: boolean;
+  /** Productos dados de baja por no estar más en la tienda. */
+  desactivados: number;
+  /**
+   * Por qué no se dieron de baja los ausentes, si correspondía hacerlo.
+   *
+   * Que no haya ausentes no llena esto: es para cuando había y se decidió no
+   * tocarlos. Quedarse callado ahí sería lo peor de los dos mundos.
+   */
+  bajasOmitidas?: string;
 }
 
 export interface OpcionesSincronizacion {
@@ -52,7 +61,27 @@ export interface OpcionesSincronizacion {
    * un WooCommerce lento se come el límite de la función y muere a la mitad.
    */
   limiteMs?: number;
+  /**
+   * Dar de baja lo que ya no está en la tienda.
+   *
+   * Solo vale en una corrida **completa**: es la única que ve el catálogo
+   * entero y por lo tanto puede concluir que algo falta. Con `modificadoDesde`
+   * puesto, la ausencia no significa nada —el producto simplemente no cambió—
+   * así que el refresco programado nunca pide esto.
+   */
+  desactivarAusentes?: boolean;
 }
+
+/**
+ * Techo de bajas automáticas, como proporción del espejo.
+ *
+ * Una tienda no pierde la mitad del catálogo de un día para el otro: si el
+ * cálculo da eso, lo que falla es la corrida —una clave con permisos recortados,
+ * un filtro que se coló, la tienda a medio restaurar— y no el catálogo. Ante la
+ * duda no se desactiva nada y se avisa, porque un producto dado de baja por
+ * error es una venta que el mostrador no puede hacer.
+ */
+export const TECHO_BAJAS = 0.2;
 
 export async function sincronizarCatalogo(
   db: BaseDatos,
@@ -60,6 +89,9 @@ export async function sincronizarCatalogo(
   opciones: OpcionesSincronizacion = {},
 ): Promise<InformeSincronizacion> {
   const inicio = Date.now();
+  // El corte para saber qué no vino: todo lo que la tienda devuelva se va a
+  // marcar con una fecha posterior a esta.
+  const desde = new Date(inicio);
   const tc = opciones.tcCentavos ?? null;
   const avisos: Aviso[] = [];
   let leidos = 0;
@@ -171,6 +203,11 @@ export async function sincronizarCatalogo(
   const resumen: Record<string, number> = {};
   for (const a of avisos) resumen[a.tipo] = (resumen[a.tipo] ?? 0) + 1;
 
+  const baja =
+    opciones.desactivarAusentes && !incompleto && !opciones.modificadoDesde && leidos > 0
+      ? await desactivarAusentes(db, desde)
+      : { desactivados: 0 };
+
   return {
     leidos,
     creados,
@@ -180,7 +217,73 @@ export async function sincronizarCatalogo(
     resumen,
     duracionMs: Date.now() - inicio,
     incompleto,
+    ...baja,
   };
+}
+
+/**
+ * Da de baja lo que la tienda ya no tiene.
+ *
+ * Un producto que se borra definitivamente en WooCommerce no aparece en ninguna
+ * listada, ni siquiera con `status=any`: sencillamente deja de existir. En el
+ * espejo, en cambio, se queda como estaba —activo, con su precio y su stock del
+ * día que se borró— y el mostrador lo puede seguir vendiendo. Apareció en el
+ * catálogo real: catorce fichas borradas de la tienda seguían a la venta en el
+ * POS, con sus seiscientas variaciones congeladas doce días atrás.
+ *
+ * Se reconoce por la fecha: una corrida completa toca `last_synced_at` de todo
+ * lo que la tienda devolvió, así que lo que quedó con la fecha vieja es lo que
+ * no vino. Un producto nacido en el POS y todavía sin sincronizar tiene esa
+ * fecha en `NULL`, y `NULL < fecha` no es verdadero, así que queda afuera solo.
+ *
+ * Se **desactiva**, nunca se borra: las ventas viejas lo siguen referenciando.
+ */
+async function desactivarAusentes(
+  db: BaseDatos,
+  desde: Date,
+): Promise<{ desactivados: number; bajasOmitidas?: string }> {
+  const [conteo] = filasDe<{ ausentes: number; vivos: number }>(
+    await db.execute(sql`
+      SELECT
+        count(*) FILTER (
+          WHERE woo_id IS NOT NULL AND activo AND last_synced_at < ${desde.toISOString()}
+        ) AS ausentes,
+        count(*) FILTER (WHERE woo_id IS NOT NULL AND activo) AS vivos
+      FROM products
+    `),
+  );
+
+  const ausentes = Number(conteo?.ausentes ?? 0);
+  const vivos = Number(conteo?.vivos ?? 0);
+  if (ausentes === 0) return { desactivados: 0 };
+
+  if (ausentes > vivos * TECHO_BAJAS) {
+    return {
+      desactivados: 0,
+      bajasOmitidas:
+        `${ausentes} de ${vivos} productos no vinieron en esta corrida. Es demasiado ` +
+        `para ser real, así que no se dio de baja ninguno: revisá que la clave de la ` +
+        `API tenga permiso de lectura sobre todo el catálogo y volvé a correrlo.`,
+    };
+  }
+
+  // Primero las variaciones, mientras todavía se puede saber de qué padres son.
+  await db.execute(sql`
+    UPDATE product_variants v SET activo = false
+    FROM products p
+    WHERE v.product_id = p.id
+      AND v.activo
+      AND p.woo_id IS NOT NULL
+      AND p.activo
+      AND p.last_synced_at < ${desde.toISOString()}
+  `);
+
+  await db.execute(sql`
+    UPDATE products SET activo = false, updated_at = now()
+    WHERE woo_id IS NOT NULL AND activo AND last_synced_at < ${desde.toISOString()}
+  `);
+
+  return { desactivados: ausentes };
 }
 
 async function sincronizarVariantes(

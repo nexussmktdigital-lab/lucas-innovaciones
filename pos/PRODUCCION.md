@@ -305,8 +305,15 @@ cambió** y actualiza el espejo. Un cambio de precio hecho en la tienda está en
 el mostrador en menos de diez minutos, y no depende de DonWeb para nada.
 
 Lo único que no llega por ahí es un producto **borrado definitivamente** en Woo
-—uno mandado a la papelera sí llega—. Para eso alcanza con correr
-`npm run woo:sync` de vez en cuando, que compara contra el catálogo entero.
+—uno mandado a la papelera sí llega—. Un borrado no aparece en ninguna listada,
+y desde una ventana de cambios no se puede distinguir de uno que no se tocó.
+
+Para eso está `npm run woo:sync`, que al ver el catálogo entero **sí da de baja
+lo que falta**: lo desactiva (nunca lo borra, porque hay ventas que lo nombran)
+y se planta si faltara más del 20%, que sería una corrida fallida y no una
+tienda que perdió medio catálogo. Conviene correrlo **una vez por semana**; un
+producto borrado que el espejo no da de baja se sigue vendiendo en el mostrador
+con el precio y el stock del día que se borró.
 
 `WOO_WEBHOOK_SECRET` se deja cargado igual: el endpoint sigue existiendo y, si
 algún día el hosting arregla su OpenSSL, dar de alta los webhooks vuelve a ser
