@@ -1905,3 +1905,63 @@ suite: los tests corren en serie sobre la misma base sembrada, así que dejarle
 otro precio les rompe los totales a todos los que vienen detrás. El test usa
 ahora un producto que nadie más toca. Es la contracara de compartir el seed: un
 test que **escribe** datos compartidos tiene que elegir qué escribe.
+
+## Pegar la lista en vez de armar la planilla
+
+La importación por CSV andaba, pero pedía algo que nadie tiene a mano cuando
+llega la mercadería: una planilla con encabezado. Lo que hay de verdad es la
+lista escrita en el momento, y la primera entrega la convertí yo a CSV a mano.
+Eso no escala: la próxima entrega vuelve a necesitarme.
+
+Tres decisiones que hubo que tomar bien, porque las tres fallan en silencio:
+
+**El paréntesis dice tres cosas distintas.** `(5)` y `(4+)` son unidades;
+`(34985)` es el final de un IMEI, no treinta y cinco mil unidades; `(eliminar)`
+es una baja. La regla que separa el IMEI de la cantidad es el largo: cuatro
+dígitos o más no puede ser una entrega, porque el techo son mil. No se exige que
+el nombre diga «iPhone» —un Samsung usado entra igual, y un día va a entrar—.
+
+**Un renglón sin precios no es un renglón incompleto.** Es la forma de decir
+«esto ya está, sumale lo que llegó»: no se repite el precio que no cambió. Si el
+producto no existe, el renglón se rechaza en vez de darlo de alta en $0, porque
+un producto a cero se vende a cero y se descubre cobrando.
+
+**El nombre tiene que coincidir exacto** para sumar stock o dar de baja.
+Aproximar acá es dar de baja el producto equivocado. Hay un test que pone en el
+catálogo «Memoria Kingston micro sd 128gb 100Mb/s», pide la baja de «Memoria
+Kingston», y exige que **no se toque nada**.
+
+## La baja que el sync deshacía
+
+El primer `darDeBaja` escribía `activo: false` y listo. Habría durado hasta el
+próximo `woo:sync`: la sincronización traduce el `status` de WooCommerce a
+`activo` (`activo: status === 'publish'`), así que Woo iba a seguir diciendo
+`publish` y el espejo le iba a creer. Es la misma pisada que ya había aparecido
+con el stock y con el precio, por tercera vez.
+
+Así que la baja encola `producto.baja` y pasa el producto a **borrador** en Woo.
+No usa el DELETE de la API a propósito: la ficha está pegada a las ventas viejas
+y a la rentabilidad de los meses pasados, y lo que se pidió es que el producto no
+se venda más, no que nunca haya existido. Borrador lo saca de la web, hace que la
+sincronización lo traiga inactivo y se puede deshacer.
+
+## El dólar leído como peso
+
+`u$s 718 - $1.490.000` partido por el primer `$` da un nombre que termina en «u»
+y un precio de 718 pesos. El costo entra mil veces más chico, el margen de esa
+notebook queda en el 99% y **nada se ve raro**: es un número plausible en una
+lista donde hay cables de $1.500.
+
+Por eso el dólar no se interpreta: el renglón se marca y no se carga, con el
+motivo escrito. Es la decisión correcta aunque sea más molesta, y además es
+temporal —los precios en dólares solo entran desde WooCommerce, que es donde
+vive la cotización—.
+
+## Lo que se probó con la lista de verdad
+
+El test del parser no usa casos inventados: usa los 24 renglones de la entrega
+del 1 de octubre, copiados del mensaje que la trajo. Ahí estaban todos los casos
+de borde juntos, y ninguno se me habría ocurrido: comillas en el nombre
+(`SEISA 6,5''`), un `+` en el medio (`jack 3,5 + usb c`), guiones que son parte
+del nombre (`TL-WA850RE`, `TP-Link`), comas decimales (`1,5m`), un renglón con un
+solo precio, dos sin precios, uno con IMEI y uno en dólares.

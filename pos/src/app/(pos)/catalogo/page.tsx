@@ -23,12 +23,18 @@ const TOPE = 60;
 export default async function PaginaCatalogo({
   searchParams,
 }: {
-  searchParams: Promise<{ solo?: string; importados?: string }>;
+  searchParams: Promise<{
+    solo?: string;
+    importados?: string;
+    cargados?: string;
+    sumados?: string;
+    bajas?: string;
+  }>;
 }) {
   const sesion = await auth();
   if (!sesion?.user || !puede(sesion.user.rol, 'producto.editar')) redirect('/');
 
-  const { solo, importados } = await searchParams;
+  const { solo, importados, cargados, sumados, bajas } = await searchParams;
   const soloBloqueantes = solo !== 'todo';
   const pendientes = await fichasPendientes(db);
   const totalPendientes = await cuantasFichasPendientes(db);
@@ -83,6 +89,22 @@ export default async function PaginaCatalogo({
       {importados ? (
         <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-3 text-sm font-semibold text-(--color-ok)">
           Se cargaron {importados} productos de la planilla. Ya se pueden vender.
+        </p>
+      ) : null}
+
+      {/* La lista hace tres cosas distintas, así que el aviso las cuenta por
+          separado: «se cargaron 21» no dice nada de la que se dio de baja. */}
+      {cargados || sumados || bajas ? (
+        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-3 text-sm font-semibold text-(--color-ok)">
+          Entrega cargada:{' '}
+          {[
+            Number(cargados) > 0 ? `${cargados} productos nuevos` : null,
+            Number(sumados) > 0 ? `${sumados} con stock sumado` : null,
+            Number(bajas) > 0 ? `${bajas} dados de baja` : null,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          . Ya se puede vender.
         </p>
       ) : null}
 

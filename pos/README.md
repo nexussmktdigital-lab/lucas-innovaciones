@@ -580,7 +580,7 @@ había en el cajón.
 
 ---
 
-## Cargar productos: de a uno, con ayuda, o una planilla entera
+## Cargar productos: de a uno, con ayuda, o una entrega entera
 
 Hasta acá el catálogo entraba **solo** por WooCommerce, y eso dejaba al
 mostrador sin salida justo cuando más lo necesitaba: llega mercadería nueva, o
@@ -748,24 +748,89 @@ Cuatro límites, y los cuatro importan:
 - **Sin la variable, el alta funciona igual**, escrita a mano. Ninguna parte del
   POS depende de que esto ande.
 
-### La planilla
+### La entrega entera, de una vez
 
-Cuando llega una entrega no llega un producto: llega una lista del distribuidor
-con treinta renglones. **Importar planilla** (solo el dueño) los carga de una
-vez, en dos pasos: primero muestra renglón por renglón qué va a pasar —cuántos
-se cargan, cuántos ya estaban, cuáles no se pueden leer y por qué— y recién
-después escribe. Una importación que guarda y después avisa es una importación
-que hay que deshacer a mano.
+Cuando llega una entrega no llega un producto: llega una lista con treinta
+renglones. **Cargar una entrega** (solo el dueño) la carga de una vez, en dos
+pasos: primero muestra renglón por renglón qué va a pasar y recién después
+escribe. Una carga que guarda y después avisa es una carga que hay que deshacer a
+mano — y acá hay bajas.
 
-Lee lo que salga de Excel: punto y coma o coma, comillas, BOM, y los títulos de
-columna que use la planilla que venga (`producto`, `rubro`, `importe`,
-`cantidad`…). Hacen falta `nombre` y `precio`; el resto es opcional.
+**Un solo cuadro de texto para las dos formas de pegarla**, y el programa decide
+cuál es. Elegir entre dos cuadros es una decisión más con el proveedor esperando,
+y es una decisión que no hace falta que tome una persona: una planilla siempre
+arranca con la fila de títulos.
 
-**Da de alta, no pisa lo que ya está.** Un SKU o un nombre que ya existe se
-informa y se saltea. Los precios de lo que ya está cargado se cambian en
-**Precios**, que es donde están los controles: una planilla capaz de reescribir
-precios en masa es la forma más rápida de cambiar todo el catálogo sin que nadie
-lo note.
+#### La lista escrita a mano
+
+Es lo que de verdad hay a mano cuando llega la mercadería. Un renglón por
+producto, tal cual se escribe:
+
+```
+-Router TP-Link Archer C86 (5) $68.000 - 98.000
+-Cable iphone usb tipo c a lightning Eco (4+)
+-Memoria Kingston micro sd 128gb (eliminar)
+-iPhone 15 Pro Max 256gb 88% (34985) - $1.038.500 - $1.154.750
+```
+
+Nombre, entre paréntesis cuántos llegaron, y después **el costo y el precio al
+público, en ese orden**. Lo que el paréntesis puede decir son tres cosas, que un
+humano distingue sin pensar y el programa también:
+
+- **`(5)` o `(4+)`**: unidades. El `+` quiere decir «esas o más», que para
+  cargar stock es lo mismo que el número.
+- **`(34985)`**: cuatro dígitos o más no es una cantidad —el techo de una entrega
+  son mil— sino el final de un IMEI. Son los usados: entran de a uno y el número
+  **se queda en el nombre**, porque es lo único que distingue un iPhone 15 de
+  otro iPhone 15.
+- **`(eliminar)`**: baja.
+
+Y la regla que más decide: **un renglón sin precios es uno que ya está en el
+catálogo**, al que solo hay que sumarle lo que llegó. Es como se escribe la lista
+cuando el precio no cambió: no se repite lo que ya se sabe.
+
+#### Las tres cosas que la lista hace
+
+| El renglón | Qué pasa |
+|---|---|
+| No está en el catálogo y trae precio | **Alta**, con su costo y su stock |
+| Ya está en el catálogo | **Suma stock**, y el precio **no se toca** |
+| Dice `(eliminar)` | **Baja**: sale del mostrador y de la tienda |
+
+**El precio no se pisa nunca, aunque el renglón lo traiga.** Una lista de entrega
+dice con qué costo llegó la mercadería, no qué hay que cobrar. Si el precio
+cambió se cambia con «Cambiar precio», que avisa y queda en la bitácora. La
+revisión lo dice renglón por renglón para que nadie se entere después.
+
+**Una baja no borra nada.** La ficha está pegada a las ventas viejas, al stock
+histórico y a la rentabilidad del mes pasado: borrarla es perder eso o romper las
+referencias, y lo que se pidió es que el producto no se venda más, no que nunca
+haya existido. Así que queda inactiva **y en WooCommerce pasa a borrador**. Eso
+último es lo que la hace durar: la sincronización traduce el `status` de Woo a
+`activo`, así que una baja solo local vuelve a estar activa en el próximo
+`woo:sync` porque Woo sigue diciendo `publish`. Y se puede deshacer.
+
+#### Cuándo se niega a adivinar
+
+El nombre tiene que **coincidir exacto** —ignorando mayúsculas, acentos y
+espacios de sobra, pero sin ignorar ninguna palabra— para sumar stock o para dar
+de baja. Buscar por aproximación acá es dar de baja el producto equivocado, y eso
+se descubre tarde. Si no hay coincidencia, o hay más de una, el renglón se marca
+y lo dice: resolverlo a mano son veinte segundos.
+
+Tampoco se adivina lo demás. Un renglón sin precios cuyo producto no existe
+**no** se carga en $0 —un producto a cero se vende a cero y recién ahí se nota—,
+un paréntesis que no se entiende no pasa como una unidad, y un precio en dólares
+se frena en vez de tomarse por pesos: `u$s 718` leído como $718 carga un costo
+mil veces más chico y arruina el margen sin que nada se vea raro.
+
+#### La planilla de Excel
+
+Sigue funcionando igual, en el mismo cuadro. Lee lo que salga de Excel: punto y
+coma o coma, comillas, BOM, y los títulos de columna que use la planilla que
+venga (`producto`, `rubro`, `importe`, `cantidad`…). Hacen falta `nombre` y
+`precio`; el resto es opcional. **Da de alta, no pisa lo que ya está:** un SKU o
+un nombre que ya existe se informa y se saltea.
 
 ---
 

@@ -9,7 +9,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
 import { auditLog, products, stockMovements, syncQueue, users } from '@/db/schema';
-import { ErrorStock, reactivarProducto, sumarStock, TECHO_POR_INGRESO } from './stock';
+import { darDeBaja, ErrorStock, reactivarProducto, sumarStock, TECHO_POR_INGRESO } from './stock';
 
 let db: TestDb;
 let duenio: string;
@@ -177,5 +177,82 @@ describe('reactivar un producto', () => {
     const p = await producto({ activo: true });
     await reactivarProducto(db, { productId: p.id, usuarioId: duenio });
     expect(await db.select().from(auditLog)).toHaveLength(0);
+  });
+});
+
+describe('dar de baja', () => {
+  it('lo saca de la venta sin borrar la ficha', async () => {
+    // Borrarla rompería las ventas viejas y la rentabilidad del mes pasado: lo
+    // que se pidió es que no se venda más, no que nunca haya existido.
+    const p = await producto({ nombre: 'Basura vieja', stock: 3 });
+
+    const r = await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+    expect(r.yaEstaba).toBe(false);
+
+    const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+    expect(enBase).toBeDefined();
+    expect(enBase!.activo).toBe(false);
+    // El stock no se toca: si el producto vuelve, vuelve con lo que tenía.
+    expect(enBase!.stock).toBe(3);
+  });
+
+  it('lo pasa a borrador en la tienda, o el próximo sync lo devuelve activo', async () => {
+    // `activo: status === 'publish'`: una baja solo local no sobrevive al
+    // próximo woo:sync porque Woo sigue diciendo que está publicado.
+    const p = await producto({ wooId: 7001 });
+
+    await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+
+    const [op] = await db.select().from(syncQueue);
+    expect(op!.operacion).toBe('producto.baja');
+    expect(op!.payload).toMatchObject({ productId: p.id, wooId: 7001 });
+  });
+
+  it('no encola nada si el producto no está en la tienda', async () => {
+    const p = await producto({ wooId: null });
+    await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+    expect(await db.select().from(syncQueue)).toHaveLength(0);
+  });
+
+  it('dar de baja dos veces no hace nada la segunda', async () => {
+    const p = await producto({ wooId: 7001 });
+
+    await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+    const r = await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+
+    expect(r.yaEstaba).toBe(true);
+    expect(await db.select().from(syncQueue)).toHaveLength(1);
+  });
+
+  it('queda en la bitácora con quién lo hizo', async () => {
+    const p = await producto({ nombre: 'Basura vieja' });
+    await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+
+    const [registro] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.accion, 'producto.baja'));
+
+    expect(registro!.usuarioId).toBe(duenio);
+    expect(registro!.entidadId).toBe(p.id);
+    expect(registro!.valorNuevo).toMatchObject({ nombre: 'Basura vieja', activo: false });
+  });
+
+  it('se puede volver a activar', async () => {
+    const p = await producto();
+    await darDeBaja(db, { productId: p.id, usuarioId: duenio });
+    await reactivarProducto(db, { productId: p.id, usuarioId: duenio });
+
+    const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+    expect(enBase!.activo).toBe(true);
+  });
+
+  it('avisa si el producto ya no está', async () => {
+    await expect(
+      darDeBaja(db, {
+        productId: '00000000-0000-0000-0000-000000000000',
+        usuarioId: duenio,
+      }),
+    ).rejects.toThrow(ErrorStock);
   });
 });

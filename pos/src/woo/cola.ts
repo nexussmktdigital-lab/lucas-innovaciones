@@ -188,6 +188,8 @@ export async function drenarCola(
         informe.conflictos += await empujarStock(db, cliente, operacion.payload);
       } else if (operacion.operacion === 'precio.empujar') {
         await empujarPrecio(db, cliente, operacion.payload);
+      } else if (operacion.operacion === 'producto.baja') {
+        await empujarBaja(cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.publicar') {
         // El recargo se lee acá y no al encolar: si el dueño lo cambió entre
         // que pidió publicar y que la cola drenó, vale el de ahora.
@@ -298,7 +300,10 @@ async function sincronizarStockDeVenta(
   return conflictos;
 }
 
-const payloadStock = z.object({ productId: z.string(), wooId: z.number() });
+/** Lo que necesita cualquier operación que empuja un producto: cuál, y su id de Woo. */
+const payloadDeProducto = z.object({ productId: z.string(), wooId: z.number() });
+/** Lo único que se le pide a la respuesta: que sea el producto que se tocó. */
+const respuestaDeProducto = z.object({ id: z.number() }).loose();
 
 /**
  * Lleva a la tienda el stock que el POS tiene ahora, sin venta detrás.
@@ -317,7 +322,7 @@ async function empujarStock(
   cliente: ClienteWoo,
   payloadCrudo: unknown,
 ): Promise<number> {
-  const payload = payloadStock.parse(payloadCrudo);
+  const payload = payloadDeProducto.parse(payloadCrudo);
 
   const [local] = await db
     .select({ stock: products.stock, nombre: products.nombre })
@@ -345,9 +350,6 @@ async function empujarStock(
   return 0;
 }
 
-const payloadPrecio = z.object({ productId: z.string(), wooId: z.number() });
-const precioEnWoo = z.object({ id: z.number() }).loose();
-
 /**
  * Lleva a la tienda el precio que el POS tiene ahora.
  *
@@ -367,7 +369,7 @@ async function empujarPrecio(
   cliente: ClienteWoo,
   payloadCrudo: unknown,
 ): Promise<void> {
-  const payload = payloadPrecio.parse(payloadCrudo);
+  const payload = payloadDeProducto.parse(payloadCrudo);
 
   const [local] = await db
     .select({ precioCentavos: products.precioCentavos })
@@ -386,8 +388,24 @@ async function empujarPrecio(
     // WooCommerce —lo calcula ella según haya oferta o no— y escribirlo no
     // cambia nada. Es el mismo campo que usa el alta al publicar.
     { regular_price: (local.precioCentavos / 100).toFixed(2) },
-    precioEnWoo,
+    respuestaDeProducto,
   );
+}
+
+/**
+ * Pasa el producto a borrador en la tienda: es la baja del catálogo.
+ *
+ * No se usa el DELETE de la API a propósito. La ficha está pegada a las ventas
+ * viejas y a la rentabilidad de los meses pasados, y lo que se pidió es que el
+ * producto no se venda más, no que nunca haya existido. Borrador lo saca de la
+ * web, hace que la sincronización lo traiga inactivo —`activo: status ===
+ * 'publish'`— y se puede deshacer.
+ *
+ * Es idempotente: pasar a borrador algo que ya es borrador no cambia nada.
+ */
+async function empujarBaja(cliente: ClienteWoo, payloadCrudo: unknown): Promise<void> {
+  const { wooId } = payloadDeProducto.parse(payloadCrudo);
+  await cliente.enviar('PUT', `products/${wooId}`, { status: 'draft' }, respuestaDeProducto);
 }
 
 /**
