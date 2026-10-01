@@ -1447,7 +1447,7 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una transferencia entre cuentas no cambia el total del negocio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | No se transfiere más de lo que hay en la cuenta | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | El saldo guardado de cada cuenta coincide con sus movimientos | `src/gastos/gastos.test.ts` |
-| El vendedor no ve gastos ni cuentas, ni por URL | `e2e/gastos.spec.ts` |
+| El vendedor ve gastos y cuentas, y entra también por URL | `e2e/gastos.spec.ts` |
 | Una vista previa de Vercel no se toma por producción, aunque `NODE_ENV` lo diga | `src/lib/produccion.test.ts` |
 | El staging se reconoce por ruta y por subdominio, y un dominio que empieza con «dev» no lo es | `src/lib/produccion.test.ts` |
 | Sin `CRON_SECRET` en producción el POS lo reclama; en desarrollo no molesta | `src/lib/produccion.test.ts` |
@@ -1508,7 +1508,7 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una devolución rechazada no deja nada a medias | `src/ventas/devolver.test.ts` |
 | Un producto fallado se devuelve sin volver al stock, y la plata sale igual | `src/ventas/devolver.test.ts` |
 | El arqueo dice por qué falta esa plata, aparte de las anulaciones | `src/ventas/devolver.test.ts`, `e2e/devoluciones.spec.ts` |
-| El vendedor no registra devoluciones, ni por URL | `e2e/devoluciones.spec.ts` |
+| El vendedor registra devoluciones | `e2e/devoluciones.spec.ts` |
 | Importar el histórico dos veces no duplica la facturación | `src/woo/historico.test.ts` |
 | En un lote a medias, se suma solo lo que entró de verdad | `src/woo/historico.test.ts` |
 | Un pedido histórico ilegible se descarta y el informe no cierra | `src/woo/historico.test.ts` |
