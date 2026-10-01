@@ -163,6 +163,70 @@ export async function sumarStock(db: BaseDatos, datos: IngresoDeStock): Promise<
 }
 
 /**
+ * Dar de baja un producto: deja de aparecer al vender y sale de la tienda.
+ *
+ * Es lo que pide el `(eliminar)` de la lista de una entrega. **No borra nada**,
+ * y no es timidez: la ficha está pegada a las ventas viejas, al stock histórico
+ * y a la rentabilidad del mes pasado. Borrarla es perder eso o romper las
+ * referencias, y lo que se quiere es que el producto no se venda más, no que
+ * nunca haya existido.
+ *
+ * **En WooCommerce pasa a borrador**, y eso es lo que lo hace durar. La
+ * sincronización traduce el `status` de Woo a `activo` (`activo: status ===
+ * 'publish'`), así que una baja solo local vuelve a estar activa en el próximo
+ * `woo:sync`: Woo sigue diciendo `publish` y el espejo le cree. Pasándolo a
+ * borrador, la tienda deja de mostrarlo y la sincronización lo trae inactivo,
+ * que es exactamente lo que se pidió. Y se puede deshacer.
+ */
+export async function darDeBaja(
+  db: BaseDatos,
+  datos: { productId: string; usuarioId: string },
+): Promise<{ nombre: string; yaEstaba: boolean }> {
+  return db.transaction(async (tx) => {
+    const [p] = filas<{
+      id: string;
+      nombre: string;
+      activo: boolean;
+      woo_id: number | null;
+    }>(
+      await tx.execute(sql`
+        SELECT id, nombre, activo, woo_id
+          FROM products
+         WHERE id = ${datos.productId}
+           FOR UPDATE
+      `),
+    );
+
+    if (!p) throw new ErrorStock('Ese producto ya no está en el catálogo.', 'no_existe');
+    if (!p.activo) return { nombre: String(p.nombre), yaEstaba: true };
+
+    await tx
+      .update(products)
+      .set({ activo: false, updatedAt: new Date() })
+      .where(eq(products.id, datos.productId));
+
+    if (p.woo_id !== null) {
+      await tx.insert(syncQueue).values({
+        operacion: 'producto.baja',
+        idempotencyKey: `baja:${datos.productId}:${Date.now()}`,
+        payload: { productId: datos.productId, wooId: p.woo_id },
+      });
+    }
+
+    await tx.insert(auditLog).values({
+      usuarioId: datos.usuarioId,
+      accion: 'producto.baja',
+      entidad: 'products',
+      entidadId: datos.productId,
+      valorAnterior: { activo: true },
+      valorNuevo: { nombre: p.nombre, activo: false },
+    });
+
+    return { nombre: String(p.nombre), yaEstaba: false };
+  });
+}
+
+/**
  * Volver a poner a la venta un producto que estaba inactivo.
  *
  * Aparece junto al aviso de duplicados: la ficha existe pero no se vende, y

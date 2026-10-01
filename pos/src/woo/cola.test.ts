@@ -513,3 +513,42 @@ describe('precio.empujar', () => {
     expect(woo.precios[9999]).toBeUndefined();
   });
 });
+
+describe('producto.baja', () => {
+  it('pasa el producto a borrador en la tienda, sin borrarlo', async () => {
+    /*
+     * Borrador y no DELETE: la ficha está pegada a las ventas viejas y a la
+     * rentabilidad de los meses pasados. Y es lo que hace durar la baja: la
+     * sincronización traduce `status` a `activo`, así que con el producto en
+     * borrador el espejo lo trae inactivo en vez de devolverlo a la venta.
+     */
+    await db.insert(syncQueue).values({
+      operacion: 'producto.baja',
+      idempotencyKey: 'baja:1',
+      payload: { productId: vidrioId, wooId: 6485 },
+    });
+
+    const enviadas: Record<string, unknown>[] = [];
+    const fetchImpl = (async (entrada: string | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') enviadas.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ id: 6485 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const cliente = new ClienteWoo({
+      url: 'https://ejemplo.test/staging',
+      consumerKey: 'ck',
+      consumerSecret: 'cs',
+      fetchImpl,
+      reintentos: 1,
+      timeoutMs: 1000,
+    });
+
+    const informe = await drenarCola(db, cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(enviadas).toEqual([{ status: 'draft' }]);
+  });
+});

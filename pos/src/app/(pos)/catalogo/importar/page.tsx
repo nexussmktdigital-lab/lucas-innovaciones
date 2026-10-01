@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { puede } from '@/auth/permisos';
 import { PLANILLA_DE_EJEMPLO, TOPE_RENGLONES } from '@/catalogo/importar';
+import { LISTA_DE_EJEMPLO } from '@/catalogo/entrega';
 import FormularioImportar from './formulario-importar';
 
 export const dynamic = 'force-dynamic';
@@ -24,23 +25,34 @@ export default async function PaginaImportar() {
         <Link href="/catalogo" className="text-sm underline underline-offset-2">
           ← Catálogo
         </Link>
-        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">Importar una planilla</h1>
+        <h1 className="mt-1 font-titulo text-2xl font-bold tracking-tight">Cargar una entrega</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
-          Para cuando llega una entrega entera. Hasta {TOPE_RENGLONES} renglones por vez.
+          Pegá la lista como la escribiste, o la planilla tal cual sale de Excel. Hasta{' '}
+          {TOPE_RENGLONES} renglones por vez.
         </p>
       </div>
 
-      <FormularioImportar ejemplo={PLANILLA_DE_EJEMPLO} />
+      <FormularioImportar ejemploPlanilla={PLANILLA_DE_EJEMPLO} ejemploLista={LISTA_DE_EJEMPLO} />
 
       <div className="rounded-(--radius-caja) border border-(--color-borde) p-3 text-sm text-(--color-tinta-suave)">
         <p className="mb-1 font-medium text-(--color-tinta)">Dos cosas que conviene saber</p>
         <p>
-          <strong>Da de alta, no pisa lo que ya está.</strong> Un producto que ya existe se
-          informa y se saltea. Los precios de lo que ya tenés se cambian en{' '}
+          <strong>No pisa precios.</strong> A un producto que ya existe se le suman las unidades
+          que llegaron y su precio queda como está, incluso si la lista trae otro. Para cambiarlo,
+          «Cambiar precio» desde el{' '}
+          <Link href="/catalogo" className="underline underline-offset-2">
+            catálogo
+          </Link>{' '}
+          o{' '}
           <Link href="/precios" className="underline underline-offset-2">
             Precios
           </Link>
-          , que es donde están los controles.
+          .
+        </p>
+        <p className="mt-1">
+          <strong>Una baja no borra nada.</strong> El producto deja de aparecer al vender y pasa a
+          borrador en la tienda. Las ventas viejas y la rentabilidad de los meses pasados siguen
+          intactas, y se puede volver a activar.
         </p>
         <p className="mt-1">
           <strong>Todo entra como de mostrador.</strong> Lo importado se vende en el local y no

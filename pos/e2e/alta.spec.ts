@@ -21,6 +21,8 @@ test.describe.configure({ mode: 'serial' });
 const SUF = Date.now().toString().slice(-6);
 const CABLE = `Cable tipo C reforzado ${SUF}`;
 const SERVICIO = `Cambio de pantalla ${SUF}`;
+const ROUTER = `Router de prueba ${SUF}`;
+const MEMORIA = `Memoria de prueba ${SUF}`;
 
 async function entrarComoDuenio(page: Page) {
   await page.goto('/ingresar');
@@ -161,7 +163,7 @@ test('la planilla se mira antes de guardarla', async ({ page }) => {
     `${CABLE};Cables de carga;FoxBox;14000;3`,
   ].join('\n');
 
-  await page.getByLabel('Pegá la planilla acá').fill(planilla);
+  await page.getByLabel('Pegá la lista o la planilla acá').fill(planilla);
   await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
 
   const revision = page.getByRole('region', { name: 'Lo que haría la planilla' });
@@ -191,7 +193,7 @@ test('recién al confirmar entran los productos de la planilla', async ({ page }
     `Soporte de auto ${SUF};Accesorios;7200;4`,
   ].join('\n');
 
-  await page.getByLabel('Pegá la planilla acá').fill(planilla);
+  await page.getByLabel('Pegá la lista o la planilla acá').fill(planilla);
   await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
   await page.getByRole('button', { name: /Cargar los 2/ }).click();
 
@@ -214,7 +216,7 @@ test('importar la misma planilla de nuevo no duplica nada', async ({ page }) => 
     `Funda reforzada ${SUF};Fundas;9500;10`,
   ].join('\n');
 
-  await page.getByLabel('Pegá la planilla acá').fill(planilla);
+  await page.getByLabel('Pegá la lista o la planilla acá').fill(planilla);
   await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
 
   const revision = page.getByRole('region', { name: 'Lo que haría la planilla' });
@@ -349,4 +351,94 @@ test('el precio viejo se corrige desde el buscador, sin abrir WordPress', async 
   await expect(buscador.getByRole('listitem').first()).toContainText('33.300', {
     timeout: 10_000,
   });
+});
+
+test('la entrega se pega como lista: carga, suma stock y da de baja', async ({ page }) => {
+  /*
+   * Lo que llega cuando llega mercadería no es una planilla con encabezado: es
+   * la lista escrita a mano, un renglón por producto. Esta prueba recorre las
+   * tres cosas que esa lista pide, en el orden en que pasan de verdad.
+   *
+   * Los nombres llevan sufijo porque la base no se vacía entre corridas, y
+   * porque un test que escribe datos compartidos le rompe los totales a los que
+   * vienen después.
+   */
+  await entrarComoDuenio(page);
+  await page.goto('/catalogo/importar');
+
+  const pegar = page.getByLabel('Pegá la lista o la planilla acá');
+
+  // Primer paso: dos productos nuevos, con cantidad, costo y precio.
+  await pegar.fill([`-${ROUTER} (5) $68.000 - 98.000`, `-${MEMORIA} (2) $36.500 - 64.000`].join('\n'));
+  await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
+
+  const revision = page.getByRole('region', { name: 'Lo que haría la entrega' });
+  await expect(revision).toBeVisible();
+  await expect(revision).toContainText(ROUTER);
+  await expect(revision).toContainText('7 unidades en total');
+
+  await page.getByRole('button', { name: /Aplicar los 2 renglones/ }).click();
+  await expect(page.getByText(/2 productos nuevos/)).toBeVisible();
+
+  // Segundo paso: al que ya está se le suman unidades sin repetir el precio, y
+  // el otro se da de baja por nombre exacto.
+  await page.goto('/catalogo/importar');
+  await pegar.fill([`-${ROUTER} (3+)`, `-${MEMORIA} (eliminar)`].join('\n'));
+  await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
+
+  await expect(revision).toContainText('de 5 a 8');
+  await expect(revision).toContainText(/se puede volver a activar/i);
+
+  await page.getByRole('button', { name: /Aplicar los 2 renglones/ }).click();
+  await expect(page.getByText(/1 con stock sumado/)).toBeVisible();
+  await expect(page.getByText(/1 dados de baja/)).toBeVisible();
+
+  // Y la baja no borró la ficha: sigue estando, marcada como inactiva.
+  const buscador = page.getByRole('region', { name: 'Buscar en el catálogo' });
+  await buscador.getByLabel('Buscar un producto').fill(MEMORIA);
+  await expect(buscador.getByRole('listitem').first()).toContainText(/Inactivo/i, {
+    timeout: 10_000,
+  });
+});
+
+test('la lista no adivina: lo que no entiende lo dice y no lo carga', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await page.goto('/catalogo/importar');
+
+  await page
+    .getByLabel('Pegá la lista o la planilla acá')
+    .fill(
+      [
+        `-Notebook que no existe ${SUF} (1) u$s 718 - $1.490.000`,
+        `-Cable que no existe ${SUF} (4+)`,
+      ].join('\n'),
+    );
+  await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
+
+  const revision = page.getByRole('region', { name: 'Lo que haría la entrega' });
+  await expect(revision).toContainText(/dólares/i);
+  await expect(revision).toContainText(/sin precio no se puede dar de alta/i);
+
+  // Nada que aplicar: los dos renglones quedaron afuera.
+  await expect(page.getByRole('button', { name: /Aplicar/ })).toHaveCount(0);
+  await expect(revision).toContainText('No hay nada para aplicar');
+});
+
+test('la planilla de Excel sigue funcionando en el mismo cuadro', async ({ page }) => {
+  // El mismo textarea come las dos cosas, y la planilla es la que ya andaba:
+  // detectar mal el formato rompería una función que estaba bien.
+  await entrarComoDuenio(page);
+  await page.goto('/catalogo/importar');
+
+  await page
+    .getByLabel('Pegá la lista o la planilla acá')
+    .fill(`nombre;categoria;precio;stock;costo\nFunda de planilla ${SUF};Fundas;9500;12;5000`);
+  await page.getByRole('button', { name: 'Ver qué va a pasar' }).click();
+
+  const revision = page.getByRole('region', { name: 'Lo que haría la planilla' });
+  await expect(revision).toBeVisible();
+  await expect(revision).toContainText(`Funda de planilla ${SUF}`);
+
+  await page.getByRole('button', { name: /Cargar los 1/ }).click();
+  await expect(page.getByText(/Se cargaron 1 productos de la planilla/)).toBeVisible();
 });

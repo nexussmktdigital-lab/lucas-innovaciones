@@ -25,6 +25,13 @@ import {
 } from '@/catalogo/crear';
 import { encolarPublicacion, ErrorPublicar } from '@/catalogo/publicar';
 import { ErrorImportar, importarPlanilla, revisarPlanilla } from '@/catalogo/importar';
+import {
+  aplicarEntrega,
+  ErrorEntrega,
+  pareceUnaPlanilla,
+  revisarEntrega,
+  type RevisionDeEntrega,
+} from '@/catalogo/entrega';
 import { ErrorIA, hayIA, sugerirFicha, type FichaSugerida } from '@/catalogo/ia';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 import { ErrorStock, reactivarProducto, sumarStock } from '@/catalogo/stock';
@@ -217,11 +224,20 @@ export interface EstadoImportacion {
   ok?: string;
   /** Lo que la planilla haría, antes de escribir nada. */
   revision?: Awaited<ReturnType<typeof revisarPlanilla>>;
-  /** El CSV que se revisó, para poder confirmarlo sin volver a pegarlo. */
-  csv?: string;
+  /** Lo mismo, cuando lo que se pegó es la lista escrita a mano. */
+  entrega?: RevisionDeEntrega;
+  /** El texto que se revisó, para poder confirmarlo sin volver a pegarlo. */
+  texto?: string;
 }
 
-/** Paso 1: mirar. No escribe nada. */
+/**
+ * Paso 1: mirar. No escribe nada.
+ *
+ * Un solo cuadro de texto para las dos formas de cargar una entrega, y el
+ * programa decide cuál es. Dos cuadros serían una decisión más que tomar cuando
+ * llega la mercadería, y es una decisión que no hace falta que tome una persona:
+ * una planilla siempre arranca con la fila de títulos.
+ */
 export async function revisarPlanillaAccion(
   _previo: EstadoImportacion,
   datos: FormData,
@@ -229,17 +245,19 @@ export async function revisarPlanillaAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño importa planillas.' };
+    return { error: 'Solo el dueño carga una entrega.' };
   }
 
-  const csv = String(datos.get('csv') ?? '');
+  const texto = String(datos.get('texto') ?? '');
 
   try {
-    return { revision: await revisarPlanilla(db, csv), csv };
+    return pareceUnaPlanilla(texto)
+      ? { revision: await revisarPlanilla(db, texto), texto }
+      : { entrega: await revisarEntrega(db, texto), texto };
   } catch (e) {
-    if (e instanceof ErrorImportar) return { error: e.message };
-    console.error('[catalogo] Falló la revisión de la planilla:', e);
-    return { error: 'No se pudo leer la planilla.' };
+    if (e instanceof ErrorImportar || e instanceof ErrorEntrega) return { error: e.message, texto };
+    console.error('[catalogo] Falló la revisión de la entrega:', e);
+    return { error: 'No se pudo leer lo que pegaste.', texto };
   }
 }
 
@@ -251,36 +269,47 @@ export async function importarPlanillaAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño importa planillas.' };
+    return { error: 'Solo el dueño carga una entrega.' };
   }
 
-  const csv = String(datos.get('csv') ?? '');
-  let creados = 0;
+  const texto = String(datos.get('texto') ?? '');
+  let destino: string;
 
   try {
-    const r = await importarPlanilla(db, csv, sesion.user.id);
-    creados = r.creados;
-
-    if (r.fallidos.length > 0) {
-      const detalle = r.fallidos.map((f) => `línea ${f.linea}: ${f.motivo}`).join(' · ');
-      return {
-        error: `Entraron ${r.creados}, pero ${r.fallidos.length} no: ${detalle}`,
-        csv,
-      };
+    if (pareceUnaPlanilla(texto)) {
+      const r = await importarPlanilla(db, texto, sesion.user.id);
+      if (r.fallidos.length > 0) {
+        const detalle = r.fallidos.map((f) => `línea ${f.linea}: ${f.motivo}`).join(' · ');
+        return { error: `Entraron ${r.creados}, pero ${r.fallidos.length} no: ${detalle}`, texto };
+      }
+      destino = `/catalogo?importados=${r.creados}`;
+    } else {
+      const r = await aplicarEntrega(db, texto, sesion.user.id);
+      if (r.fallidos.length > 0) {
+        const detalle = r.fallidos.map((f) => `línea ${f.linea}: ${f.motivo}`).join(' · ');
+        return {
+          error: `Se aplicaron ${r.creados + r.stockSumado + r.bajas} renglones, pero ${r.fallidos.length} no: ${detalle}`,
+          texto,
+        };
+      }
+      destino = `/catalogo?cargados=${r.creados}&sumados=${r.stockSumado}&bajas=${r.bajas}`;
     }
   } catch (e) {
-    if (e instanceof ErrorImportar) return { error: e.message };
-    console.error('[catalogo] Falló la importación:', e);
-    return { error: 'No se pudo importar la planilla.' };
+    if (e instanceof ErrorImportar || e instanceof ErrorEntrega) return { error: e.message, texto };
+    console.error('[catalogo] Falló la carga de la entrega:', e);
+    return { error: 'No se pudo cargar la entrega.', texto };
   }
+
+  // Que la tienda se entere del stock y de las bajas cuanto antes.
+  after(() => drenarEnSegundoPlano(db));
 
   revalidatePath('/catalogo');
   revalidatePath('/vender');
   revalidatePath('/precios');
 
-  // Se sale de la pantalla de importar: lo que sigue es completar las fichas,
-  // y esa lista vive en el catálogo.
-  redirect(`/catalogo?importados=${creados}`);
+  // Se sale de la pantalla: lo que sigue es completar las fichas, y esa lista
+  // vive en el catálogo.
+  redirect(destino);
 }
 
 export interface EstadoStock {
