@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatearARS } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './sumar-stock';
+import CambiarPrecio from './cambiar-precio';
 
 /** Lo mismo que el buscador de la venta: no consultar por tecla. */
 const ESPERA_MS = 250;
@@ -29,11 +30,13 @@ export default function Parecidos({
   nombre,
   puedeSumarStock,
   puedeReactivar,
+  puedeCambiarPrecio,
 }: {
   nombre: string;
   /** Si no puede, el aviso igual se muestra: saber que ya existe sirve solo. */
   puedeSumarStock: boolean;
   puedeReactivar: boolean;
+  puedeCambiarPrecio: boolean;
 }) {
   const [consulta, setConsulta] = useState('');
 
@@ -91,7 +94,7 @@ export default function Parecidos({
             {p.sku ? (
               <span className="tabular text-xs text-(--color-tinta-suave)">SKU {p.sku}</span>
             ) : null}
-            <span className="cifra ml-auto text-sm">{formatearARS(p.precioCentavos)}</span>
+            <span className="cifra ml-auto text-sm">{formatearARS(p.mostradorCentavos)}</span>
             <span className="w-full text-xs text-(--color-tinta-suave)">
               {p.activo ? (
                 p.gestionaStock ? (
@@ -117,6 +120,14 @@ export default function Parecidos({
                   activo={p.activo}
                   puedeReactivar={puedeReactivar}
                 />
+              </div>
+            ) : null}
+
+            {/* El precio sí se corrige en cualquiera, lleve stock o no: un
+                servicio también aumenta. */}
+            {puedeCambiarPrecio ? (
+              <div className="w-full pt-1">
+                <CambiarPrecio productId={p.id} mostradorCentavos={p.mostradorCentavos} />
               </div>
             ) : null}
           </li>

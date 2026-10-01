@@ -307,3 +307,46 @@ test('el catálogo tiene buscador, y si no está ofrece cargarlo', async ({ page
   await cargar.click();
   await expect(page.getByLabel('Qué es')).toHaveValue('secarropas industrial');
 });
+
+test('el precio viejo se corrige desde el buscador, sin abrir WordPress', async ({ page }) => {
+  /*
+   * Lo que pidió Fede el primer día: llegó mercadería con aumento y la ficha
+   * quedó vieja. Escribir el precio en la venta arregla esa venta y ninguna de
+   * las siguientes; esto arregla la ficha.
+   *
+   * La vuelta importa tanto como la ida: lo que se escribe es el precio de
+   * mostrador y lo que se guarda es el de la tienda, con el recargo sumado. Si
+   * esa cuenta y su inversa no cierran, el cajero escribe 33.300 y después
+   * cobra otra cosa. Por eso se recarga la pantalla y se lee de nuevo.
+   */
+  await entrarComoVendedor(page);
+  await page.goto('/catalogo');
+
+  /*
+   * El producto es el hidrogel anti espía y no el vidrio templado a propósito:
+   * el vidrio es el que vende medio suite, y dejarle otro precio haría fallar a
+   * los que vienen después. Un test que cambia datos compartidos elige un
+   * producto que no comparte.
+   */
+  const buscador = page.getByRole('region', { name: 'Buscar en el catálogo' });
+  await buscador.getByLabel('Buscar un producto').fill('anti espia');
+
+  const fila = buscador.getByRole('listitem').first();
+  await expect(fila).toBeVisible({ timeout: 10_000 });
+
+  // Arranca cerrado: un campo editable al lado de cada producto invita a
+  // tocarlo sin querer.
+  await expect(fila.getByLabel('Precio de mostrador')).toHaveCount(0);
+  await fila.getByRole('button', { name: 'Cambiar precio' }).click();
+
+  await fila.getByLabel('Precio de mostrador').fill('33300');
+  await fila.getByRole('button', { name: 'Guardar precio' }).click();
+
+  await expect(fila.getByRole('status')).toContainText('33.300', { timeout: 15_000 });
+
+  await page.goto('/catalogo');
+  await buscador.getByLabel('Buscar un producto').fill('anti espia');
+  await expect(buscador.getByRole('listitem').first()).toContainText('33.300', {
+    timeout: 10_000,
+  });
+});

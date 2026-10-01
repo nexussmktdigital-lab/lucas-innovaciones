@@ -1854,3 +1854,54 @@ misma consulta que el aviso de duplicados —la que trae también los inactivos,
 que son los que no aparecen al vender y hacen creer que el producto no está— y
 desde cada resultado se le suman unidades. Lo que no está lleva derecho a
 cargarlo con el nombre ya escrito.
+
+## El precio que se mostraba no era el que se cobraba
+
+Al agregarle a ese buscador la corrección de precio apareció un error que ya
+estaba y nadie había mirado: la lista mostraba el precio **de la ficha**, que es
+el de la tienda. Con el recargo del 12% puesto, el vendedor leía $56.000 en un
+producto que el local cobra $50.000.
+
+No rompía ninguna venta —la venta hace bien la cuenta— pero es exactamente el
+tipo de número que alguien usa para decidir en el mostrador. `buscarParecidos`
+ahora devuelve el de mostrador, calculado con la misma función que usa la venta.
+
+## Corregir un precio: lo que había que hacer bien
+
+Fue el primer pedido de los vendedores. Tres cosas que no eran obvias:
+
+1. **Qué número se escribe.** El mostrador piensa en lo que le cobra al cliente,
+   así que eso es lo que se escribe; pero el que vive en la ficha es el de la
+   tienda. Se guarda el de tienda, calculado con `precioDeTienda`, la inversa
+   exacta del cálculo de la venta. Hay un test que escribe un precio, lo vuelve
+   a leer por el camino de la venta y exige el mismo número: si la ida y la
+   vuelta no cierran —y con el redondeo a los cien pesos es fácil que no
+   cierren— el cajero escribe $15.000 y cobra $14.900.
+
+2. **Hay que limpiar `precioLocalCentavos`.** Ese campo pisa el cálculo. Si el
+   producto tenía uno puesto y se deja, el precio recién escrito **no se cobra**:
+   se cambia el número, la venta sigue saliendo el viejo y nadie entiende por
+   qué. Es el peor de los tres, porque falla en silencio.
+
+3. **Hay que empujarlo a Woo.** Misma razón que el stock, con una consecuencia
+   más cara: la web sigue cobrando el precio viejo, y además el próximo
+   `woo:sync` devuelve la ficha a ese precio, así que el cambio se borra solo.
+   La operación (`precio.empujar`) lee el precio de la base al drenar y no del
+   payload: dos cambios seguidos terminan los dos en el último, que es el
+   correcto, y reintentar escribe el mismo número.
+
+Hay tests que fallan si se saca cualquiera de los tres. Se verificó sacándolos.
+
+El permiso es `producto.alta_rapida` y no `producto.editar`: quien puede crear
+una ficha con el precio que quiera ya puede poner cualquier número. Pedirle más
+para corregir uno existente solo lo empuja a cargar un duplicado, que es justo
+lo que el aviso de parecidos vino a evitar.
+
+## El e2e que rompía a los que venían después
+
+El primer test del cambio de precio le cambiaba el precio al vidrio templado, y
+se cayeron cinco specs. El vidrio de $5.000 es el producto que vende medio
+suite: los tests corren en serie sobre la misma base sembrada, así que dejarle
+otro precio les rompe los totales a todos los que vienen detrás. El test usa
+ahora un producto que nadie más toca. Es la contracara de compartir el seed: un
+test que **escribe** datos compartidos tiene que elegir qué escribe.

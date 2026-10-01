@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
-import { aCentavos, ErrorDinero } from '@/lib/dinero';
+import { aCentavos, ErrorDinero, formatearARS } from '@/lib/dinero';
 import {
   categoriasDelCatalogo,
   crearProducto,
@@ -28,6 +28,8 @@ import { ErrorImportar, importarPlanilla, revisarPlanilla } from '@/catalogo/imp
 import { ErrorIA, hayIA, sugerirFicha, type FichaSugerida } from '@/catalogo/ia';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 import { ErrorStock, reactivarProducto, sumarStock } from '@/catalogo/stock';
+import { cambiarPrecio, ErrorPrecioFicha } from '@/catalogo/precio';
+import { recargoDeTienda } from '@/precios/config';
 
 export interface EstadoAlta {
   error?: string;
@@ -343,6 +345,73 @@ export async function sumarStockAccion(
     if (error instanceof ErrorStock) return { error: error.message };
     console.error('[stock] Falló la suma:', error);
     return { error: 'No se pudo sumar el stock. Probá de nuevo.' };
+  }
+}
+
+export interface EstadoPrecio {
+  error?: string;
+  ok?: string;
+  /** Lo que quedó, para mostrarlo sin recargar la pantalla. */
+  resultado?: { nombre: string; mostradorCentavos: number };
+}
+
+/**
+ * Corregir el precio de un producto desde el mostrador.
+ *
+ * Es lo que pidió Fede el primer día: llegó mercadería con aumento y la ficha
+ * quedó vieja. Escribir el precio en la venta arregla esa venta y ninguna de
+ * las siguientes; esto arregla la ficha.
+ *
+ * El permiso es el del alta rápida, no `producto.editar`: quien puede crear una
+ * ficha con el precio que quiera ya puede poner cualquier número, así que
+ * pedirle más para corregir uno existente solo lo empuja a cargar un duplicado
+ * —que es exactamente el problema que el aviso vino a resolver—.
+ */
+export async function cambiarPrecioAccion(
+  _previo: EstadoPrecio,
+  datos: FormData,
+): Promise<EstadoPrecio> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'producto.alta_rapida')) {
+    return { error: 'No tenés permiso para cambiar precios.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  let mostradorCentavos: number;
+  try {
+    mostradorCentavos = aCentavos(String(datos.get('precio') ?? ''));
+  } catch {
+    return { error: 'Escribí el precio con números, por ejemplo 45000.' };
+  }
+
+  try {
+    const r = await cambiarPrecio(db, {
+      productId: id.data,
+      mostradorCentavos,
+      // Se lee acá y no en el cliente: el recargo es del negocio, y si el
+      // navegador lo mandara se podría tocar.
+      recargoTiendaBp: await recargoDeTienda(db),
+      usuarioId: sesion.user.id,
+    });
+
+    // Que la web deje de cobrar el precio viejo cuanto antes. Va en `after`
+    // para no hacer esperar a quien está atendiendo.
+    after(() => drenarEnSegundoPlano(db));
+    revalidatePath('/catalogo');
+    revalidatePath('/vender');
+    revalidatePath('/precios');
+
+    return {
+      ok: `«${r.nombre}» pasa a ${formatearARS(r.mostradorCentavos)} en el mostrador.`,
+      resultado: { nombre: r.nombre, mostradorCentavos: r.mostradorCentavos },
+    };
+  } catch (error) {
+    if (error instanceof ErrorPrecioFicha) return { error: error.message };
+    console.error('[catalogo] Falló el cambio de precio:', error);
+    return { error: 'No se pudo cambiar el precio. Probá de nuevo.' };
   }
 }
 

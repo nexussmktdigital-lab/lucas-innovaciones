@@ -17,7 +17,7 @@ mandan sobre este código:
 
 | # | Decisión |
 |---|---|
-| **D4** | **WooCommerce es la fuente de verdad del catálogo, el precio y el stock.** El POS mantiene un espejo local para que el buscador responda rápido, pero el espejo no autoriza nada: al confirmar una venta, quien descuenta stock es Woo. |
+| **D4** | **WooCommerce es la fuente de verdad del catálogo, el precio y el stock.** El POS mantiene un espejo local para que el buscador responda rápido, pero el espejo no autoriza nada: al confirmar una venta, quien descuenta stock es Woo. *El mostrador sí puede sumar stock y corregir un precio, y en los dos casos lo empuja a Woo por la cola: la fuente de verdad sigue siendo una sola, lo que cambió es que el mostrador también le escribe.* |
 | **D22** | **Los precios en dólares los maneja el plugin `lucas-cotizacion`**, que reescribe el precio en pesos dos veces por día con el blue de Córdoba. El POS no cotiza: lee ese valor y lo **congela en cada venta**. Una venta vieja nunca se recalcula. |
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
@@ -298,10 +298,13 @@ así que el mismo producto vale distinto en cada lado: unos auriculares de
 $50.000 en el local salen $56.000 en la web.
 
 Para no tener dos números que mantener sincronizados por producto, **el que se
-guarda es el de la tienda**. WooCommerce sigue siendo el único lugar donde se
-carga un precio, la web cobra exactamente lo que dice esa ficha, y el POS le
-descuenta el recargo para llegar al de mostrador. En **Precios** (`F8`) se ve la
-diferencia producto por producto y se decide el porcentaje.
+guarda es el de la tienda**: la web cobra exactamente lo que dice esa ficha, y
+el POS le descuenta el recargo para llegar al de mostrador. En **Precios**
+(`F8`) se ve la diferencia producto por producto y se decide el porcentaje.
+
+El catálogo se **carga** en WooCommerce, pero el precio ya no se corrige solo
+desde ahí: desde el mostrador también se puede, y eso se cuenta en
+[Corregir el precio desde el mostrador](#corregir-el-precio-desde-el-mostrador).
 
 Tres cosas que el cálculo respeta:
 
@@ -658,7 +661,54 @@ encontrar *un* producto no servía: había que mirarlo a ojo en una lista de
 sesenta fichas ordenadas por gravedad. Ahora arranca con un buscador, por nombre,
 SKU o marca, que **también muestra los inactivos** —son los que no aparecen al
 vender y hacen creer que el producto no está—. Desde cada resultado se le suman
-unidades, y lo que no está lleva derecho a cargarlo con el nombre ya escrito.
+unidades y se le corrige el precio, y lo que no está lleva derecho a cargarlo
+con el nombre ya escrito.
+
+El precio que se lista es el **de mostrador**, no el de la ficha. Parece un
+detalle y no lo es: la ficha guarda el de la tienda, así que con el recargo del
+12% puesto el buscador mostraba $56.000 en un producto que el local cobra
+$50.000.
+
+### Corregir el precio desde el mostrador
+
+Fue lo primero que pidieron los vendedores al probar el sistema: *«que podamos
+editar un precio antes de venderlo, por las dudas algo tenga precio viejo»*.
+Llega mercadería con aumento y la ficha queda vieja. Hasta acá la salida era
+escribir el precio en la venta —que arregla **esa** venta y ninguna de las
+siguientes— o abrir WordPress con el cliente enfrente, que es lo que este
+sistema vino a sacar.
+
+Ahora, al lado de cada producto del buscador y del aviso de duplicados, hay un
+«Cambiar precio». Arranca cerrado a propósito: la mayoría de las veces el
+precio está bien, y un campo editable al lado de cada fila invita a tocarlo sin
+querer.
+
+Tres cosas que lo hacen correcto y no solo cómodo:
+
+- **Se escribe el precio de mostrador**, que es el que quien atiende tiene en la
+  cabeza, y se guarda el de la tienda. La cuenta del recargo la hace el
+  servidor con `precioDeTienda`, la inversa exacta de la que usa la venta. Hay
+  un test que escribe un precio, lo vuelve a leer por el camino de la venta y
+  exige el mismo número: si la ida y la vuelta no cierran, el cajero escribe
+  $15.000 y cobra $14.900.
+- **Se limpia el precio de mostrador propio**, si lo tenía. Ese campo pisa el
+  cálculo, así que dejarlo puesto haría que el precio recién escrito no se
+  cobre: se cambia el número, la venta sigue saliendo el viejo y nadie entiende
+  por qué. Si hacía falta una excepción, se vuelve a poner desde **Precios**, a
+  sabiendas.
+- **Se empuja a WooCommerce** (`precio.empujar`), por la misma razón que el
+  stock y con una consecuencia más cara: si el precio nuevo no llega a la web,
+  la tienda sigue cobrando el viejo —plata que se pierde en cada pedido— y
+  encima la próxima sincronización devuelve la ficha al precio anterior, porque
+  el espejo copia lo que dice Woo. Lo que viaja se lee de la base al drenar y no
+  del payload, así que dos cambios seguidos terminan los dos en el último
+  precio, que es el correcto.
+
+El permiso es el del alta rápida (`producto.alta_rapida`), no `producto.editar`:
+quien puede crear una ficha con el precio que quiera ya puede poner cualquier
+número, así que pedirle más para corregir uno existente solo lo empujaría a
+cargar un duplicado, que es justo lo que el aviso vino a evitar. Todo cambio
+queda en la bitácora con el precio anterior, el nuevo y quién lo hizo.
 
 ### Nace de mostrador, se publica aparte
 
