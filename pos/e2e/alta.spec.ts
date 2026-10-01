@@ -221,10 +221,15 @@ test('importar la misma planilla de nuevo no duplica nada', async ({ page }) => 
   await expect(revision).toContainText('No hay nada nuevo para cargar');
 });
 
-test('el vendedor no importa planillas', async ({ page }) => {
+test('el vendedor también importa planillas', async ({ page }) => {
+  /*
+   * Es la de mayor alcance que se le abrió: una planilla toca treinta precios
+   * de una vez. Se abrió igual porque cargar mercadería que acaba de llegar es
+   * atender, y de a una ficha o de a treinta es la misma tarea con distinto
+   * volumen. Lo que la cuida es que la importación previsualiza antes de
+   * escribir y queda en la bitácora.
+   */
   await entrarComoVendedor(page);
   await page.goto('/catalogo/importar');
-
-  // Lo saca de la pantalla: una planilla carga treinta precios de una vez.
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).not.toHaveURL(/\/$/);
 });

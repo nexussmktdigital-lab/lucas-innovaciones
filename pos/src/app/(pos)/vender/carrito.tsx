@@ -11,11 +11,19 @@ interface Props {
   totales: TotalesCarrito;
   descuentoGlobal: Descuento | null;
   puedeDescontar: boolean;
+  /**
+   * True si quien atiende puede escribir el precio de un renglón.
+   *
+   * Un servicio se escribe siempre —no tiene precio de catálogo— y eso no
+   * depende del permiso. Lo que el permiso habilita es corregir el precio de
+   * un producto normal cuando la ficha quedó vieja.
+   */
+  puedeEditarPrecio: boolean;
   clientes: Cliente[];
   /** True si hay más clientes de los que entran en el selector. */
   faltanClientes: boolean;
   clienteId: string | null;
-  /** Solo el dueño puede fiar, así que solo a él le sirve ver la deuda. */
+  /** Ver la deuda del cliente solo le sirve a quien puede fiarle. */
   puedeFiar: boolean;
   tcCentavos: number | null;
   onCantidad: (clave: string, cantidad: number) => void;
@@ -38,6 +46,7 @@ export default function Carrito({
   totales,
   descuentoGlobal,
   puedeDescontar,
+  puedeEditarPrecio,
   clientes,
   clienteId,
   puedeFiar,
@@ -126,7 +135,7 @@ export default function Carrito({
                   </button>
                 </div>
 
-                {l.precioEditable ? (
+                {l.precioEditable || puedeEditarPrecio ? (
                   <MontoEditable
                     valor={l.precioUnitarioCentavos}
                     etiqueta={`Precio de ${l.descripcion}`}

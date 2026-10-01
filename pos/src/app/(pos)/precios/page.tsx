@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { alcanceDelRecargo, recargoDeTienda } from '@/precios/config';
@@ -23,7 +24,7 @@ export default async function PaginaPrecios({
   searchParams: Promise<{ q?: string }>;
 }) {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'producto.editar')) redirect('/');
 
   const { q } = await searchParams;
   const recargoBp = await recargoDeTienda(db);

@@ -207,7 +207,7 @@ test('no se puede transferir más de lo que hay', async ({ page }) => {
   await expect(transfe.getByRole('alert')).toContainText('no alcanza');
 });
 
-test('el vendedor no ve los gastos ni las cuentas', async ({ page }) => {
+test('el vendedor ve los gastos y las cuentas', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Vendedor' }).click();
   await elegirVendedor(page, 'Vendedor de mostrador');
@@ -215,13 +215,10 @@ test('el vendedor no ve los gastos ni las cuentas', async ({ page }) => {
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
-  const navegacion = page.getByRole('navigation', { name: 'Secciones' });
-  await expect(navegacion.getByText('Gastos')).toHaveCount(0);
-  await expect(navegacion.getByText('Cuentas')).toHaveCount(0);
-
-  // Y si entra por la URL, lo saca.
+  // Un flete que hay que pagar no espera al dueño. Las dos pantallas están y
+  // se entra por la URL igual.
   for (const ruta of ['/gastos', '/cuentas']) {
     await page.goto(ruta);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).not.toHaveURL(/\/$/);
   }
 });

@@ -74,7 +74,7 @@ describe('armarLinea', () => {
     expect(() => armarLinea(iphone, 1, { tcCentavos: null })).toThrow(ErrorCarrito);
   });
 
-  it('acepta precio manual solo en productos marcados como editables', () => {
+  it('acepta el precio escrito en cualquier producto, no solo en un servicio', () => {
     const servicio = producto({
       nombre: 'Servicio técnico · Reparación',
       precioEditable: true,
@@ -85,9 +85,20 @@ describe('armarLinea', () => {
       4_500_000,
     );
 
-    expect(() => armarLinea(producto(), 1, { precioManualCentavos: 100 })).toThrow(
-      /No se puede cambiar el precio/,
-    );
+    /*
+     * El caso de Fede: llegó mercadería con aumento y la ficha quedó vieja. La
+     * salida no puede ser vender al precio equivocado ni ir a buscar al dueño
+     * con el cliente enfrente. De que no se cuele un error de tipeo se encarga
+     * la guarda de cordura, en `confirmarVenta`, no una prohibición acá.
+     */
+    expect(
+      armarLinea(producto({ precioCentavos: 500_000 }), 1, { precioManualCentavos: 620_000 })
+        .precioUnitarioCentavos,
+    ).toBe(620_000);
+  });
+
+  it('pero nunca un precio negativo', () => {
+    expect(() => armarLinea(producto(), 1, { precioManualCentavos: -1 })).toThrow(ErrorCarrito);
   });
 
   it('el precio manual no puede ser negativo', () => {

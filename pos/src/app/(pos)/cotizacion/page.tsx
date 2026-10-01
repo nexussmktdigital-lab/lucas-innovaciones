@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import {
   estadoDeLaCotizacion,
@@ -20,7 +21,7 @@ const ORIGEN: Record<string, string> = {
 
 export default async function PaginaCotizacion() {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'cotizacion.cambiar')) redirect('/');
 
   const estado = await estadoDeLaCotizacion(db);
   const historial = await historialDeCotizaciones(db, 20);

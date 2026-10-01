@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { PLANILLA_DE_EJEMPLO, TOPE_RENGLONES } from '@/catalogo/importar';
 import FormularioImportar from './formulario-importar';
 
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export default async function PaginaImportar() {
   const sesion = await auth();
   if (!sesion?.user) redirect('/ingresar');
-  if (sesion.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'producto.editar')) redirect('/');
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">

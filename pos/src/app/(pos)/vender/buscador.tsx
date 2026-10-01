@@ -162,6 +162,25 @@ export default function Buscador({
         </div>
       ) : null}
 
+      {/*
+        Y también cuando SÍ hay resultados, que es donde faltaba.
+        La mercadería que acaba de llegar no se puede vender hasta que alguien
+        la cargue, y hasta ahora el único camino era que la búsqueda no
+        devolviera nada: buscar «auricular» traía otros diez y el botón
+        desaparecía. Quien atiende terminaba anotando en un papel y esperando
+        al dueño, que es exactamente lo que este sistema vino a sacar.
+      */}
+      {puedeCargar && hayConexion && resultados.length > 0 ? (
+        <p className="text-right text-xs">
+          <a
+            href={`/catalogo/nuevo?q=${encodeURIComponent(consulta)}`}
+            className="text-(--color-tinta-suave) underline underline-offset-2"
+          >
+            ¿No está en la lista? Cargalo al catálogo
+          </a>
+        </p>
+      ) : null}
+
       <ul className="flex flex-col gap-1.5">
         {resultados.map((r, i) => {
           const disponible = r.gestionaStock ? r.stock - r.stockComprometido : null;

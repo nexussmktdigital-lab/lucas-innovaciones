@@ -21,11 +21,12 @@
     "produccion:chequear": "tsx src/scripts/chequear-produccion.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test",
     "auditar": "tsx src/scripts/auditar-invariantes.ts",
     "carreras": "tsx src/scripts/probar-carreras.ts",
     "caja": "tsx src/scripts/probar-caja.ts",
-    "preparar": "tsx src/scripts/preparar-local.ts"
+    "preparar": "tsx src/scripts/preparar-local.ts",
+    "test:e2e:rapido": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

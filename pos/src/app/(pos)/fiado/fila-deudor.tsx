@@ -95,7 +95,7 @@ export default function FilaDeudor({
   deudor,
   estado,
   hayCaja,
-  esDuenio,
+  puedeFiar,
   recordatorio,
   ultimoAviso,
 }: {
@@ -103,7 +103,7 @@ export default function FilaDeudor({
   /** Su plan de cuotas, si tiene. `null` es el fiado abierto de siempre. */
   estado: (EstadoDeDeuda & { frecuencia: Frecuencia | null }) | null;
   hayCaja: boolean;
-  esDuenio: boolean;
+  puedeFiar: boolean;
   recordatorio: Preparacion;
   ultimoAviso: UltimoAviso | null;
 }) {
@@ -206,7 +206,7 @@ export default function FilaDeudor({
               Tope: {formatearARS(deudor.limiteCentavos)}
               {pasadoDeLimite ? ' — está en el límite' : ''}
             </span>
-          ) : esDuenio ? (
+          ) : puedeFiar ? (
             <span>Sin tope</span>
           ) : null}
         </div>

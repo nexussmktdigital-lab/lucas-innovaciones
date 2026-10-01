@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { cotizacionVigente } from '@/cotizacion/cotizacion';
@@ -24,7 +25,7 @@ export default async function PaginaCatalogo({
   searchParams: Promise<{ solo?: string; importados?: string }>;
 }) {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'producto.editar')) redirect('/');
 
   const { solo, importados } = await searchParams;
   const soloBloqueantes = solo !== 'todo';

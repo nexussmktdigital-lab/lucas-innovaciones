@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
@@ -33,7 +34,7 @@ export default async function PaginaCuentas({
   searchParams: Promise<{ cuenta?: string }>;
 }) {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'gasto.ver')) redirect('/');
 
   const cuentas = await cuentasConSaldo(db);
   const { cuenta } = await searchParams;

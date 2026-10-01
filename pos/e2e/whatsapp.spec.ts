@@ -196,12 +196,15 @@ test('el mensaje preparado queda en la ficha del cliente y en la lista', async (
   await expect(page.getByText(CLIENTE).first()).toBeVisible();
 });
 
-test('el vendedor no entra a los textos', async ({ page }) => {
+test('el vendedor también entra a los textos', async ({ page }) => {
   await page.goto('/ingresar');
   await page.getByLabel('PIN').fill(process.env.SEED_PIN_VENDEDOR ?? '4827');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page.getByRole('heading', { name: 'Estado del sistema' })).toBeVisible();
 
+  // Quien manda el recordatorio es quien se da cuenta de que el texto quedó
+  // mal. Los mensajes son plantillas, no plata: lo peor que puede pasar es que
+  // haya que corregir una redacción.
   await page.goto('/mensajes');
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).not.toHaveURL(/\/$/);
 });

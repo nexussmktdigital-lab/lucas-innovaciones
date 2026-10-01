@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { formatearFechaHora } from '@/lib/fecha';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function PaginaMensajes() {
   const sesion = await auth();
-  if (sesion?.user.rol !== 'owner') redirect('/');
+  if (!sesion?.user || !puede(sesion.user.rol, 'configuracion.editar')) redirect('/');
 
   const ajustes = await ajustesDeWhatsApp(db);
   const ultimos = await historial(db);
