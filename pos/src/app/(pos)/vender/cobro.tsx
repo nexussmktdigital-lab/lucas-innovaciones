@@ -22,7 +22,7 @@ interface Props {
   clienteId: string | null;
   /** El cliente elegido, con su deuda. Null si la venta es a consumidor final. */
   cliente: Cliente | null;
-  /** Solo el dueño puede fiar: `fiado.crear` no es del vendedor. */
+  /** Si puede fiar. Hoy el vendedor también: `fiado.crear` no es del dueño. */
   puedeFiar: boolean;
   cuentas: Cuenta[];
   onCerrar: () => void;

@@ -179,7 +179,7 @@ export async function publicarProductoAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño publica productos en la tienda.' };
+    return { error: 'No tenés permiso para publicar productos en la tienda.' };
   }
 
   const id = z.string().uuid().safeParse(datos.get('productId'));
@@ -208,7 +208,7 @@ export async function fichaListaAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño da una ficha por terminada.' };
+    return { error: 'No tenés permiso para dar una ficha por terminada.' };
   }
 
   const id = z.string().uuid().safeParse(datos.get('productId'));
@@ -245,7 +245,7 @@ export async function revisarPlanillaAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño carga una entrega.' };
+    return { error: 'No tenés permiso para cargar una entrega.' };
   }
 
   const texto = String(datos.get('texto') ?? '');
@@ -269,7 +269,7 @@ export async function importarPlanillaAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'producto.editar')) {
-    return { error: 'Solo el dueño carga una entrega.' };
+    return { error: 'No tenés permiso para cargar una entrega.' };
   }
 
   const texto = String(datos.get('texto') ?? '');

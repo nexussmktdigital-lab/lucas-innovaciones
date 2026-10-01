@@ -51,7 +51,7 @@ export async function devolverAccion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'venta.anular')) {
-    return { error: 'Solo el dueño registra devoluciones.' };
+    return { error: 'No tenés permiso para registrar devoluciones.' };
   }
 
   const leido = esquema.safeParse(Object.fromEntries(datos.entries()));

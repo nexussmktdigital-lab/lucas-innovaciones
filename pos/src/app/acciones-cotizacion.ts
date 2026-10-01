@@ -28,7 +28,7 @@ export async function cargarCotizacion(
   const sesion = await auth();
   if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
   if (!puede(sesion.user.rol, 'cotizacion.cambiar')) {
-    return { error: 'Solo el dueño puede cambiar el tipo de cambio.' };
+    return { error: 'No tenés permiso para cambiar el tipo de cambio.' };
   }
 
   let valorCentavos: number;
