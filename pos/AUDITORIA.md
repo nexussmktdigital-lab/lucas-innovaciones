@@ -1965,3 +1965,62 @@ de borde juntos, y ninguno se me habría ocurrido: comillas en el nombre
 (`SEISA 6,5''`), un `+` en el medio (`jack 3,5 + usb c`), guiones que son parte
 del nombre (`TL-WA850RE`, `TP-Link`), comas decimales (`1,5m`), un renglón con un
 solo precio, dos sin precios, uno con IMEI y uno en dólares.
+
+## El dólar que se leía solo, y el que casi se lee mal
+
+El pedido vino con la tarea hecha: la página, y la clase CSS. `.colCompraVenta`.
+
+Esa clase aparece **32 veces** en la página de Córdoba. La primera —la que
+agarra un selector suelto— es **$1.499,38**: el dólar *oficial*, columna
+*compra*. El blue vendedor del mismo día es **$1.571,00**. Setenta y dos pesos,
+el dólar equivocado y la punta equivocada, repreciando todos los usados.
+
+Y no se habría notado. Un dólar de $1.499 es perfectamente plausible: pasa la
+banda de 100 a 500.000, pasa la guarda de salto del 15%, y en pantalla se ve
+como un dólar cualquiera. El error habría vivido hasta que alguien comparara un
+precio con la calle.
+
+La página tiene dos tablas de promedio bien separadas —`#Promedio`, que son los
+bancos, y `#BluePromedio`, que es el blue— así que la lectura se ancla en la
+tabla y no en la clase. Además exige que la fila diga «blue» y «Córdoba», y
+rechaza una venta por debajo de la compra. El fixture del test es la página real
+con la tabla señuelo adentro: reemplacé el ancla por el selector suelto y
+fallaron ocho pruebas.
+
+**La lección no es sobre scrapers.** Es que cuando un pedido llega con la
+solución técnica ya elegida —«es el elemento .colCompraVenta»— esa parte también
+hay que verificarla. Era un selector razonable escrito por alguien que miró la
+página en el inspector; estaba mal igual.
+
+## Lo que ya estaba hecho
+
+Antes de escribir nada revisé `src/cotizacion/cotizacion.ts`, y las tres guardas
+que iba a construir ya existían de la fase 2: banda plausible, salto máximo del
+15% y bitácora con el origen. Y en `carrito.ts`, que el mostrador **ya se
+reprecia solo** —un producto en dólares no tiene el precio en pesos guardado, se
+calcula al vender—. O sea que de las cinco piezas del pedido, dos estaban.
+
+Lo que faltaba de verdad era una sola cosa que no era obvia: **la web no se
+reprecia**. El número en pesos de WooCommerce lo recalculaba el mismo plugin que
+dejó de contestar, así que con la cotización nueva el POS iba a cobrar bien y la
+tienda a publicar el viejo. Con el dólar subiendo, eso es vender a pérdida por
+la web sin que ninguna pantalla lo diga.
+
+## Tres cosas que caza cada herramienta, y no la otra
+
+En esta tanda cada una apareció una vez, y ninguna la habría encontrado la de al
+lado:
+
+- **El índice único de `sync_queue`.** La clave de idempotencia que escribí era
+  `precio:usd:<producto>:<precio>`, y el dólar vuelve sobre sus pasos: sube el
+  martes y baja al mismo valor el jueves. Esa segunda vez chocaba contra el
+  índice y se caía el repreciado del producto. Lo encontré leyendo el esquema
+  antes de correr nada.
+- **El umbral de vencimiento.** Bajarlo de 20 a 6 horas rompió un test que tenía
+  escrito `19.5` a mano. El test tenía razón en fallar, pero quedó atado a la
+  constante para que no vuelva a pasar.
+- **`next build`.** Exporté una constante propia desde un archivo de ruta. Las
+  944 pruebas unitarias pasaron y `tsc --noEmit` también: las rutas de Next solo
+  pueden exportar los nombres que el framework conoce, y eso solo lo valida el
+  build. Es la segunda vez que el `npm run build` antes del e2e paga el costo de
+  existir.

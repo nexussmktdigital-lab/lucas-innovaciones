@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
 import { auditLog, products, users } from '@/db/schema';
 import {
+  HORAS_HASTA_VENCER,
   cotizacionVigente,
   ErrorCotizacion,
   estadoDeLaCotizacion,
@@ -121,7 +122,7 @@ describe('estadoDeLaCotizacion', () => {
     expect(e.aviso).toBeNull();
   });
 
-  it('pasadas 20 horas avisa que algo dejó de actualizar', async () => {
+  it('pasado el límite avisa que algo dejó de actualizar', async () => {
     const ayer = new Date('2026-09-11T09:00:00Z');
     await registrarCotizacion(db, {
       valorCentavos: 156_100,
@@ -133,7 +134,7 @@ describe('estadoDeLaCotizacion', () => {
     expect(e.vencida).toBe(true);
     expect(Math.round(e.antiguedadHoras!)).toBe(24);
     expect(e.aviso).toMatch(/hace 24 horas/);
-    expect(e.aviso).toMatch(/plugin/);
+    expect(e.aviso).toMatch(/infodólar/i);
   });
 
   it('justo antes del límite todavía sirve', async () => {
@@ -144,7 +145,9 @@ describe('estadoDeLaCotizacion', () => {
       vigenteDesde: base,
     });
 
-    const casi = new Date(base.getTime() + 19.5 * 3_600_000);
+    // Relativo a la constante: el umbral se movió una vez (20 h -> 6 h) y
+    // este test se cayó por tenerlo escrito a mano.
+    const casi = new Date(base.getTime() + (HORAS_HASTA_VENCER - 0.5) * 3_600_000);
     expect((await estadoDeLaCotizacion(db, casi)).vencida).toBe(false);
   });
 });
