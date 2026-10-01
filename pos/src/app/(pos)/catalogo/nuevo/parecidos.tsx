@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatearARS } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
+import SumarStock from './sumar-stock';
 
 /** Lo mismo que el buscador de la venta: no consultar por tecla. */
 const ESPERA_MS = 250;
@@ -24,7 +25,16 @@ const ESPERA_MS = 250;
  * traicionero, porque no sale en la búsqueda de la venta y parece que no
  * existe. Reactivarlo es más barato que crear otro.
  */
-export default function Parecidos({ nombre }: { nombre: string }) {
+export default function Parecidos({
+  nombre,
+  puedeSumarStock,
+  puedeReactivar,
+}: {
+  nombre: string;
+  /** Si no puede, el aviso igual se muestra: saber que ya existe sirve solo. */
+  puedeSumarStock: boolean;
+  puedeReactivar: boolean;
+}) {
   const [consulta, setConsulta] = useState('');
 
   useEffect(() => {
@@ -66,8 +76,9 @@ export default function Parecidos({ nombre }: { nombre: string }) {
         {isFetching ? '…' : ''}
       </p>
       <p className="mt-0.5 text-sm text-(--color-tinta-media)">
-        Fijate si es el mismo antes de cargarlo de nuevo: dos fichas del mismo
-        producto son dos stocks, y ninguno queda bien.
+        {puedeSumarStock
+          ? 'Si es el mismo, sumale las unidades que llegaron acá mismo: dos fichas del mismo producto son dos stocks, y ninguno queda bien.'
+          : 'Fijate si es el mismo antes de cargarlo de nuevo: dos fichas del mismo producto son dos stocks, y ninguno queda bien.'}
       </p>
 
       <ul className="mt-3 flex flex-col gap-1.5">
@@ -96,6 +107,18 @@ export default function Parecidos({ nombre }: { nombre: string }) {
                 </strong>
               )}
             </span>
+
+            {/* Sumar unidades solo tiene sentido donde hay stock que llevar: en
+                un producto sin control, vender no resta nada. */}
+            {puedeSumarStock && p.gestionaStock ? (
+              <div className="w-full pt-1">
+                <SumarStock
+                  productId={p.id}
+                  activo={p.activo}
+                  puedeReactivar={puedeReactivar}
+                />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

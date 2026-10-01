@@ -626,6 +626,40 @@ Tres decisiones:
 Va pegado al campo del nombre y no al final del formulario: el momento de darse
 cuenta es mientras se escribe, no después de haber completado precio y stock.
 
+### Si ya está, se le suman unidades
+
+Encontrar que el producto ya existe sirve de poco si el camino para usarlo es
+más largo que cargarlo de nuevo: con el cliente esperando, el camino corto
+vuelve a ser la ficha nueva. Así que el aviso trae el control al lado — cuántas
+entraron, «Sumar al stock», listo — y si la ficha estaba inactiva, un botón para
+volver a ponerla a la venta.
+
+**Lo que hace que esto sea correcto y no solo cómodo:** la entrada se encola
+hacia WooCommerce igual que el ajuste de una venta. La sincronización del
+catálogo escribe `stock: excluded.stock`, o sea que el stock de Woo **pisa** el
+del POS; sin avisarle a la tienda, las unidades que entraron hoy desaparecen en
+el próximo `woo:sync` y el mostrador vuelve a vender lo que no tiene. Hay un
+test que falla si se saca ese encolado.
+
+La operación de cola es propia (`stock.empujar`) y no la de la venta: esa
+termina marcando `sales.synced_to_woo`, y acá no hay ninguna venta que marcar.
+Tampoco registra conflicto cuando los números difieren, porque difieren siempre
+—es su condición normal— y anotarlo llenaría de ruido la tabla que se mira para
+encontrar los conflictos de verdad.
+
+El `FOR UPDATE` sobre el producto no es decorativo: dos personas pueden estar
+cargando la misma entrega en dos pantallas, y sin candado la segunda escritura
+se come la primera.
+
+### Buscar en el catálogo
+
+La pantalla de **Catálogo** servía para ver lo que está mal cargado, y para
+encontrar *un* producto no servía: había que mirarlo a ojo en una lista de
+sesenta fichas ordenadas por gravedad. Ahora arranca con un buscador, por nombre,
+SKU o marca, que **también muestra los inactivos** —son los que no aparecen al
+vender y hacen creer que el producto no está—. Desde cada resultado se le suman
+unidades, y lo que no está lleva derecho a cargarlo con el nombre ya escrito.
+
 ### Nace de mostrador, se publica aparte
 
 Lo que se carga acá queda con `wooId` en nulo y marcado como **Solo mostrador**
@@ -1322,6 +1356,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Corregir hacia arriba un precio viejo se cobra sin preguntar | `src/ventas/confirmar.test.ts` |
 | Cada permiso está clasificado: uno nuevo no se cuela sin decidirlo | `src/auth/pin.test.ts` |
 | Al cargar un producto se avisa qué parecido ya existe, inactivos incluidos | `src/catalogo/crear.test.ts`, `e2e/alta.spec.ts` |
+| Sumar stock encola el empuje a Woo: sin eso el próximo sync borra las unidades | `src/catalogo/stock.test.ts` |
+| Dos entradas seguidas del mismo producto suman las dos | `src/catalogo/stock.test.ts` |
+| Reactivar dos veces no escribe dos veces en la bitácora | `src/catalogo/stock.test.ts` |
+| El catálogo se busca, y lo que no está lleva derecho a cargarlo | `e2e/alta.spec.ts` |
 | El vendedor escribe precios, pero no fuerza una ficha mal cargada | `src/auth/pin.test.ts`, `e2e/calidad.spec.ts` |
 | Confirmar «escritas» no fuerza una sospecha de catálogo, ni desde el navegador | `src/ventas/confirmar.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |

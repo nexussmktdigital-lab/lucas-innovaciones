@@ -1787,3 +1787,70 @@ contraseñas —la del dueño incluida— no es atender el mostrador, es control
 sistema. Hoy no lo usa ninguna pantalla; queda reservado para que el día que
 exista no aparezca abierto sin que nadie lo haya decidido. Está dicho en el
 código y en la respuesta a Matías, no escondido en un commit.
+
+
+---
+
+# Decimotercera pasada — el formulario adentro del formulario
+
+Matías pidió que al cargar un producto, si ya existe uno con ese nombre, se lo
+pueda elegir y sumarle unidades en vez de duplicarlo; y un buscador en la
+pantalla de Catálogo. Con una condición que vale más que las dos cosas:
+
+> tiene que ser facil, interactivo e intuitivo todo, recuerda que cuando alguien
+> esta en el mostrador no debe tener que ponerse a pensar uh en donde era para ir
+> a agregar un neuvo producto y venderlo ahora mismo
+
+## Lo que no existía
+
+`stock.ajustar` estaba en la lista de permisos desde la fase 1 y **no lo usaba
+nada**: no había forma de sumar stock en todo el sistema. El único camino para
+que entrara mercadería era la sincronización desde WooCommerce.
+
+## La trampa que no era obvia
+
+Escribir el número en la base no alcanzaba. `sincronizarCatalogo` hace
+`stock: excluded.stock`, o sea que **el stock de Woo pisa el del POS**. Un
+vendedor que suma diez unidades y no se lo cuenta a la tienda las pierde en el
+próximo `woo:sync`, y el mostrador vuelve a vender lo que no tiene.
+
+Así que la entrada se encola, como el ajuste de una venta, con el valor absoluto
+—reintentar no suma dos veces—. La operación tuvo que ser propia
+(`stock.empujar`): la de la venta termina marcando `sales.synced_to_woo`, y acá
+no hay ninguna venta que marcar. Hay un test que falla si se saca el encolado.
+
+Y `FOR UPDATE` sobre el producto, porque dos personas pueden estar cargando la
+misma entrega en dos pantallas: sin candado la segunda escritura se come la
+primera, entran veinte unidades y el sistema anota diez.
+
+## El bug que encontró el e2e y no la lectura
+
+El control de sumar stock se dibuja **adentro del formulario del alta** —tiene
+que estar ahí, el momento de darse cuenta de que el producto ya existe es
+mientras se escribe el nombre, no después de completar precio y stock—. Y lo
+escribí como un `<form>` con `useActionState`, que es lo natural en este
+código.
+
+HTML no permite formularios anidados. El navegador descarta el de adentro y su
+botón pasa a enviar el de afuera: **«Sumar al stock» terminaba intentando crear
+el producto a medio llenar**. El stock no subía, el alta fallaba por validación,
+y el vendedor no entendía nada.
+
+Typecheck, lint y 851 pruebas unitarias pasaron sin decir una palabra: ninguna
+mira el HTML que sale. Lo cazó la pantalla de verdad, apretando el botón.
+
+La salida no fue mover el aviso abajo del formulario, que habría arruinado lo
+único que Matías pidió explícitamente. Es llamar a la acción del servidor como
+una función, dentro de una transición: mismo servidor, mismo permiso, misma
+validación, sin un `<form>` de más. Y el test ahora afirma las dos cosas —que el
+stock subió y que **el alta no se envió**— porque la segunda es la regresión.
+
+## Lo que se ganó de paso
+
+La pantalla de Catálogo servía para ver lo que está mal cargado, y para
+encontrar *un* producto no servía: había que mirarlo a ojo en una lista de
+sesenta fichas ordenadas por gravedad. Ahora arranca con un buscador que usa la
+misma consulta que el aviso de duplicados —la que trae también los inactivos,
+que son los que no aparecen al vender y hacen creer que el producto no está— y
+desde cada resultado se le suman unidades. Lo que no está lleva derecho a
+cargarlo con el nombre ya escrito.

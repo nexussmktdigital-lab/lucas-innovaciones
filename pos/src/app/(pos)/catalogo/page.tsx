@@ -13,6 +13,7 @@ import {
 } from '@/catalogo/calidad';
 import { cuantasFichasPendientes, fichasPendientes } from '@/catalogo/crear';
 import FichasPendientes from './fichas-pendientes';
+import BuscadorCatalogo from './buscador-catalogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,6 +85,15 @@ export default async function PaginaCatalogo({
           Se cargaron {importados} productos de la planilla. Ya se pueden vender.
         </p>
       ) : null}
+
+      {/* Arriba de todo lo demás: la pregunta más frecuente en esta pantalla es
+          «¿está tal producto?», y hasta ahora había que buscarla a ojo en una
+          lista de sesenta fichas ordenadas por gravedad. */}
+      <BuscadorCatalogo
+        puedeSumarStock={puede(sesion.user.rol, 'stock.ajustar')}
+        puedeReactivar={puede(sesion.user.rol, 'producto.editar')}
+        puedeCargar={puede(sesion.user.rol, 'producto.alta_rapida')}
+      />
 
       <FichasPendientes fichas={pendientes} total={totalPendientes} wooUrl={urlWoo} />
 

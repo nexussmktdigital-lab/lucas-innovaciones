@@ -29,11 +29,15 @@ export default function FormularioAlta({
   marcas,
   conAyuda,
   nombreInicial,
+  puedeSumarStock,
+  puedeReactivar,
 }: {
   categorias: string[];
   marcas: string[];
   conAyuda: boolean;
   nombreInicial: string;
+  puedeSumarStock: boolean;
+  puedeReactivar: boolean;
 }) {
   const [estado, accion, pendiente] = useActionState(crearProductoAccion, INICIAL);
   const [sugerencia, sugerir, sugiriendo] = useActionState(sugerirFichaAccion, SIN_SUGERENCIA);
@@ -191,7 +195,11 @@ export default function FormularioAlta({
         {/* Va pegado al nombre y no al final: el momento de darse cuenta de que
             el producto ya está es mientras se lo escribe, no después de haber
             completado precio y stock. */}
-        <Parecidos nombre={nombre} />
+        <Parecidos
+          nombre={nombre}
+          puedeSumarStock={puedeSumarStock}
+          puedeReactivar={puedeReactivar}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

@@ -184,6 +184,8 @@ export async function drenarCola(
     try {
       if (operacion.operacion === 'venta.descontar_stock') {
         informe.conflictos += await sincronizarStockDeVenta(db, cliente, operacion.payload);
+      } else if (operacion.operacion === 'stock.empujar') {
+        informe.conflictos += await empujarStock(db, cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.publicar') {
         // El recargo se lee acá y no al encolar: si el dueño lo cambió entre
         // que pidió publicar y que la cola drenó, vale el de ahora.
@@ -292,6 +294,53 @@ async function sincronizarStockDeVenta(
     .where(eq(sales.id, payload.ventaId));
 
   return conflictos;
+}
+
+const payloadStock = z.object({ productId: z.string(), wooId: z.number() });
+
+/**
+ * Lleva a la tienda el stock que el POS tiene ahora, sin venta detrás.
+ *
+ * Lo usa la entrada de mercadería desde el mostrador. Hace falta porque la
+ * sincronización del catálogo pisa el stock con el de Woo: si el POS suma diez
+ * unidades y no se lo cuenta a la tienda, el próximo `woo:sync` las borra.
+ *
+ * Es la misma idea que el ajuste de una venta —se escribe el valor ABSOLUTO, así
+ * que reintentar no suma dos veces— pero sin tocar `sales`: acá no hay ninguna
+ * venta que marcar como sincronizada, y esa era la única razón por la que no se
+ * podía reusar aquella.
+ */
+async function empujarStock(
+  db: BaseDatos,
+  cliente: ClienteWoo,
+  payloadCrudo: unknown,
+): Promise<number> {
+  const payload = payloadStock.parse(payloadCrudo);
+
+  const [local] = await db
+    .select({ stock: products.stock, nombre: products.nombre })
+    .from(products)
+    .where(eq(products.id, payload.productId))
+    .limit(1);
+
+  // El producto se borró del espejo entre que se encoló y que drenó: no hay
+  // nada que empujar y no es un error que valga reintentar.
+  if (!local) return 0;
+
+  const recurso = `products/${payload.wooId}`;
+  const enWoo = await cliente.obtener(recurso, productoWoo);
+  const stockEnWoo = enWoo.stock_quantity ?? 0;
+
+  if (stockEnWoo === local.stock) return 0;
+
+  /*
+   * Acá NO se registra conflicto cuando los números difieren, y es a propósito:
+   * difieren siempre. Es la condición normal de esta operación —el POS acaba de
+   * sumar unidades que Woo todavía no tiene— y anotarlo llenaría la tabla de
+   * conflictos de ruido, justo la que se mira para detectar los de verdad.
+   */
+  await cliente.enviar('PUT', recurso, { stock_quantity: local.stock }, productoWoo);
+  return 0;
 }
 
 /**

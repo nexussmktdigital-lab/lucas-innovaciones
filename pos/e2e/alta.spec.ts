@@ -254,3 +254,56 @@ test('al escribir el nombre avisa qué productos parecidos ya existen', async ({
   // Es un aviso, no una traba: el botón de cargar sigue estando.
   await expect(page.getByRole('button', { name: /Cargar/ }).first()).toBeEnabled();
 });
+
+test('si el producto ya existe, se le suman unidades en vez de duplicarlo', async ({ page }) => {
+  /*
+   * El camino completo: el vendedor busca, ve que está, y le suma lo que llegó
+   * sin salir de la pantalla. Si tuviera que ir a buscarlo a otro lado, con el
+   * cliente esperando el camino corto volvería a ser la ficha nueva.
+   */
+  await entrarComoVendedor(page);
+  await page.goto('/catalogo/nuevo');
+  await page.getByLabel('Qué es').fill('vidrio templado');
+
+  const parecidos = page.getByRole('region', { name: 'Productos parecidos que ya existen' });
+  await expect(parecidos).toBeVisible({ timeout: 10_000 });
+
+  const fila = parecidos.getByRole('listitem').first();
+  const antes = await fila.textContent();
+  const quedan = Number(/Quedan (\d+)/.exec(antes ?? '')?.[1] ?? '0');
+
+  await fila.getByLabel('Unidades que entraron').fill('3');
+  await fila.getByRole('button', { name: 'Sumar al stock' }).click();
+
+  // Dice cuánto quedó y que ya se puede vender: es lo que necesita saber.
+  await expect(fila.getByRole('status')).toContainText(String(quedan + 3), { timeout: 15_000 });
+  await expect(fila.getByRole('status')).toContainText(/se puede vender/i);
+
+  /*
+   * Y el alta NO se envió. Esta es la regresión concreta: el control vivía
+   * adentro del `<form>` del alta, HTML no permite formularios anidados, y el
+   * navegador descartaba el de adentro — «Sumar al stock» terminaba intentando
+   * crear el producto a medio llenar. El formulario tiene que seguir ahí, con
+   * lo que se había escrito y sin haberse mandado.
+   */
+  await expect(page.getByLabel('Qué es')).toHaveValue('vidrio templado');
+  await expect(page.getByRole('button', { name: 'Cargar y poder venderlo' })).toBeVisible();
+});
+
+test('el catálogo tiene buscador, y si no está ofrece cargarlo', async ({ page }) => {
+  await entrarComoVendedor(page);
+  await page.goto('/catalogo');
+
+  const buscador = page.getByRole('region', { name: 'Buscar en el catálogo' });
+  await expect(buscador).toBeVisible();
+
+  await buscador.getByLabel('Buscar un producto').fill('vidrio templado');
+  await expect(buscador.getByRole('listitem').first()).toBeVisible({ timeout: 10_000 });
+
+  // Y lo que no está lleva derecho a cargarlo, con el nombre ya escrito.
+  await buscador.getByLabel('Buscar un producto').fill('secarropas industrial');
+  const cargar = buscador.getByRole('link', { name: /Cargar «secarropas industrial»/ });
+  await expect(cargar).toBeVisible({ timeout: 10_000 });
+  await cargar.click();
+  await expect(page.getByLabel('Qué es')).toHaveValue('secarropas industrial');
+});
