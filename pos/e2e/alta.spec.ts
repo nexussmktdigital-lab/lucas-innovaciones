@@ -278,6 +278,16 @@ test('si el producto ya existe, se le suman unidades en vez de duplicarlo', asyn
   // Dice cuánto quedó y que ya se puede vender: es lo que necesita saber.
   await expect(fila.getByRole('status')).toContainText(String(quedan + 3), { timeout: 15_000 });
   await expect(fila.getByRole('status')).toContainText(/se puede vender/i);
+
+  /*
+   * Y el alta NO se envió. Esta es la regresión concreta: el control vivía
+   * adentro del `<form>` del alta, HTML no permite formularios anidados, y el
+   * navegador descartaba el de adentro — «Sumar al stock» terminaba intentando
+   * crear el producto a medio llenar. El formulario tiene que seguir ahí, con
+   * lo que se había escrito y sin haberse mandado.
+   */
+  await expect(page.getByLabel('Qué es')).toHaveValue('vidrio templado');
+  await expect(page.getByRole('button', { name: 'Cargar y poder venderlo' })).toBeVisible();
 });
 
 test('el catálogo tiene buscador, y si no está ofrece cargarlo', async ({ page }) => {
