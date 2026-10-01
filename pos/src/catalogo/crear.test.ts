@@ -15,6 +15,7 @@ import {
   ErrorCrear,
   fichasPendientes,
   marcasDelCatalogo,
+  buscarParecidos,
   TECHO_STOCK_ALTA,
 } from './crear';
 import { encolarPublicacion, ErrorPublicar } from './publicar';
@@ -282,5 +283,62 @@ describe('categorías y marcas que ya existen', () => {
 
     expect(await categoriasDelCatalogo(db)).toEqual(['Cables de carga', 'Fundas']);
     expect(await marcasDelCatalogo(db)).toEqual(['FoxBox']);
+  });
+});
+
+describe('avisar de los parecidos antes de duplicar', () => {
+  it('encuentra el que ya está, aunque se escriba distinto', async () => {
+    await alta({ nombre: 'Cable USB tipo C 1 metro' });
+
+    // Sin acentos y por partes: así se escribe con el cliente enfrente.
+    for (const termino of ['cable usb', 'USB TIPO C', 'cable', 'foxbox']) {
+      const r = await buscarParecidos(db, termino);
+      expect(r.map((p) => p.nombre), termino).toContain('Cable USB tipo C 1 metro');
+    }
+  });
+
+  it('encuentra por SKU, que es como lo busca quien ya conoce el catálogo', async () => {
+    const creado = await alta();
+    const r = await buscarParecidos(db, creado.sku!);
+    expect(r.map((p) => p.id)).toContain(creado.id);
+  });
+
+  it('también trae el inactivo, que es el duplicado que no se ve al vender', async () => {
+    /*
+     * El peor caso: la ficha existe pero está desactivada, así que no aparece
+     * en la búsqueda de la venta y parece que no está. Quien atiende la carga
+     * de nuevo y quedan dos.
+     */
+    const creado = await alta({ nombre: 'Funda silicona iPhone 15' });
+    await db.update(products).set({ activo: false }).where(eq(products.id, creado.id));
+
+    const r = await buscarParecidos(db, 'funda silicona');
+    expect(r).toHaveLength(1);
+    expect(r[0]!.activo).toBe(false);
+
+    // Y la búsqueda de la venta NO lo trae: por eso hace falta esta aparte.
+    const enLaVenta = await buscarProductos(db, 'funda silicona', { incluirSinStock: true });
+    expect(enLaVenta).toHaveLength(0);
+  });
+
+  it('pone primero lo que se vende: el inactivo informa, pero no es lo que se busca', async () => {
+    const viejo = await alta({ nombre: 'Vidrio templado', precioCentavos: 4_000_00 });
+    await db.update(products).set({ activo: false }).where(eq(products.id, viejo.id));
+    await alta({ nombre: 'Vidrio templado 9D', precioCentavos: 5_000_00 });
+
+    const r = await buscarParecidos(db, 'vidrio templado');
+    expect(r).toHaveLength(2);
+    expect(r[0]!.activo).toBe(true);
+  });
+
+  it('con dos letras no dice nada: coincidiría medio catálogo', async () => {
+    await alta({ nombre: 'Cable USB tipo C 1 metro' });
+    expect(await buscarParecidos(db, 'ca')).toEqual([]);
+    expect(await buscarParecidos(db, '  ')).toEqual([]);
+  });
+
+  it('sin coincidencias no inventa nada', async () => {
+    await alta();
+    expect(await buscarParecidos(db, 'secarropas')).toEqual([]);
   });
 });

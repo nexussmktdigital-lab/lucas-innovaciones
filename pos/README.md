@@ -603,6 +603,29 @@ cuántos hay— y resuelve sola el resto:
 - **Un nombre repetido se frena.** Casi siempre es alguien cargando de nuevo
   algo que no supo encontrar, así que se le dice cuál es en vez de duplicarlo.
 
+### Antes de cargar, qué parecido ya existe
+
+Mientras se escribe el nombre, la pantalla busca en el catálogo y muestra lo que
+se le parece. El duplicado nace justo ahí: con el cliente esperando, alguien
+carga «Funda iPhone 15» sin saber que la ficha ya está con otro nombre, o que la
+cargó el otro vendedor hace media hora. Después hay dos fichas, dos stocks, y
+ninguno dice la verdad.
+
+Tres decisiones:
+
+- **Es un aviso, no una traba.** Puede haber dos productos parecidos de verdad
+  —un vidrio común y uno 9D— y frenar el alta con el cliente enfrente sería peor
+  que el duplicado.
+- **También muestra los inactivos**, marcados. Es el duplicado más traicionero:
+  no aparece en la búsqueda de la venta, así que parece que no existe, y
+  reactivarlo es más barato que crear otro. Por eso `buscarParecidos` es una
+  consulta aparte y no reusa la de la venta, que filtra por `activo`.
+- **Desde tres letras y con 250 ms de espera.** Con dos coincide medio catálogo,
+  y consultar por tecla es ruido para el servidor y para quien mira.
+
+Va pegado al campo del nombre y no al final del formulario: el momento de darse
+cuenta es mientras se escribe, no después de haber completado precio y stock.
+
 ### Nace de mostrador, se publica aparte
 
 Lo que se carga acá queda con `wooId` en nulo y marcado como **Solo mostrador**
@@ -1298,6 +1321,7 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un precio muy por debajo del catálogo avisa y hay que confirmarlo | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
 | Corregir hacia arriba un precio viejo se cobra sin preguntar | `src/ventas/confirmar.test.ts` |
 | Cada permiso está clasificado: uno nuevo no se cuela sin decidirlo | `src/auth/pin.test.ts` |
+| Al cargar un producto se avisa qué parecido ya existe, inactivos incluidos | `src/catalogo/crear.test.ts`, `e2e/alta.spec.ts` |
 | El vendedor escribe precios, pero no fuerza una ficha mal cargada | `src/auth/pin.test.ts`, `e2e/calidad.spec.ts` |
 | Confirmar «escritas» no fuerza una sospecha de catálogo, ni desde el navegador | `src/ventas/confirmar.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
