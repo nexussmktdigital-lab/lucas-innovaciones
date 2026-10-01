@@ -11,8 +11,11 @@ export const dynamic = 'force-dynamic';
 /**
  * Importar una entrega de mercadería.
  *
- * Es del dueño: una planilla carga treinta productos con sus precios de una
- * sola vez, y eso es una decisión de catálogo, no de mostrador.
+ * La puede usar el vendedor. Es la pantalla de mayor alcance que se le abrió
+ * —una lista toca treinta fichas de una vez— y se abrió igual porque cargar
+ * mercadería que acaba de llegar es atender el mostrador, y hacerlo de a una
+ * ficha o de a treinta es la misma tarea con distinto volumen. Lo que la cuida
+ * es que muestra todo antes de escribir y que queda en la bitácora.
  */
 export default async function PaginaImportar() {
   const sesion = await auth();

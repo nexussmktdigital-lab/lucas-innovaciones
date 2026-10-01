@@ -253,7 +253,7 @@ dejó la venta —así vuelve a la variación de la que salió—, mete el asien
 contrario en la caja, marca la venta como anulada con el motivo, que es
 obligatorio, y le avisa a WooCommerce por la misma cola de siempre.
 
-Solo el dueño, y solo dentro del turno abierto: la plata volvió al cajón de ese
+Solo dentro del turno abierto: la plata volvió al cajón de ese
 turno, y revertir contra una caja ya cerrada descuadraría dos arqueos. Una venta
 de ayer se resuelve con una [devolución](#devoluciones-de-ventas-de-otro-turno),
 que es otra cosa.
@@ -348,8 +348,8 @@ En **Fiado** (`F5`) se ve quién debe, cuánto y desde cuándo, se recibe un pag
 se ve si hay plata para devolverle a alguien;
 la plata entra a la caja del turno igual que una venta, así que el arqueo sigue
 cerrando. En la ficha de cada cliente están sus movimientos —lo que se le fió y
-lo que pagó, junto— y las dos cosas que solo el dueño toca: el tope de fiado y
-la carga de la ficha de papel.
+lo que pagó, junto— y dos cosas más: el tope de fiado y la carga de la ficha de
+papel.
 
 Las reglas están en la transacción, no en la pantalla:
 
@@ -487,7 +487,7 @@ que el arqueo cerraba de casualidad: el alquiler, el flete y lo que se le paga
 al técnico salen del mismo cajón que las ventas, y si no se registran el conteo
 de la noche siempre da de menos y nadie sabe por qué.
 
-En **Gastos** (`F6`, solo el dueño) se carga lo que se paga, con su categoría, a
+En **Gastos** (`F6`) se carga lo que se paga, con su categoría, a
 quién y de qué cuenta salió. Tres reglas, todas en la transacción:
 
 - **Un gasto pagado mueve plata en el mismo momento en que se registra.** Sale
@@ -504,7 +504,7 @@ quién y de qué cuenta salió. Tres reglas, todas en la transacción:
 
 ### Dónde está la plata
 
-En **Cuentas** (solo el dueño) están los saldos del cajón, el banco y Mercado
+En **Cuentas** están los saldos del cajón, el banco y Mercado
 Pago, con el extracto de cada uno y el saldo que quedaba después de cada
 movimiento.
 
@@ -751,7 +751,7 @@ Cuatro límites, y los cuatro importan:
 ### La entrega entera, de una vez
 
 Cuando llega una entrega no llega un producto: llega una lista con treinta
-renglones. **Cargar una entrega** (solo el dueño) la carga de una vez, en dos
+renglones. **Cargar una entrega** la carga de una vez, en dos
 pasos: primero muestra renglón por renglón qué va a pasar y recién después
 escribe. Una carga que guarda y después avisa es una carga que hay que deshacer a
 mano — y acá hay bajas.
