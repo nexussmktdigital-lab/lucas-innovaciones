@@ -53,6 +53,8 @@ export default async function PaginaNuevoProducto({
         marcas={marcas}
         conAyuda={hayAyudaDeFicha()}
         nombreInicial={(q ?? '').slice(0, 200)}
+        puedeSumarStock={puede(sesion.user.rol, 'stock.ajustar')}
+        puedeReactivar={puede(sesion.user.rol, 'producto.editar')}
       />
 
       {sesion.user.rol === 'owner' ? (

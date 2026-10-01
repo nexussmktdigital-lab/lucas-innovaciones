@@ -9,6 +9,7 @@
  * planilla, dar una ficha por terminada— es del dueño.
  */
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { auth } from '@/auth';
@@ -26,6 +27,7 @@ import { encolarPublicacion, ErrorPublicar } from '@/catalogo/publicar';
 import { ErrorImportar, importarPlanilla, revisarPlanilla } from '@/catalogo/importar';
 import { ErrorIA, hayIA, sugerirFicha, type FichaSugerida } from '@/catalogo/ia';
 import { drenarEnSegundoPlano } from '@/woo/cola';
+import { ErrorStock, reactivarProducto, sumarStock } from '@/catalogo/stock';
 
 export interface EstadoAlta {
   error?: string;
@@ -277,4 +279,94 @@ export async function importarPlanillaAccion(
   // Se sale de la pantalla de importar: lo que sigue es completar las fichas,
   // y esa lista vive en el catálogo.
   redirect(`/catalogo?importados=${creados}`);
+}
+
+export interface EstadoStock {
+  error?: string;
+  ok?: string;
+  /** Lo que quedó, para mostrarlo sin recargar la pantalla. */
+  resultado?: { nombre: string; stockResultante: number };
+}
+
+/**
+ * Sumar unidades a un producto que ya existe.
+ *
+ * La usa el aviso de duplicados del alta: el vendedor ve que la ficha está y en
+ * el mismo lugar le suma lo que llegó. Si tuviera que ir a otra pantalla a
+ * buscarla, cargar una ficha nueva sería el camino corto, y eso es justo lo que
+ * genera el duplicado.
+ */
+export async function sumarStockAccion(
+  _previo: EstadoStock,
+  datos: FormData,
+): Promise<EstadoStock> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'stock.ajustar')) {
+    return { error: 'No tenés permiso para cambiar el stock.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  const cantidad = z.coerce
+    .number()
+    .int('Las unidades tienen que ser un número entero.')
+    .positive('Poné cuántas unidades entraron.')
+    .safeParse(datos.get('cantidad'));
+  if (!cantidad.success) {
+    return { error: cantidad.error.issues[0]?.message ?? 'Cantidad inválida.' };
+  }
+
+  try {
+    const r = await sumarStock(db, {
+      productId: id.data,
+      cantidad: cantidad.data,
+      usuarioId: sesion.user.id,
+      motivo: (datos.get('motivo') as string | null)?.trim() || null,
+    });
+
+    /*
+     * Que la tienda se entere ahora y no en diez minutos: el stock que el
+     * mostrador acaba de sumar es el que se va a vender hoy. Va en `after` para
+     * no hacer esperar a quien está atendiendo — si Woo no contesta, la
+     * operación queda en la cola y la levanta la tarea programada.
+     */
+    after(() => drenarEnSegundoPlano(db));
+    revalidatePath('/catalogo');
+
+    return {
+      ok: `Listo: «${r.nombre}» queda con ${r.stockResultante}. Ya se puede vender.`,
+      resultado: { nombre: r.nombre, stockResultante: r.stockResultante },
+    };
+  } catch (error) {
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[stock] Falló la suma:', error);
+    return { error: 'No se pudo sumar el stock. Probá de nuevo.' };
+  }
+}
+
+/** Volver a poner a la venta una ficha que estaba inactiva. */
+export async function reactivarProductoAccion(
+  _previo: EstadoStock,
+  datos: FormData,
+): Promise<EstadoStock> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'producto.editar')) {
+    return { error: 'No tenés permiso para reactivar un producto.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  try {
+    const r = await reactivarProducto(db, { productId: id.data, usuarioId: sesion.user.id });
+    revalidatePath('/catalogo');
+    return { ok: `«${r.nombre}» volvió a estar a la venta.` };
+  } catch (error) {
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[stock] Falló la reactivación:', error);
+    return { error: 'No se pudo reactivar. Probá de nuevo.' };
+  }
 }
