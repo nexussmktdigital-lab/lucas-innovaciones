@@ -16,7 +16,7 @@ export default function FormularioCotizacion() {
       <div>
         <h2 className="font-semibold">Cargar un valor a mano</h2>
         <p className="text-sm text-(--color-tinta-suave)">
-          Solo si el plugin dejó de actualizar. Queda registrado con tu nombre.
+          Solo si la búsqueda automática falló. Queda registrado con tu nombre.
         </p>
       </div>
 

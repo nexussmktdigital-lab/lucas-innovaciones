@@ -32,8 +32,8 @@ export default async function PaginaCotizacion() {
       <div>
         <h1 className="font-titulo text-2xl font-bold tracking-tight">Tipo de cambio</h1>
         <p className="mt-1 text-sm text-(--color-tinta-suave)">
-          El valor lo actualiza solo el plugin de WooCommerce dos veces por día, con el blue de
-          Córdoba. Acá se puede ver el historial y forzar uno a mano si la fuente falla.
+          El sistema lo busca solo cada dos horas, en el blue vendedor de Córdoba de
+          infodolar.com. Acá se puede ver el historial y forzar uno a mano si la fuente falla.
         </p>
       </div>
 
