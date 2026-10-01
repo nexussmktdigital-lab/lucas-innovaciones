@@ -233,3 +233,24 @@ test('el vendedor también importa planillas', async ({ page }) => {
   await page.goto('/catalogo/importar');
   await expect(page).not.toHaveURL(/\/$/);
 });
+
+test('al escribir el nombre avisa qué productos parecidos ya existen', async ({ page }) => {
+  /*
+   * El duplicado nace acá: con el cliente esperando, alguien carga algo que ya
+   * está con otro nombre. El aviso llega mientras se escribe, no después de
+   * completar precio y stock, que es cuando ya da fiaca volver atrás.
+   */
+  await entrarComoVendedor(page);
+  await page.goto('/catalogo/nuevo');
+
+  const parecidos = page.getByRole('region', { name: 'Productos parecidos que ya existen' });
+  await expect(parecidos).toHaveCount(0);
+
+  await page.getByLabel('Qué es').fill('vidrio templado');
+
+  await expect(parecidos).toBeVisible({ timeout: 10_000 });
+  await expect(parecidos).toContainText(/parecido/i);
+
+  // Es un aviso, no una traba: el botón de cargar sigue estando.
+  await expect(page.getByRole('button', { name: /Cargar/ }).first()).toBeEnabled();
+});

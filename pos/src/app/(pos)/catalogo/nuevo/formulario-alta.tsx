@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import Link from 'next/link';
+import Parecidos from './parecidos';
 import {
   crearProductoAccion,
   sugerirFichaAccion,
@@ -186,6 +187,11 @@ export default function FormularioAlta({
             className="min-h-12 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-3 text-lg"
           />
         </div>
+
+        {/* Va pegado al nombre y no al final: el momento de darse cuenta de que
+            el producto ya está es mientras se lo escribe, no después de haber
+            completado precio y stock. */}
+        <Parecidos nombre={nombre} />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

@@ -29,7 +29,7 @@
  */
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { auditLog, products } from '@/db/schema';
-import type { BaseDatos } from '@/db/tipos';
+import { filas, type BaseDatos } from '@/db/tipos';
 import { limpiarTitulo, sugerirSku } from './alta';
 import { CATEGORIAS_SERVICIO } from '@/woo/mapear';
 import { normalizar } from '@/lib/texto';
@@ -423,4 +423,80 @@ export async function darFichaPorCompleta(
       valorNuevo: { fichaIncompleta: false },
     });
   });
+}
+
+/**
+ * Productos que ya están y se parecen a lo que se está por cargar.
+ *
+ * El alta rápida se abre con el cliente esperando, y ahí es donde nace el
+ * duplicado: alguien carga «Funda iPhone 15» sin saber que la ficha existe con
+ * otro nombre, o que la cargó el otro vendedor hace media hora. Después hay dos
+ * fichas con dos stocks y ninguna dice la verdad.
+ *
+ * Por qué no se reusa `buscarProductos`, que ya busca por texto: esa es la
+ * búsqueda de la venta y filtra por `p.activo`, porque al mostrador no le sirve
+ * ofrecer algo que no se vende. Acá es al revés — **un producto inactivo es
+ * exactamente el duplicado que hay que mostrar**: volver a cargarlo es el error
+ * que se quiere evitar, y reactivarlo es más barato que crear otro. Por eso
+ * esta trae los dos y dice cuál es cuál.
+ *
+ * Busca por nombre, SKU y marca, sin acentos, con el mismo `translate` que usa
+ * la venta para no depender de la extensión `unaccent`.
+ */
+export interface ProductoParecido {
+  id: string;
+  nombre: string;
+  sku: string | null;
+  precioCentavos: number;
+  stock: number;
+  gestionaStock: boolean;
+  activo: boolean;
+}
+
+/** Menos de esto es ruido: con dos letras coincide medio catálogo. */
+export const MINIMO_PARA_PARECIDOS = 3;
+
+export async function buscarParecidos(
+  db: BaseDatos,
+  termino: string,
+  limite = 6,
+): Promise<ProductoParecido[]> {
+  const limpio = normalizar(termino).trim();
+  if (limpio.length < MINIMO_PARA_PARECIDOS) return [];
+
+  const patron = `%${limpio}%`;
+  const sinAcentos = (columna: unknown) =>
+    sql`translate(lower(${columna}), 'áàäâéèëêíìïîóòöôúùüûñç', 'aaaaeeeeiiiioooouuuunc')`;
+
+  const crudas = filas<{
+    id: string;
+    nombre: string;
+    sku: string | null;
+    precio_centavos: string | number;
+    stock: string | number;
+    gestiona_stock: boolean;
+    activo: boolean;
+  }>(
+    await db.execute(sql`
+      SELECT id, nombre, sku, precio_centavos, stock, gestiona_stock, activo
+        FROM products
+       WHERE ${sinAcentos(sql`nombre`)} LIKE ${patron}
+          OR lower(COALESCE(sku, '')) LIKE ${patron}
+          OR ${sinAcentos(sql`COALESCE(marca, '')`)} LIKE ${patron}
+       -- Los que se venden primero: un inactivo informa, pero no es lo que se
+       -- está por cargar.
+       ORDER BY activo DESC, length(nombre), nombre
+       LIMIT ${limite}
+    `),
+  );
+
+  return crudas.map((f) => ({
+    id: String(f.id),
+    nombre: String(f.nombre),
+    sku: f.sku,
+    precioCentavos: Number(f.precio_centavos),
+    stock: Number(f.stock),
+    gestionaStock: Boolean(f.gestiona_stock),
+    activo: Boolean(f.activo),
+  }));
 }
