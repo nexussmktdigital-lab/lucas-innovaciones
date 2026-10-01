@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sincronizar",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/cotizacion",
+      "schedule": "7 */2 * * *"
     }
   ]
 }

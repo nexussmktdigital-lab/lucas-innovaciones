@@ -1,9 +1,13 @@
 /**
  * Tipo de cambio.
  *
- * El POS no cotiza: el valor lo produce el plugin `lucas-cotizacion` de
- * WooCommerce dos veces por dia con el blue de Cordoba (D22). Aca se espeja,
- * se versiona y se congela en cada venta.
+ * El valor lo trae la tarea de `/api/cron/cotizacion` cada dos horas, del blue
+ * vendedor de Cordoba de infodolar.com (ver `infodolar.ts`). Aca se versiona y
+ * se congela en cada venta.
+ *
+ * Antes lo producia el plugin `lucas-cotizacion` de WooCommerce (D22) y el POS
+ * solo lo espejaba; el plugin dejo de contestar y la cotizacion pasaba dias sin
+ * moverse hasta que alguien se acordaba de cargarla a mano.
  *
  * El dueno puede cargar uno a mano cuando hace falta —un feriado, una corrida,
  * la fuente caida— y eso queda auditado con su nombre.
@@ -27,10 +31,15 @@ export const SALTO_MAXIMO = 0.15;
 /**
  * A partir de cuántas horas la cotización se considera vieja.
  *
- * El plugin la refresca a las 9 y a las 17, así que pasadas 20 horas sin
- * novedades algo dejó de funcionar.
+ * Eran 20, de cuando la refrescaba el plugin de WooCommerce dos veces por día.
+ * Ahora la trae la tarea de `/api/cron/cotizacion` cada dos horas, así que seis
+ * son tres corridas perdidas: suficiente para no gritar por una caída de un
+ * rato, poco para que un dólar muerto pase un día entero sin que nadie lo vea.
+ *
+ * Que el umbral siga el ritmo de la tarea no es un detalle: con 20 horas, una
+ * fuente rota de la mañana recién se avisaba al otro día.
  */
-export const HORAS_HASTA_VENCER = 20;
+export const HORAS_HASTA_VENCER = 6;
 
 export interface Cotizacion {
   id: string;
@@ -83,7 +92,7 @@ export async function estadoDeLaCotizacion(
     antiguedadHoras,
     vencida,
     aviso: vencida
-      ? `La cotización es de hace ${Math.floor(antiguedadHoras)} horas. Revisá que el plugin de WooCommerce la esté actualizando, o cargá una a mano.`
+      ? `La cotización es de hace ${Math.floor(antiguedadHoras)} horas. La tarea que la trae de infodólar cada dos horas no está funcionando: revisala o cargá una a mano.`
       : null,
   };
 }

@@ -18,7 +18,7 @@ mandan sobre este código:
 | # | Decisión |
 |---|---|
 | **D4** | **WooCommerce es la fuente de verdad del catálogo, el precio y el stock.** El POS mantiene un espejo local para que el buscador responda rápido, pero el espejo no autoriza nada: al confirmar una venta, quien descuenta stock es Woo. *El mostrador sí puede sumar stock y corregir un precio, y en los dos casos lo empuja a Woo por la cola: la fuente de verdad sigue siendo una sola, lo que cambió es que el mostrador también le escribe.* |
-| **D22** | **Los precios en dólares los maneja el plugin `lucas-cotizacion`**, que reescribe el precio en pesos dos veces por día con el blue de Córdoba. El POS no cotiza: lee ese valor y lo **congela en cada venta**. Una venta vieja nunca se recalcula. |
+| **D22** | **El precio en dólares se guarda en dólares y el de pesos se calcula con la cotización**, que se **congela en cada venta**: una venta vieja nunca se recalcula. *El valor lo traía el plugin `lucas-cotizacion`; desde que dejó de contestar lo trae el POS solo, cada dos horas, del blue de Córdoba de infodolar.com.* |
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
@@ -1100,14 +1100,64 @@ eso es una alerta que se ignora.
 
 ### El tipo de cambio
 
-Lo produce el plugin `lucas-cotizacion` dos veces por día con el blue de Córdoba
-(D22). El POS lo espeja, lo versiona y lo **congela en cada venta**: cambiar el
-valor nunca recalcula una venta pasada. En `/cotizacion` el dueño ve el
-historial y puede forzar uno a mano, con las mismas guardas que el plugin —
-banda de 100 a 500.000, y un salto mayor al 15% pide confirmación explícita.
+**Lo trae el POS solo, cada dos horas**, del blue vendedor de Córdoba de
+infodolar.com (`/api/cron/cotizacion`). Lo versiona y lo **congela en cada
+venta**: cambiar el valor nunca recalcula una venta pasada. En `/cotizacion`
+(`F9`) se ve el historial y se puede forzar uno a mano, con las mismas guardas
+— banda de 100 a 500.000, y un salto mayor al 15% pide confirmación explícita.
 
-Si la cotización tiene más de 20 horas, el sistema avisa: el plugin actualiza a
-las 9 y a las 17, así que pasado ese tiempo algo dejó de funcionar.
+Antes lo producía el plugin `lucas-cotizacion` (D22) y el POS solo lo espejaba.
+El plugin dejó de contestar, y como nadie se entera de eso mirando la pantalla,
+la cotización pasaba días sin moverse hasta que alguien se acordaba de cargarla.
+
+#### Por qué no alcanzaba con el selector
+
+El pedido vino con la clase ya identificada: `.colCompraVenta`. Aparece **32
+veces** en esa página. La primera —la que agarra un selector suelto— es
+**$1.499,38**, que es el dólar *oficial* y encima la columna de *compra*; el
+blue vendedor del mismo día es **$1.571,00**. Setenta y dos pesos, el dólar
+equivocado y la punta equivocada, y nadie lo nota mirando el número.
+
+La página tiene dos tablas de promedio bien separadas, y la lectura se ancla en
+la tabla y no en la clase:
+
+```
+<table id="Promedio">       → bancos y casas de cambio (el oficial)
+<table id="BluePromedio">   → «Dólar Blue en Córdoba»   ← esta, celda 2 (Venta)
+```
+
+Además exige que la fila diga «blue» y «Córdoba», y rechaza una venta por
+debajo de la compra, que es la señal de que las columnas se leyeron al revés.
+El test usa la página real guardada como fixture, con la tabla señuelo adentro:
+si alguien vuelve al selector suelto, fallan ocho pruebas.
+
+#### Qué pasa cuando algo sale mal
+
+Nunca se fuerza un valor. Si infodólar no contesta, cambia el diseño, trae un
+dato de más de 24 horas o devuelve algo que no es un precio, **no se guarda
+nada**: la cotización anterior sigue valiendo y la pantalla de Inicio avisa
+cuando se pone vieja. Un salto mayor al 15% tampoco entra solo — se informa y
+lo confirma una persona desde `F9`. Ante la duda, el dólar queda viejo y
+visible, que es mucho mejor que nuevo e inventado.
+
+Si la cotización tiene más de **6 horas**, el sistema avisa: son tres corridas
+perdidas, suficiente para no gritar por una caída de un rato.
+
+#### Lo que se reprecia solo
+
+**El mostrador no necesita que nadie lo reprecie.** Un producto en dólares no
+tiene el precio en pesos guardado: la venta lo calcula en el momento, `precio
+USD × dólar` (ver `carrito.ts`). Apenas entra una cotización nueva, el mostrador
+ya cobra bien sin tocar una sola ficha.
+
+**La web sí.** WooCommerce guarda un número en pesos, y ese número lo
+recalculaba el plugin caído. Sin hacer nada, el POS cobraría el precio nuevo y
+la tienda seguiría publicando el viejo: con el dólar subiendo, se vende por la
+web a pérdida. Así que la tarea recalcula el precio de ficha de cada producto en
+dólares y lo manda a la tienda por la cola de siempre (`precio.empujar`).
+
+Solo se toca lo que de verdad cambió, así que una corrida con el dólar quieto no
+escribe una fila.
 
 ### Calidad del catálogo
 
@@ -1417,7 +1467,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El iPhone cargado en pesos con la cifra del dólar frena la venta | `src/ventas/cordura.test.ts`, `e2e/calidad.spec.ts` |
 | Un cable de Apple a $13.000 NO se marca como sospechoso | `src/ventas/cordura.test.ts` |
 | Un salto del dólar mayor al 15% pide confirmación | `src/cotizacion/cotizacion.test.ts` |
-| Una cotización de hace más de 20 horas se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
+| Una cotización más vieja que el umbral se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
+| Se lee el blue de Córdoba y **no** el oficial, que es el primero de la página | `src/cotizacion/infodolar.test.ts` |
+| Si infodólar cambia el diseño no se guarda nada | `src/cotizacion/infodolar.test.ts` |
+| Un cambio de cotización reprecia lo que está en dólares y lo manda a la tienda | `src/cotizacion/repreciar.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |
