@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatearARS } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './nuevo/sumar-stock';
+import CambiarPrecio from './nuevo/cambiar-precio';
 
 const ESPERA_MS = 250;
 
@@ -30,10 +31,12 @@ export default function BuscadorCatalogo({
   puedeSumarStock,
   puedeReactivar,
   puedeCargar,
+  puedeCambiarPrecio,
 }: {
   puedeSumarStock: boolean;
   puedeReactivar: boolean;
   puedeCargar: boolean;
+  puedeCambiarPrecio: boolean;
 }) {
   const [texto, setTexto] = useState('');
   const [consulta, setConsulta] = useState('');
@@ -107,7 +110,7 @@ export default function BuscadorCatalogo({
                 {p.sku ? (
                   <span className="tabular text-xs text-(--color-tinta-suave)">SKU {p.sku}</span>
                 ) : null}
-                <span className="cifra ml-auto">{formatearARS(p.precioCentavos)}</span>
+                <span className="cifra ml-auto">{formatearARS(p.mostradorCentavos)}</span>
               </div>
 
               <p className="mt-0.5 text-xs text-(--color-tinta-suave)">
@@ -131,6 +134,12 @@ export default function BuscadorCatalogo({
                     activo={p.activo}
                     puedeReactivar={puedeReactivar}
                   />
+                </div>
+              ) : null}
+
+              {puedeCambiarPrecio ? (
+                <div className="pt-2">
+                  <CambiarPrecio productId={p.id} mostradorCentavos={p.mostradorCentavos} />
                 </div>
               ) : null}
             </li>

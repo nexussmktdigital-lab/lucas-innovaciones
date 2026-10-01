@@ -55,6 +55,7 @@ export default async function PaginaNuevoProducto({
         nombreInicial={(q ?? '').slice(0, 200)}
         puedeSumarStock={puede(sesion.user.rol, 'stock.ajustar')}
         puedeReactivar={puede(sesion.user.rol, 'producto.editar')}
+        puedeCambiarPrecio={puede(sesion.user.rol, 'producto.alta_rapida')}
       />
 
       {sesion.user.rol === 'owner' ? (

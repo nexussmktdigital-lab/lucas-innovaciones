@@ -186,6 +186,8 @@ export async function drenarCola(
         informe.conflictos += await sincronizarStockDeVenta(db, cliente, operacion.payload);
       } else if (operacion.operacion === 'stock.empujar') {
         informe.conflictos += await empujarStock(db, cliente, operacion.payload);
+      } else if (operacion.operacion === 'precio.empujar') {
+        await empujarPrecio(db, cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.publicar') {
         // El recargo se lee acá y no al encolar: si el dueño lo cambió entre
         // que pidió publicar y que la cola drenó, vale el de ahora.
@@ -341,6 +343,51 @@ async function empujarStock(
    */
   await cliente.enviar('PUT', recurso, { stock_quantity: local.stock }, productoWoo);
   return 0;
+}
+
+const payloadPrecio = z.object({ productId: z.string(), wooId: z.number() });
+const precioEnWoo = z.object({ id: z.number() }).loose();
+
+/**
+ * Lleva a la tienda el precio que el POS tiene ahora.
+ *
+ * Misma razón que el stock, con una consecuencia más cara: si el precio nuevo
+ * no llega a la web, la tienda sigue cobrando el viejo —plata que se pierde en
+ * cada pedido— y encima la próxima sincronización devuelve la ficha al precio
+ * anterior, porque el espejo copia lo que dice Woo.
+ *
+ * Lo que viaja es el precio de **ficha**, que es el de la tienda: el POS ya hizo
+ * la cuenta del recargo al guardarlo. Y se lee de la base al drenar, no del
+ * payload: si el precio cambió dos veces antes de que la cola corriera, lo que
+ * llega a la web es el último, que es el correcto. Por eso también es
+ * idempotente —reintentar escribe el mismo número— igual que el stock.
+ */
+async function empujarPrecio(
+  db: BaseDatos,
+  cliente: ClienteWoo,
+  payloadCrudo: unknown,
+): Promise<void> {
+  const payload = payloadPrecio.parse(payloadCrudo);
+
+  const [local] = await db
+    .select({ precioCentavos: products.precioCentavos })
+    .from(products)
+    .where(eq(products.id, payload.productId))
+    .limit(1);
+
+  // El producto se borró del espejo entre que se encoló y que drenó: no hay
+  // nada que empujar y no es un error que valga reintentar.
+  if (!local) return;
+
+  await cliente.enviar(
+    'PUT',
+    `products/${payload.wooId}`,
+    // `regular_price` y no `price`: `price` es de solo lectura en la API de
+    // WooCommerce —lo calcula ella según haya oferta o no— y escribirlo no
+    // cambia nada. Es el mismo campo que usa el alta al publicar.
+    { regular_price: (local.precioCentavos / 100).toFixed(2) },
+    precioEnWoo,
+  );
 }
 
 /**

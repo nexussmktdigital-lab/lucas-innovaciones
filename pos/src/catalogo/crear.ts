@@ -33,6 +33,8 @@ import { filas, type BaseDatos } from '@/db/tipos';
 import { limpiarTitulo, sugerirSku } from './alta';
 import { CATEGORIAS_SERVICIO } from '@/woo/mapear';
 import { normalizar } from '@/lib/texto';
+import { recargoDeTienda } from '@/precios/config';
+import { precioDeMostrador } from '@/precios/mostrador';
 
 export class ErrorCrear extends Error {
   constructor(
@@ -447,10 +449,20 @@ export interface ProductoParecido {
   id: string;
   nombre: string;
   sku: string | null;
-  precioCentavos: number;
+  /**
+   * Lo que se le cobra al cliente **en el local**, ya con el recargo de la
+   * tienda descontado.
+   *
+   * Es el número que hay que mostrar en el mostrador, y antes se mostraba el de
+   * la ficha —el de la web—, que con un recargo del 12% es otro precio: el
+   * vendedor leía $56.000 y cobraba $50.000.
+   */
+  mostradorCentavos: number;
   stock: number;
   gestionaStock: boolean;
   activo: boolean;
+  /** No se publica en la tienda: su precio no lleva recargo. */
+  soloMostrador: boolean;
 }
 
 /** Menos de esto es ruido: con dos letras coincide medio catálogo. */
@@ -468,17 +480,22 @@ export async function buscarParecidos(
   const sinAcentos = (columna: unknown) =>
     sql`translate(lower(${columna}), 'áàäâéèëêíìïîóòöôúùüûñç', 'aaaaeeeeiiiioooouuuunc')`;
 
+  const recargoBp = await recargoDeTienda(db);
+
   const crudas = filas<{
     id: string;
     nombre: string;
     sku: string | null;
     precio_centavos: string | number;
+    precio_local_centavos: string | number | null;
+    solo_mostrador: boolean;
     stock: string | number;
     gestiona_stock: boolean;
     activo: boolean;
   }>(
     await db.execute(sql`
-      SELECT id, nombre, sku, precio_centavos, stock, gestiona_stock, activo
+      SELECT id, nombre, sku, precio_centavos, precio_local_centavos,
+             solo_mostrador, stock, gestiona_stock, activo
         FROM products
        WHERE ${sinAcentos(sql`nombre`)} LIKE ${patron}
           OR lower(COALESCE(sku, '')) LIKE ${patron}
@@ -494,9 +511,18 @@ export async function buscarParecidos(
     id: String(f.id),
     nombre: String(f.nombre),
     sku: f.sku,
-    precioCentavos: Number(f.precio_centavos),
+    mostradorCentavos: precioDeMostrador(
+      {
+        precioCentavos: Number(f.precio_centavos),
+        precioLocalCentavos:
+          f.precio_local_centavos === null ? null : Number(f.precio_local_centavos),
+        soloMostrador: Boolean(f.solo_mostrador),
+      },
+      recargoBp,
+    ),
     stock: Number(f.stock),
     gestionaStock: Boolean(f.gestiona_stock),
     activo: Boolean(f.activo),
+    soloMostrador: Boolean(f.solo_mostrador),
   }));
 }

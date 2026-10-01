@@ -421,3 +421,95 @@ describe('operacionesEnCola', () => {
     expect(await operacionesEnCola(db)).toHaveLength(0);
   });
 });
+
+/**
+ * WooCommerce simulado que anota los precios que se le escriben.
+ *
+ * El de arriba solo mira `stock_quantity`, que para una venta es lo único que
+ * viaja. Acá lo que importa es otro campo.
+ */
+function wooQueAnotaPrecios() {
+  const precios: Record<number, string> = {};
+
+  const fetchImpl = (async (entrada: string | URL, init?: RequestInit) => {
+    const url = new URL(String(entrada));
+    const wooId = Number(url.pathname.split('/').pop());
+
+    if (init?.method === 'PUT') {
+      const cuerpo = JSON.parse(String(init.body)) as { regular_price?: string };
+      if (cuerpo.regular_price !== undefined) precios[wooId] = cuerpo.regular_price;
+    }
+
+    return new Response(JSON.stringify({ id: wooId }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  const cliente = new ClienteWoo({
+    url: 'https://ejemplo.test/staging',
+    consumerKey: 'ck',
+    consumerSecret: 'cs',
+    fetchImpl,
+    reintentos: 1,
+    timeoutMs: 1000,
+  });
+
+  return { cliente, precios };
+}
+
+describe('precio.empujar', () => {
+  it('le escribe a la tienda el precio de ficha que el POS tiene ahora', async () => {
+    // Sin esto la web sigue cobrando el precio viejo, y además el próximo
+    // `woo:sync` devuelve la ficha a ese precio: el cambio se borra solo.
+    await db
+      .update(products)
+      .set({ precioCentavos: 16_800_00 })
+      .where(eq(products.id, vidrioId));
+    await db.insert(syncQueue).values({
+      operacion: 'precio.empujar',
+      idempotencyKey: 'precio:1',
+      payload: { productId: vidrioId, wooId: 6485 },
+    });
+
+    const woo = wooQueAnotaPrecios();
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(woo.precios[6485]).toBe('16800.00');
+  });
+
+  it('manda el precio de ahora, no el que había cuando se encoló', async () => {
+    // Dos cambios seguidos antes de que la cola corra: lo que tiene que llegar
+    // a la web es el último, y las dos operaciones escriben ese mismo número.
+    await db.insert(syncQueue).values({
+      operacion: 'precio.empujar',
+      idempotencyKey: 'precio:viejo',
+      payload: { productId: vidrioId, wooId: 6485 },
+    });
+    await db
+      .update(products)
+      .set({ precioCentavos: 20_000_00 })
+      .where(eq(products.id, vidrioId));
+
+    const woo = wooQueAnotaPrecios();
+    await drenarCola(db, woo.cliente);
+
+    expect(woo.precios[6485]).toBe('20000.00');
+  });
+
+  it('no falla si el producto ya no está en el espejo', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'precio.empujar',
+      idempotencyKey: 'precio:fantasma',
+      payload: { productId: '00000000-0000-0000-0000-000000000000', wooId: 9999 },
+    });
+
+    const woo = wooQueAnotaPrecios();
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(informe.fallidas).toBe(0);
+    expect(woo.precios[9999]).toBeUndefined();
+  });
+});
