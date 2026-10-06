@@ -265,32 +265,48 @@ async function SesionesAnteriores() {
                 {c.terminal}
                 {c.cerradaPor ? ` · ${c.cerradaPor}` : ''}
               </span>
-              {c.seConto ? (
-                <span className="rounded bg-(--color-ok-fondo) px-1.5 py-0.5 text-xs font-semibold text-(--color-ok)">
-                  Contado
-                </span>
-              ) : (
-                <span className="rounded bg-(--color-papel) px-1.5 py-0.5 text-xs text-(--color-tinta-suave)">
-                  Total a mano
-                </span>
-              )}
+              {/* Los cierres viejos llevan su etiqueta; los de ahora se cierran
+                  sin contar y no la llevan, que es la verdad. */}
+              {c.contadoCentavos !== null ? (
+                c.seConto ? (
+                  <span className="rounded bg-(--color-ok-fondo) px-1.5 py-0.5 text-xs font-semibold text-(--color-ok)">
+                    Contado
+                  </span>
+                ) : (
+                  <span className="rounded bg-(--color-papel) px-1.5 py-0.5 text-xs text-(--color-tinta-suave)">
+                    Total a mano
+                  </span>
+                )
+              ) : null}
 
-              <span
-                className={`tabular ml-auto font-semibold ${
-                  c.diferenciaCentavos === 0 ? 'text-(--color-ok)' : 'text-(--color-alerta-tinta)'
-                }`}
-              >
-                {c.diferenciaCentavos === 0
-                  ? 'Cuadró'
-                  : `${c.diferenciaCentavos > 0 ? 'Sobró' : 'Faltó'} ${formatearARS(
-                      Math.abs(c.diferenciaCentavos),
-                    )}`}
+              <span className="tabular ml-auto font-semibold">
+                {c.diferenciaCentavos === null ? (
+                  <span className="font-normal text-(--color-tinta-suave)">
+                    {formatearARS(c.esperadoCentavos)}
+                  </span>
+                ) : (
+                  <span
+                    className={
+                      c.diferenciaCentavos === 0
+                        ? 'text-(--color-ok)'
+                        : 'text-(--color-alerta-tinta)'
+                    }
+                  >
+                    {c.diferenciaCentavos === 0
+                      ? 'Cuadró'
+                      : `${c.diferenciaCentavos > 0 ? 'Sobró' : 'Faltó'} ${formatearARS(
+                          Math.abs(c.diferenciaCentavos),
+                        )}`}
+                  </span>
+                )}
               </span>
             </div>
 
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-(--color-tinta-suave)">
               <span>Esperado: {formatearARS(c.esperadoCentavos)}</span>
-              <span>Contado: {formatearARS(c.contadoCentavos)}</span>
+              {c.contadoCentavos !== null ? (
+                <span>Contado: {formatearARS(c.contadoCentavos)}</span>
+              ) : null}
             </div>
 
             {c.justificacion ? (

@@ -528,40 +528,45 @@ tiene la tabla (`expense_items`) para cuando llegue. Los gastos recurrentes
 
 ---
 
-## Caja: arqueo y cierre
+## Caja: el cierre del turno
 
-Cerrar la caja era un casillero para escribir un número. La auditoría del POS
-viejo encontró la consecuencia: **el efectivo contado figuraba siempre en cero**.
-Un casillero libre a las nueve de la noche no se llena contando, se llena con lo
-primero que salga.
+**El arqueo se sacó.** El local no cuenta los billetes, así que cerrar el turno
+es confirmar: el sistema anota hasta cuándo duró, quién lo cerró y una nota
+opcional, y lleva al reporte del turno.
 
-Ahora el cierre arranca por denominación, que es el gesto que ya se hace: se
-apilan los billetes por valor y se cuentan las pilas. Se escribe cuántos de
-$20.000, cuántos de $10.000, cuántos de $1.000; el sistema suma, muestra el
-subtotal de cada fila y el total abajo. **Las monedas y los billetes viejos van
-en un renglón aparte**, porque contar monedas de a una no lo hace nadie.
+Lo que **no** se hizo fue dejar el conteo como opcional, y conviene decir por
+qué. Un arqueo que está pero nadie hace es peor que no tenerlo: la columna se
+llena de ceros y después alguien los lee como si significaran algo. Es
+literalmente lo que la auditoría encontró en el POS viejo —*el efectivo contado
+figuraba siempre en cero*— y no se sabía si era un arqueo perfecto o ninguno.
 
-- **El total lo calcula el servidor a partir de los billetes.** Lo que suma el
-  navegador es una comodidad para quien cuenta, no un dato en el que confiar.
-- **Escribir el total directo sigue estando**, a un clic, abajo y sin fricción.
-  Un arqueo que traba el cierre es un arqueo que se saltea. Pero queda
-  registrado que se hizo así: en la lista de cierres se ve «Contado» o «Total a
-  mano», y arriba de todo el número que importa —*cuántos de los últimos diez
-  cierres se hicieron contando los billetes*—. Si eso se va a cero, el arqueo
-  volvió a ser un trámite.
-- **Una diferencia no se cierra sin explicarla.** El campo aparece solo cuando
-  sobra o falta plata, y es obligatorio.
+Por eso, cuando no se cuenta, **contado y diferencia quedan en `null`, no en
+cero**: en la base, en el reporte del turno y en la lista de cierres. «Se contó
+y dio justo» y «no se contó» son cosas distintas y se ven distintas. Los cierres
+viejos, que sí tienen arqueo, siguen mostrándolo completo.
+
 - **Un turno abierto más de catorce horas se reclama en pantalla.** La auditoría
   encontró sesiones abiertas días enteros: una caja que nunca cierra no tiene
-  arqueo ni reporte de nada.
+  reporte de nada.
+- **Las ventas cobradas sin conexión siguen frenando el cierre.** No es por el
+  arqueo: son ventas que todavía no entraron, y cerrar ahora las deja colgando
+  de un turno que ya cerró.
+- **La maquinaria del arqueo quedó entera.** `cerrarCaja` sigue aceptando un
+  conteo, el reporte sabe mostrarlo y los tests lo cubren. El día que quieran
+  volver a contar, es volver a poner el formulario.
+
+**Lo que se pierde, dicho claro:** el arqueo era lo único que detectaba un
+vuelto mal dado o una venta en efectivo cargada como transferencia. Sin él, esa
+plata se va sin dejar rastro. Fue una decisión del local, no un descuido.
 
 ### El reporte del turno
 
 Cerrar lleva directo a `/caja/[id]`, la hoja del turno: ventas, unidades,
-facturado, el arqueo completo (apertura, lo que entró por cada medio, los gastos
-y las salidas, el esperado, el contado y la diferencia), con qué billetes se
-contó, los gastos pagados en el turno y las ventas anuladas. **La justificación
-de la diferencia va en el cuerpo, no en un `title`**: un tooltip que solo aparece
+facturado, el detalle completo (apertura, lo que entró por cada medio, los
+gastos y las salidas, y cuánto debería quedar en el cajón), los gastos pagados
+en el turno y las ventas anuladas. En los turnos viejos que sí tienen arqueo se
+muestran además el contado, la diferencia y con qué billetes se contó, y **la
+justificación va en el cuerpo, no en un `title`**: un tooltip que solo aparece
 pasando el mouse no existe para quien lo lee en una tablet ni para quien lo
 imprime.
 

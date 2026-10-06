@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
 import {
+  cashMovements,
   auditLog,
   cashSessions,
   customers,
@@ -385,5 +386,71 @@ describe('cerrarCaja', () => {
     await expect(
       cerrarCaja(db, { sesionId: s.id, usuarioId, saldoContadoCentavos: -1 }),
     ).rejects.toThrow(ErrorCaja);
+  });
+});
+
+describe('cerrar sin contar', () => {
+  it('deja contado y diferencia en null, no en cero', async () => {
+    /*
+     * Es la distinción que importa: «se contó y dio justo» y «no se contó» no
+     * pueden quedar iguales en la base. Un cero que significa «no se midió»
+     * termina leído como «cuadró» — el vicio del POS viejo, donde el efectivo
+     * contado figuraba siempre en cero.
+     */
+    const s = await abrirCaja(db, {
+      monetaryAccountId: cajaId,
+      terminal: 'T1',
+      usuarioId,
+      saldoInicialCentavos: 2_000_000,
+    });
+
+    const cierre = await cerrarCaja(db, { sesionId: s.id, usuarioId });
+
+    expect(cierre.contadoCentavos).toBeNull();
+    expect(cierre.diferenciaCentavos).toBeNull();
+    expect(cierre.esperadoCentavos).toBe(2_000_000);
+
+    const [enBase] = await db.select().from(cashSessions).where(eq(cashSessions.id, s.id));
+    expect(enBase!.cerradaEn).not.toBeNull();
+    expect(enBase!.saldoContadoCentavos).toBeNull();
+    expect(enBase!.saldoEsperadoCentavos).toBe(2_000_000);
+  });
+
+  it('no inventa un asiento de ajuste', async () => {
+    // El ajuste existía para que el saldo de la cuenta reflejara la plata real
+    // que se contó. Sin conteo no hay nada que ajustar, y meter un movimiento
+    // de cero sería ruido en el extracto.
+    const s = await abrirCaja(db, {
+      monetaryAccountId: cajaId,
+      terminal: 'T1',
+      usuarioId,
+      saldoInicialCentavos: 2_000_000,
+    });
+
+    await cerrarCaja(db, { sesionId: s.id, usuarioId });
+
+    const ajustes = await db
+      .select()
+      .from(cashMovements)
+      .where(eq(cashMovements.tipo, 'ajuste'));
+    expect(ajustes).toHaveLength(0);
+  });
+
+  it('sigue aceptando un conteo explícito, por si vuelven a arquear', async () => {
+    const s = await abrirCaja(db, {
+      monetaryAccountId: cajaId,
+      terminal: 'T1',
+      usuarioId,
+      saldoInicialCentavos: 2_000_000,
+    });
+
+    const cierre = await cerrarCaja(db, {
+      sesionId: s.id,
+      usuarioId,
+      saldoContadoCentavos: 1_950_000,
+      justificacion: 'vuelto mal dado',
+    });
+
+    expect(cierre.diferenciaCentavos).toBe(-50_000);
   });
 });

@@ -383,7 +383,18 @@ export async function resumenDeSesion(
 export interface DatosCierre {
   sesionId: string;
   usuarioId: string;
-  saldoContadoCentavos: number;
+  /**
+   * El efectivo que se contó en el cajón.
+   *
+   * **Omitirlo cierra el turno sin arqueo**, con lo que el sistema espera: sin
+   * diferencia, sin justificación y sin asiento de ajuste. Es lo que pidió el
+   * local, que no cuenta los billetes.
+   *
+   * Sigue siendo opcional y no borrado: el arqueo es lo único que detecta un
+   * vuelto mal dado o una venta en efectivo cargada como transferencia, y el
+   * día que quieran volver a contar, la maquinaria está entera.
+   */
+  saldoContadoCentavos?: number;
   justificacion?: string | null;
   nota?: string | null;
   /**
@@ -399,13 +410,14 @@ export interface DatosCierre {
 
 export interface CierreDeCaja {
   esperadoCentavos: number;
-  contadoCentavos: number;
-  /** Positiva si sobra plata, negativa si falta. */
-  diferenciaCentavos: number;
+  /** Null cuando el turno se cerró sin contar el cajón, que es lo habitual. */
+  contadoCentavos: number | null;
+  /** Positiva si sobra plata, negativa si falta. Null si no se contó. */
+  diferenciaCentavos: number | null;
 }
 
 export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<CierreDeCaja> {
-  if (datos.saldoContadoCentavos < 0) {
+  if (datos.saldoContadoCentavos !== undefined && datos.saldoContadoCentavos < 0) {
     throw new ErrorCaja('El efectivo contado no puede ser negativo.');
   }
 
@@ -428,11 +440,30 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
     if (sesion.cerradaEn) throw new ErrorCaja('Esa caja ya está cerrada.');
 
     const resumen = await resumenDeSesion(tx, datos.sesionId);
-    const diferenciaCentavos = datos.saldoContadoCentavos - resumen.efectivoEsperadoCentavos;
+
+    /*
+     * Sin arqueo, contado y diferencia quedan en **null**, no en cero.
+     *
+     * Es la diferencia entre «se contó y dio justo» y «no se contó», y
+     * guardarlas como cero las vuelve indistinguibles. Un cero que significa
+     * «no se midió» termina leído como «cuadró», que es exactamente el vicio
+     * del POS viejo: la columna de efectivo contado figuraba siempre en cero y
+     * nadie sabía si era un arqueo perfecto o ninguno.
+     *
+     * Las dos columnas ya eran nulables y toda la pantalla del reporte ya
+     * pregunta por null antes de mostrar el arqueo, así que esto hace que los
+     * cierres sin conteo se vean como lo que son.
+     */
+    const seConto = datos.saldoContadoCentavos !== undefined;
+    const saldoContadoCentavos = datos.saldoContadoCentavos ?? null;
+    const diferenciaCentavos = seConto
+      ? datos.saldoContadoCentavos! - resumen.efectivoEsperadoCentavos
+      : null;
 
     // Si la caja no cuadra hay que decir por qué. Es la única forma de que la
-    // diferencia sea información y no ruido.
-    if (diferenciaCentavos !== 0 && !datos.justificacion?.trim()) {
+    // diferencia sea información y no ruido. Sin conteo no hay nada que
+    // justificar: no se midió.
+    if (diferenciaCentavos !== null && diferenciaCentavos !== 0 && !datos.justificacion?.trim()) {
       throw new ErrorCaja(
         'La caja no cuadra. Escribí a qué se debe la diferencia antes de cerrar.',
       );
@@ -444,7 +475,7 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
         cerradaEn: new Date(),
         cerradaPorId: datos.usuarioId,
         saldoEsperadoCentavos: resumen.efectivoEsperadoCentavos,
-        saldoContadoCentavos: datos.saldoContadoCentavos,
+        saldoContadoCentavos,
         diferenciaCentavos,
         justificacion: datos.justificacion?.trim() || null,
         conteo: datos.conteo ?? null,
@@ -454,7 +485,7 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
 
     // La diferencia se ajusta contra la cuenta para que el saldo refleje la
     // plata que hay de verdad, y queda el asiento de por qué.
-    if (diferenciaCentavos !== 0) {
+    if (diferenciaCentavos !== null && diferenciaCentavos !== 0) {
       await tx.insert(cashMovements).values({
         monetaryAccountId: sesion.monetaryAccountId,
         cashSessionId: datos.sesionId,
@@ -477,7 +508,7 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
       entidadId: datos.sesionId,
       valorNuevo: {
         esperadoCentavos: resumen.efectivoEsperadoCentavos,
-        contadoCentavos: datos.saldoContadoCentavos,
+        contadoCentavos: saldoContadoCentavos,
         diferenciaCentavos,
         justificacion: datos.justificacion?.trim() ?? null,
         ventas: resumen.cantidadDeVentas,
@@ -486,7 +517,7 @@ export async function cerrarCaja(db: BaseDatos, datos: DatosCierre): Promise<Cie
 
     return {
       esperadoCentavos: resumen.efectivoEsperadoCentavos,
-      contadoCentavos: datos.saldoContadoCentavos,
+      contadoCentavos: saldoContadoCentavos,
       diferenciaCentavos,
     };
   });
