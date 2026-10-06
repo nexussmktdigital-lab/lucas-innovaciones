@@ -107,25 +107,66 @@ self.addEventListener('fetch', (evento) => {
 
   evento.respondWith(
     (async () => {
+      /*
+       * El pedido a la red se hace UNA vez y se guarda.
+       *
+       * Abajo se lo espera dos veces —una con plazo, otra sin— y pedirlo de
+       * nuevo serían dos pedidos para una sola pantalla: el doble de carga
+       * sobre el servidor justo cuando está lento, que es cuando menos conviene.
+       */
+      const red = fetch(pedido);
+
+      // Si la respuesta llega tarde pero llega, igual se guarda: la próxima vez
+      // que esta pantalla no tenga internet, va a haber una copia que servir.
+      const guardar = async (respuesta) => {
+        if (!respuesta.ok) return;
+        const cache = await caches.open(PAGINAS);
+        await cache.put(pedido, respuesta.clone());
+      };
+
       try {
         // Con la red caída del todo el fetch falla enseguida; lo que este plazo
         // ataja es la conexión que está pero no anda —el módem sin internet—,
         // donde el pedido queda colgado y la pantalla en blanco.
         const respuesta = await Promise.race([
-          fetch(pedido),
+          red,
           new Promise((_, rechazar) => setTimeout(() => rechazar(new Error('tarde')), ESPERA_MS)),
         ]);
 
-        if (respuesta.ok) {
-          const cache = await caches.open(PAGINAS);
-          await cache.put(pedido, respuesta.clone());
-        }
+        await guardar(respuesta);
         return respuesta;
       } catch {
         const guardado = await caches.match(pedido);
-        if (guardado) return guardado;
+        if (guardado) {
+          // Se sirve la copia y el pedido sigue su curso en segundo plano: si
+          // termina llegando, deja la copia fresca para la próxima.
+          evento.waitUntil(red.then(guardar).catch(() => {}));
+          return guardado;
+        }
 
-        // Nunca se abrió esta pantalla con conexión: no hay nada que servir.
+        /*
+         * No hay copia, así que **se espera a la red de verdad** antes de decir
+         * que no hay conexión.
+         *
+         * El plazo de arriba sirve para no hacer esperar a nadie cuando hay algo
+         * guardado que mostrar. Cuando no hay nada, cortar a los cuatro segundos
+         * no ahorra nada: cambia una pantalla que iba a cargar por un cartel que
+         * dice «no hay internet» cuando sí hay. Pasó en el mostrador la primera
+         * vez que se abrió Fiado después de un despliegue, con el servidor y la
+         * base recién despertándose: tardó cinco segundos y el POS declaró que
+         * estaba sin conexión.
+         *
+         * Una pantalla que tarda ocho segundos es mala. Una que miente sobre por
+         * qué no cargó hace que alguien salga a revisar el módem.
+         */
+        try {
+          const respuesta = await red;
+          await guardar(respuesta);
+          return respuesta;
+        } catch {
+          // Acá sí: la red falló de verdad y no hay nada guardado.
+        }
+
         return new Response(
           `<!doctype html><html lang="es-AR"><head><meta charset="utf-8">
            <meta name="viewport" content="width=device-width,initial-scale=1">

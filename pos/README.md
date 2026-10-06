@@ -1128,6 +1128,19 @@ del navegador y se terminó el día. Las rutas de API nunca se guardan —una
 respuesta vieja del buscador sería stock inventado— y las páginas van por red
 primero, así que con internet se ve siempre lo de ahora.
 
+**El plazo de cuatro segundos solo corre si hay una copia que mostrar.** Con la
+red caída el pedido falla enseguida; el plazo está para la conexión que está pero
+no anda —el módem sin internet—, donde el pedido queda colgado. Pero cuando la
+pantalla nunca se abrió y no hay nada guardado, cortar a los cuatro segundos no
+ahorra nada: cambia una pantalla que iba a cargar por un cartel que dice «Sin
+conexión» cuando sí había. **Pasó en el mostrador**, la primera vez que se abrió
+Fiado después de un despliegue: el servidor recién levantado y la base
+despertándose tardaron cinco segundos, y el POS declaró que no había internet. Una
+pantalla que tarda ocho segundos es mala; una que miente sobre por qué no cargó
+hace que alguien salga a revisar el módem. Así que sin copia se espera a la red de
+verdad, y el cartel aparece solo cuando el pedido falla. La respuesta que llega
+tarde se guarda igual, para la próxima vez que no haya internet.
+
 **El catálogo vive en la tablet.** Se baja entero al abrir la pantalla de venta
 y se refresca cada diez minutos; son unos pocos cientos de kilobytes. Sin
 conexión el buscador cae ahí, **con el mismo criterio de orden que usa el
@@ -1591,6 +1604,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |
+| Un servidor lento no se anuncia como «sin conexión» cuando no hay copia guardada | `src/offline/sw.test.ts` |
+| Con la red caída de verdad, y sin copia, sí se avisa que no hay conexión | `src/offline/sw.test.ts` |
+| Habiendo copia, se sirve sin esperar al servidor lento, y la tardía se guarda | `src/offline/sw.test.ts` |
+| El service worker no responde rutas de API ni ningún POST | `src/offline/sw.test.ts` |
 | Fiar deja la deuda registrada y no mueve plata | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | El tope de fiado frena la venta antes de que entre | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | Cobrar el fiado baja la deuda y entra a la caja del turno | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |

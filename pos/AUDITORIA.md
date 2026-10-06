@@ -2122,3 +2122,35 @@ Es el mismo patrón que `tipoDeCuentaPara('dolares')` devolviendo `'efectivo'`:
 código escrito cuando los dólares eran una idea, correcto mientras nadie los
 usara, y roto en la primera operación real. Habilitar un medio de pago no es
 agregar un botón: es revisar todo lo que toca esa plata después.
+
+## El POS dijo «sin conexión» con internet andando
+
+Primera carga de Fiado después del despliegue, en la ventana de siempre del
+navegador: **Sin conexión**. En incógnito, la misma dirección cargaba perfecto.
+Eso descartó el servidor y la base de una sola prueba.
+
+Era el service worker. Espera cuatro segundos a la red y, si se pasa, sirve la
+copia guardada; como esa pantalla nunca se había abierto en esa ventana, no había
+copia, y lo que sirvió fue el cartel de «no hay internet». Había internet: lo que
+faltó fue paciencia. El servidor estaba recién levantado, la base de Neon
+despertándose, y la pantalla de Fiado —a la que yo acababa de agregarle dos
+semáforos y la cotización— hacía **nueve consultas en fila**, cada una esperando
+a la anterior para cruzar hasta São Paulo.
+
+Dos cosas estaban mal, y ninguna es el plazo en sí:
+
+1. **Cortar sin tener nada que mostrar no ahorra nada.** El plazo existe para no
+   hacer esperar a nadie cuando hay una copia; sin copia, cambia una pantalla que
+   iba a cargar por una mentira sobre el motivo. Ahora, sin copia, se espera a la
+   red de verdad y el cartel sale solo si el pedido falla.
+2. **Nueve viajes de ida y vuelta en serie son nueve veces la latencia.** Solo
+   tres dependían de algo anterior. Ahora van en dos tandas en paralelo.
+
+Lo que más me importa del hallazgo es la forma del error: el sistema no se cayó,
+*informó mal*. Un vendedor que lee «sin conexión» sale a mirar el módem, llama al
+proveedor de internet y vende en papel, mientras el POS estaba a dos segundos de
+abrir. Un mensaje de error equivocado cuesta más que la falla que describe.
+
+Y el método que lo encontró en un minuto vale anotarlo: **abrirlo en incógnito**.
+Sin service worker registrado se ve el error de verdad en lugar de la pantalla de
+respaldo, y eso parte el problema en dos —servidor o caché— antes de tocar nada.
