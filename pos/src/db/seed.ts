@@ -214,6 +214,8 @@ export async function sembrar(
       { nombre: 'Caja en efectivo', tipo: 'efectivo' },
       { nombre: 'Banco', tipo: 'banco' },
       { nombre: 'Mercado Pago', tipo: 'mercadopago' },
+      // El cajón de los billetes verdes. Su saldo está en centavos de DÓLAR.
+      { nombre: 'Caja en dólares', tipo: 'dolares' },
     ])
     .onConflictDoNothing();
 
@@ -462,7 +464,7 @@ async function sembrarFiado(db: BaseDatos, usuarioId: string | null): Promise<vo
         saleId: null,
         montoCentavos: d.saldoCentavos,
         cantidad: d.plan.cuotas,
-        frecuencia: d.plan.frecuencia,
+        cadencia: { frecuencia: d.plan.frecuencia, dias: null },
         desdeISO: d.plan.desdeISO,
         descripcion: d.nota,
       });

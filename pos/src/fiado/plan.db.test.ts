@@ -15,6 +15,7 @@ import {
   creditPaymentAllocations,
   creditPlans,
   customers,
+  exchangeRates,
   installments,
   monetaryAccounts,
   products,
@@ -23,8 +24,15 @@ import {
 import { confirmarVenta } from '@/ventas/confirmar';
 import { anularVenta } from '@/ventas/anular';
 import { cobrarFiado, cuentaDe } from './cuenta';
-import { cuotasDeCuenta, estadosDeClientes, vencimientoDeCuota } from './plan';
+import {
+  cadencia,
+  cuotasDeCuenta,
+  estadosDeClientes,
+  vencimientoDeCuota,
+  type Cadencia,
+} from './plan';
 import { fechaLocalISO, sumarDias } from '@/lib/fecha';
+import { usdAPesos } from '@/lib/dinero';
 
 let db: TestDb;
 let duenioId: string;
@@ -75,7 +83,7 @@ beforeEach(async () => {
 /** Fía un celular de $600.000 en `cuotas` pagos. */
 async function fiarEnCuotas(
   cuotas = 6,
-  frecuencia: 'semanal' | 'quincenal' | 'mensual' = 'mensual',
+  cad: Cadencia = cadencia('mensual'),
 ) {
   return confirmarVenta(db, {
     lineas: [{ productId: productoId, cantidad: 10 }],
@@ -85,7 +93,7 @@ async function fiarEnCuotas(
     cashSessionId: sesionId,
     terminal: 'T1',
     idempotencyKey: `plan-${Math.random()}`,
-    plan: { frecuencia, cuotas },
+    plan: { cadencia: cad, cuotas },
   });
 }
 
@@ -116,10 +124,10 @@ describe('fiar con plan', () => {
   });
 
   it('la primera vence una frecuencia después de la venta, no hoy', async () => {
-    await fiarEnCuotas(3, 'quincenal');
+    await fiarEnCuotas(3, cadencia('quincenal'));
 
     const cuotas = await cuotasDeCuenta(db, (await cuentaDe(db, clienteId))!.id);
-    expect(cuotas[0]!.vencimiento).toBe(vencimientoDeCuota(HOY, 'quincenal', 1));
+    expect(cuotas[0]!.vencimiento).toBe(vencimientoDeCuota(HOY, cadencia('quincenal'), 1));
     expect(cuotas[0]!.vencimiento > HOY).toBe(true);
   });
 
@@ -154,7 +162,7 @@ describe('fiar con plan', () => {
       cashSessionId: sesionId,
       terminal: 'T1',
       idempotencyKey: 'mixto',
-      plan: { frecuencia: 'mensual', cuotas: 3 },
+      plan: { cadencia: cadencia('mensual'), cuotas: 3 },
     });
 
     const [plan] = await db.select().from(creditPlans);
@@ -235,7 +243,7 @@ describe('cobrar imputa a las cuotas', () => {
 
 describe('el semáforo sobre datos de verdad', () => {
   it('con la primera cuota por vencer, amarillo', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     // Cinco días después de la venta la cuota de los siete días está a dos.
     const estado = (await estadosDeClientes(db, [clienteId], sumarDias(HOY, 5))).get(clienteId);
@@ -244,7 +252,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pasada la fecha sin pagar, rojo y con lo vencido sumado', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     // A los veinte días vencieron dos cuotas (7 y 14) y falta la tercera.
     const estado = (await estadosDeClientes(db, [clienteId], sumarDias(HOY, 20))).get(clienteId);
@@ -254,7 +262,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pagar lo vencido lo devuelve a verde', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
     // Son cuatro cuotas de $150.000. A los 16 días vencieron las dos primeras:
     // paga las dos.
     await cobrar(300_000_00);
@@ -266,7 +274,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pero si la siguiente ya está encima, amarillo y no verde', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
     await cobrar(300_000_00);
 
     // Al día 20, la tercera vence mañana: sigue estando al día, pero hay que avisarle.
@@ -312,9 +320,82 @@ describe('anular una venta fiada apaga su plan', () => {
   });
 });
 
+describe('el semáforo es uno por moneda (D62)', () => {
+  /*
+   * Un cliente con un plan en pesos y otro en dólares tiene DOS semáforos.
+   *
+   * Juntarlos pone en la misma fila una cuota de US$ 500 —50.000 centavos— y una
+   * de $100.000 —10.000.000 de centavos—, y el «vencido» que sale de sumarlas no
+   * es plata de nadie. Peor: el orden por vencimiento mezclado haría que un pago
+   * en pesos se impute contra la cuota del iPhone.
+   */
+  /** $1.571 por dólar, el mismo de los demás tests de dólares. */
+  const TC = 1_571_00;
+
+  async function fiarIphoneEnDolares(cuotas = 3) {
+    await db.insert(exchangeRates).values({
+      valorCentavos: TC,
+      vigenteDesde: new Date(),
+      origen: 'infodolar',
+    });
+
+    const total = usdAPesos(1_500_00, TC);
+    const [iphone] = await db
+      .insert(products)
+      .values({
+        nombre: 'iPhone 15 Pro Max 256GB',
+        moneda: 'USD',
+        precioUsdCentavos: 1_500_00,
+        precioCentavos: total,
+        stock: 1,
+      })
+      .returning();
+
+    return confirmarVenta(db, {
+      lineas: [{ productId: iphone!.id, cantidad: 1 }],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: total }],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `usd-plan-${Math.random()}`,
+      plan: { cadencia: cadencia('mensual'), cuotas },
+    });
+  }
+
+  it('las cuotas en dólares no entran en el estado de la deuda en pesos', async () => {
+    await fiarEnCuotas(3); // $600.000 en 3 cuotas de $200.000
+    await fiarIphoneEnDolares(3); // US$ 1.500 en 3 cuotas de US$ 500
+
+    const hoy = sumarDias(HOY, 40); // ya venció la primera de cada plan
+
+    const enPesos = (await estadosDeClientes(db, [clienteId], hoy, 'ARS')).get(clienteId);
+    const enDolares = (await estadosDeClientes(db, [clienteId], hoy, 'USD')).get(clienteId);
+
+    expect(enPesos!.cuotasTotales).toBe(3);
+    expect(enPesos!.vencidoCentavos).toBe(200_000_00);
+
+    const cuentaId = (await cuentaDe(db, clienteId))!.id;
+    const cuotasUsd = await cuotasDeCuenta(db, cuentaId, 'USD');
+
+    expect(enDolares!.cuotasTotales).toBe(3);
+    expect(enDolares!.vencidoCentavos).toBe(cuotasUsd[0]!.montoCentavos);
+    // Son dólares: quinientos y algo, no doscientos mil. Si los dos estados se
+    // mezclaran, acá habría seis cuotas y un vencido que suma las dos monedas.
+    expect(enDolares!.vencidoCentavos).toBeLessThan(1_000_00);
+  });
+
+  it('el que debe solo dólares no tiene estado en pesos', async () => {
+    await fiarIphoneEnDolares(3);
+
+    expect((await estadosDeClientes(db, [clienteId], HOY, 'ARS')).get(clienteId)).toBeUndefined();
+    expect((await estadosDeClientes(db, [clienteId], HOY, 'USD')).get(clienteId)).toBeDefined();
+  });
+});
+
 describe('varios clientes de una sola consulta', () => {
   it('cada uno con su estado, y el que no tiene plan no aparece', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     const [otro] = await db.insert(customers).values({ nombre: 'Marcelo Paz' }).returning();
     await db

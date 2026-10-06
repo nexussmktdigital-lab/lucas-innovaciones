@@ -26,15 +26,17 @@ import BarraOffline from './barra-offline';
 export interface Cuenta {
   id: string;
   nombre: string;
-  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'otro';
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares' | 'otro';
 }
 
 export interface Cliente {
   id: string;
   nombre: string;
   telefono: string | null;
-  /** Lo que ya debe. Se muestra al elegirlo: fiarle es sumarle a esto. */
+  /** Lo que ya debe en pesos. Se muestra al elegirlo: fiarle es sumarle a esto. */
   saldoCentavos: number;
+  /** Lo que ya debe en dólares, que es otra deuda (D62). Nunca se suman. */
+  saldoUsdCentavos: number;
   limiteCentavos: number | null;
 }
 
@@ -518,6 +520,7 @@ export default function PantallaVenta({
           cliente={todosLosClientes.find((c) => c.id === clienteId) ?? null}
           puedeFiar={puedeFiar}
           cuentas={cuentas}
+          tcCentavos={tcCentavos}
           onCerrar={() => setCobrando(false)}
           onConfirmar={confirmar}
         />

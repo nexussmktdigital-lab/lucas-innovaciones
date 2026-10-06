@@ -23,6 +23,7 @@ mandan sobre este código:
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
 | **D56** | **Sin conexión el POS sigue vendiendo.** El catálogo vive guardado en la tablet y la venta cobrada va a una cola que se sube sola. El precio de esa venta lo pone la pantalla —única excepción a que el servidor no le cree al navegador— porque sin catálogo que consultar es el único dato que existe de lo que el cliente pagó. Lo que reemplaza a la guarda es el **desvío** anotado contra el catálogo. |
+| **D62** | **Lo que se vende en dólares se debe en dólares.** Si todo el carrito está cotizado en dólares, el saldo fiado y sus cuotas quedan en dólares; cualquier otra venta —mezclada incluida— queda en pesos, siempre. Las dos deudas viven separadas en la misma cuenta y nunca se suman ni se convierten para mostrar un total. |
 | **D31** | **El mostrador y la tienda cobran distinto, y el número que se guarda es el de la tienda.** En la web cobra Mercado Pago y esa comisión no la paga el local. WooCommerce guarda el precio de la tienda —que es el que la web cobra de verdad— y el POS le descuenta un recargo global para llegar al de mostrador. Un producto por producto queda con un precio de mostrador escrito a mano cuando el porcentaje no aplica. |
 
 ### Reglas que no se negocian
@@ -291,6 +292,38 @@ y se puede devolver a la cola lo que agotó los seis reintentos.
 
 ---
 
+## Cobrar en dólares
+
+El local vende iPhones usados y cobra parte en billetes verdes. **Los dólares
+tienen su propio cajón**, aparte del de pesos, y su saldo está en **centavos de
+dólar**: son billetes, y guardarlos convertidos haría que el saldo se mueva solo
+cada vez que cambia la cotización, sin que entre ni salga un dólar.
+
+En la pantalla de cobro, «Dólares» pide el monto **en dólares** —es lo que el
+cliente pone sobre el mostrador— y abajo dice a cuántos pesos equivale y con qué
+cotización. Al revés sería pedirle a quien atiende que haga la cuenta de cabeza.
+
+De cada pago en dólares se guardan **tres** números y no uno:
+
+| | Qué es |
+|---|---|
+| `monto_centavos` | Lo que vale en pesos. Es lo que suma contra el total de la venta. |
+| `monto_usd_centavos` | Los billetes que entraron. Es lo que mueve el cajón verde. |
+| `cotizacion_centavos` | El dólar de ese momento, congelado. |
+
+Son tres hechos distintos, y guardar solo el primero los pierde: el día que se
+mueve la cotización ya no hay forma de saber cuántos billetes habían entrado. Un
+check en `sale_payments` ata los tres al medio de pago, para que un cobro en
+dólares sin el dato no pueda quedar registrado como un pago en pesos cualquiera.
+
+**Un error que estuvo escrito y nunca se ejecutó.** `dolares` existía como medio
+de pago desde la fase 1 —en el enum, en el tipo y en el dominio— pero nunca
+llegó a la pantalla de cobro, así que nadie lo usó. Y `tipoDeCuentaPara` lo
+mandaba a la cuenta de **efectivo**: mil dólares se habrían sumado al cajón de
+pesos como mil pesos. Estaba a un botón de distancia de descuadrar la caja.
+
+---
+
 ## Mostrador y tienda: dos precios, un solo número
 
 En la tienda online cobra Mercado Pago y esa comisión no la paga el mostrador,
@@ -396,7 +429,7 @@ Al cobrar, si algo se fía, la pantalla pregunta **cómo lo va a pagar**:
 | Opción | Qué hace |
 |---|---|
 | **Cuando pueda** (la que viene puesta) | Queda como saldo abierto, sin fechas. Es el fiado de siempre |
-| **Cada semana / cada 15 días / cada mes** | Arma las cuotas y muestra cuánto es cada una y cuándo vence la primera y la última |
+| **Cada semana / cada 15 días / cada mes / cada N días** | Arma las cuotas y muestra cuánto es cada una y cuándo vence la primera y la última |
 
 Tres decisiones que conviene conocer:
 
@@ -405,12 +438,91 @@ Tres decisiones que conviene conocer:
   *cuándo* se espera cada parte.
 - **La primera vence una frecuencia después de la compra**, no el mismo día. Y
   las mensuales van por calendario: si compró un 5, paga los 5.
+- **«Cada N días» existe porque el fiado se pacta en el momento.** Las tres
+  frecuencias con nombre son atajos y cubren casi todo, pero el mostrador
+  acuerda «cada tres días» con el que cobra por semana y «cada dos meses» con el
+  del aguinaldo. Con un menú de tres, quien vendía elegía la que menos mentía y
+  arreglaba el resto de palabra — justo lo que el sistema vino a sacar del
+  cuaderno. Va de 1 a 365 días.
+
+  **«Cada mes» no es un atajo de 30 días y por eso sigue aparte.** Va por
+  calendario. Escrito como 30 días, en un año se le corre casi una semana y el
+  cliente deja de reconocer su fecha. Un check en la base ata el número a «cada
+  N días» y se lo prohíbe a los otros tres: un «mensual» con un 30 al lado
+  invita a que alguien lo lea y le crea.
 - **Un pago se imputa a la cuota más vieja primero**, que es lo que hace
   cualquiera con una libreta. Lo que sobre después de cubrirlas todas queda como
   saldo a cuenta y no se le inventa una cuota a nadie.
 
 Anular la venta apaga el plan, pero no lo borra: las cuotas que el cliente llegó
 a pagar tienen su imputación apuntando a ellas (D29).
+
+### Lo que se vende en dólares se debe en dólares
+
+Un iPhone se pacta en dólares, y el papel que el cliente firma dice dólares. Si
+la deuda se guardaba en los pesos del día de la venta, el que volvía un mes
+después con el dólar más caro **debía menos de lo que firmó**: las cuotas en
+pesos se le cancelaban antes y el sistema le decía «pagaste todo» cuando
+faltaban doscientos dólares. Al revés, con el dólar más barato, le estábamos
+cobrando de más. Por eso la deuda es en dólares de verdad.
+
+La moneda la decide la venta, no quien cobra:
+
+- **Si todo el carrito está cotizado en dólares**, el saldo fiado queda en
+  dólares y las cuotas también.
+- **Cualquier otra venta queda en pesos. Siempre.** Un carrito mezclado —un
+  iPhone y una funda— también: no hay forma de partir una deuda sola en dos
+  monedas sin inventar cuál parte es cuál, y el iPhone en cuotas es el caso que
+  esto vino a resolver, no la excepción rara.
+
+Las dos deudas conviven en la misma cuenta y **nunca se suman**:
+`credit_accounts` lleva `saldo_centavos` y `saldo_usd_centavos` por separado.
+Sumarlas daría un número que no es plata de nadie, y convertirlas para mostrar
+un total obligaría a congelar una cotización que cambia cada dos horas. La
+pantalla de Fiado muestra los dos totales uno debajo del otro, la tarjeta del
+cliente muestra las dos deudas con su signo, y el semáforo es **uno por moneda**:
+un plan en dólares y otro en pesos son dos planes con dos vencimientos.
+
+Al cobrar, la tarjeta pregunta **de qué deuda se trata** —solo cuando el cliente
+debe en las dos— y acepta cualquier medio, porque el cliente paga con lo que
+tiene: billetes de dólar, pesos, transferencia o cheque, para cualquier producto.
+Lo que se imputa a la deuda y lo que entra a la caja son **dos números
+distintos**:
+
+| El cliente debe | Y paga con | Se le descuentan | A la caja entran |
+|---|---|---|---|
+| US$ 200 | billetes de dólar | US$ 200 | US$ 200, al cajón de dólares |
+| US$ 137 | transferencia | US$ 137 | $215.227 al banco, con la cotización del día |
+| $100.000 | billetes de dólar | $100.000 | los dólares que valgan, al cajón verde |
+
+Tres cosas que sostienen eso:
+
+- **La conversión no redondea al millar.** `usdAPesos` redondea porque un precio
+  de vidriera no lleva centavos; una deuda sí. US$ 137 a $1.571 son **$215.227
+  exactos** y no $215.000: redondear a favor del local es cobrar de más y a
+  favor del cliente es regalar, doscientas veces por año y sin que nadie lo vea.
+  Para eso están `usdAPesosExacto` y `pesosAUsdExacto`.
+- **Un pago en dólares no cancela una cuota en pesos.** La imputación filtra por
+  moneda. Sin ese filtro, cobrar US$ 100 encuentra la cuota en pesos más vieja
+  —que para la aritmética es «10.000 centavos»— y la marca pagada: la deuda en
+  pesos se borra sola y nadie se entera.
+- **Sin cotización, cruzar de moneda se frena.** Pagar dólares con dólares o
+  pesos con pesos no la necesita y nunca depende de ella; los demás casos sí, y
+  la pantalla lo dice antes de cobrar en vez de dejar que falle con el cliente
+  esperando.
+
+**El tope de fiado mide la deuda en pesos**, que es la que el tope limita. Un
+límite en pesos contra una deuda en dólares compararía dos cosas distintas, así
+que una venta en dólares no lo mueve ni avisa de un tope que no se va a pasar.
+
+**El cajón de dólares es una cuenta aparte y se lee como tal.** Su saldo está en
+centavos de dólar, así que en **Cuentas** se escribe con `US$`, no entra en el
+total de las cuentas en pesos —sumarlo daba un número que no es plata de nadie y
+que cambiaba de sentido con cada movimiento del dólar— y **no se transfiere entre
+pesos y dólares**: mover «5.000» de un lado al otro le saca US$ 50 a uno y le
+pone $50 al otro, y deja los dos saldos despegados de sus movimientos. Cambiar
+dólares por pesos es una venta de dólares, con su cotización y su resultado, no
+una transferencia; el día que el local lo necesite se hace como tal.
 
 ### El semáforo de Fiado
 
@@ -528,40 +640,45 @@ tiene la tabla (`expense_items`) para cuando llegue. Los gastos recurrentes
 
 ---
 
-## Caja: arqueo y cierre
+## Caja: el cierre del turno
 
-Cerrar la caja era un casillero para escribir un número. La auditoría del POS
-viejo encontró la consecuencia: **el efectivo contado figuraba siempre en cero**.
-Un casillero libre a las nueve de la noche no se llena contando, se llena con lo
-primero que salga.
+**El arqueo se sacó.** El local no cuenta los billetes, así que cerrar el turno
+es confirmar: el sistema anota hasta cuándo duró, quién lo cerró y una nota
+opcional, y lleva al reporte del turno.
 
-Ahora el cierre arranca por denominación, que es el gesto que ya se hace: se
-apilan los billetes por valor y se cuentan las pilas. Se escribe cuántos de
-$20.000, cuántos de $10.000, cuántos de $1.000; el sistema suma, muestra el
-subtotal de cada fila y el total abajo. **Las monedas y los billetes viejos van
-en un renglón aparte**, porque contar monedas de a una no lo hace nadie.
+Lo que **no** se hizo fue dejar el conteo como opcional, y conviene decir por
+qué. Un arqueo que está pero nadie hace es peor que no tenerlo: la columna se
+llena de ceros y después alguien los lee como si significaran algo. Es
+literalmente lo que la auditoría encontró en el POS viejo —*el efectivo contado
+figuraba siempre en cero*— y no se sabía si era un arqueo perfecto o ninguno.
 
-- **El total lo calcula el servidor a partir de los billetes.** Lo que suma el
-  navegador es una comodidad para quien cuenta, no un dato en el que confiar.
-- **Escribir el total directo sigue estando**, a un clic, abajo y sin fricción.
-  Un arqueo que traba el cierre es un arqueo que se saltea. Pero queda
-  registrado que se hizo así: en la lista de cierres se ve «Contado» o «Total a
-  mano», y arriba de todo el número que importa —*cuántos de los últimos diez
-  cierres se hicieron contando los billetes*—. Si eso se va a cero, el arqueo
-  volvió a ser un trámite.
-- **Una diferencia no se cierra sin explicarla.** El campo aparece solo cuando
-  sobra o falta plata, y es obligatorio.
+Por eso, cuando no se cuenta, **contado y diferencia quedan en `null`, no en
+cero**: en la base, en el reporte del turno y en la lista de cierres. «Se contó
+y dio justo» y «no se contó» son cosas distintas y se ven distintas. Los cierres
+viejos, que sí tienen arqueo, siguen mostrándolo completo.
+
 - **Un turno abierto más de catorce horas se reclama en pantalla.** La auditoría
   encontró sesiones abiertas días enteros: una caja que nunca cierra no tiene
-  arqueo ni reporte de nada.
+  reporte de nada.
+- **Las ventas cobradas sin conexión siguen frenando el cierre.** No es por el
+  arqueo: son ventas que todavía no entraron, y cerrar ahora las deja colgando
+  de un turno que ya cerró.
+- **La maquinaria del arqueo quedó entera.** `cerrarCaja` sigue aceptando un
+  conteo, el reporte sabe mostrarlo y los tests lo cubren. El día que quieran
+  volver a contar, es volver a poner el formulario.
+
+**Lo que se pierde, dicho claro:** el arqueo era lo único que detectaba un
+vuelto mal dado o una venta en efectivo cargada como transferencia. Sin él, esa
+plata se va sin dejar rastro. Fue una decisión del local, no un descuido.
 
 ### El reporte del turno
 
 Cerrar lleva directo a `/caja/[id]`, la hoja del turno: ventas, unidades,
-facturado, el arqueo completo (apertura, lo que entró por cada medio, los gastos
-y las salidas, el esperado, el contado y la diferencia), con qué billetes se
-contó, los gastos pagados en el turno y las ventas anuladas. **La justificación
-de la diferencia va en el cuerpo, no en un `title`**: un tooltip que solo aparece
+facturado, el detalle completo (apertura, lo que entró por cada medio, los
+gastos y las salidas, y cuánto debería quedar en el cajón), los gastos pagados
+en el turno y las ventas anuladas. En los turnos viejos que sí tienen arqueo se
+muestran además el contado, la diferencia y con qué billetes se contó, y **la
+justificación va en el cuerpo, no en un `title`**: un tooltip que solo aparece
 pasando el mouse no existe para quien lo lee en una tablet ni para quien lo
 imprime.
 
@@ -1480,6 +1597,19 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | No se puede cobrar más de lo que se debe, ni a quien no debe | `src/fiado/cuenta.test.ts` |
 | Reintentar el mismo cobro no cobra dos veces | `src/fiado/cuenta.test.ts` |
 | Anular una venta fiada le saca la deuda al cliente | `src/fiado/cuenta.test.ts` |
+| Un iPhone fiado deja la deuda en dólares, y el dólar que se mueve no la mueve | `src/fiado/cuenta.test.ts` |
+| Un carrito mezclado NO se fía en dólares: queda en pesos, entero | `src/fiado/cuenta.test.ts` |
+| Las dos deudas conviven en la misma cuenta y no se suman | `src/fiado/cuenta.test.ts` |
+| El que debe solo dólares aparece en la lista de Fiado y en el total por cobrar | `src/fiado/cuenta.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| Un iPhone fiado se pacta en cuotas de dólares desde la pantalla de cobro | `e2e/fiado-dolares.spec.ts` |
+| Se cobra una cuota en billetes de dólar y entra al cajón verde, sin conversión | `e2e/fiado-dolares.spec.ts` |
+| Cobrar en billetes verdes baja la deuda en dólares y sube el cajón verde | `src/fiado/cuenta.test.ts` |
+| Cobrar una deuda en dólares con otro medio imputa dólares y entra pesos exactos, sin redondear al millar | `src/fiado/cuenta.test.ts` |
+| Sin cotización, cruzar de moneda al cobrar se frena | `src/fiado/cuenta.test.ts` |
+| Pagar dólares no marca pagada una cuota en pesos | `src/fiado/cuenta.test.ts` |
+| El semáforo es uno por moneda: las cuotas en dólares no entran en el estado en pesos | `src/fiado/plan.db.test.ts` |
+| Al que debe dólares se le reclama en dólares, con el signo correcto | `src/whatsapp/mensajes.test.ts` |
+| No se transfiere entre pesos y dólares, ni para un lado ni para el otro | `src/gastos/gastos.test.ts` |
 | La ficha de papel entra una sola vez por cliente | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | Un `{campo}` inventado en una plantilla se rechaza al guardar, no al mandar | `src/whatsapp/plantillas.test.ts`, `e2e/whatsapp.spec.ts` |
 | El texto del mensaje viaja escapado: saltos de línea, acentos, emojis y `&` | `src/whatsapp/plantillas.test.ts` |

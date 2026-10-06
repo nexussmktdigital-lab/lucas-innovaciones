@@ -66,6 +66,42 @@ export function aCentavos(pesos: number | string): number {
   return Math.round(Number(limpio) * CENTAVOS_POR_PESO);
 }
 
+/**
+ * El camino inverso: cuantos pesos cuesta cancelar una deuda en dolares.
+ *
+ * **No usa el redondeo al millar de `usdAPesos`.** Ese redondeo existe para que
+ * un precio de vidriera quede en un numero lindo; una deuda no se redondea
+ * nunca: si la cuota es de US$ 200 y el dolar esta a $1.571, lo que hay que
+ * pagar es $314.200 exactos, no $314.000. Redondear a favor del local es
+ * cobrar de mas, y a favor del cliente es regalar, y las dos cosas pasan
+ * doscientas veces por ano sin que nadie las vea.
+ *
+ * @param usdCentavos Deuda en centavos de dolar. US$ 200 -> 20000.
+ * @param tcCentavos  Centavos de ARS por dolar. $1.571,00 -> 157100.
+ * @returns           Centavos de ARS, sin redondear.
+ */
+export function usdAPesosExacto(usdCentavos: number, tcCentavos: number): number {
+  exigirEntero(usdCentavos, 'usdCentavos');
+  exigirEntero(tcCentavos, 'tcCentavos');
+  if (usdCentavos <= 0 || tcCentavos <= 0) return 0;
+
+  return Math.round((usdCentavos * tcCentavos) / CENTAVOS_POR_PESO);
+}
+
+/**
+ * Cuantos dolares cancela una cantidad de pesos.
+ *
+ * Es la vuelta de `usdAPesosExacto` y se usa cuando alguien paga una deuda en
+ * pesos con billetes verdes. Tampoco redondea.
+ */
+export function pesosAUsdExacto(pesosCentavos: number, tcCentavos: number): number {
+  exigirEntero(pesosCentavos, 'pesosCentavos');
+  exigirEntero(tcCentavos, 'tcCentavos');
+  if (pesosCentavos <= 0 || tcCentavos <= 0) return 0;
+
+  return Math.round((pesosCentavos * CENTAVOS_POR_PESO) / tcCentavos);
+}
+
 /** Centavos a pesos como number. Solo para mostrar, nunca para calcular. */
 export function aPesos(centavos: number): number {
   return exigirEntero(centavos, 'centavos') / CENTAVOS_POR_PESO;

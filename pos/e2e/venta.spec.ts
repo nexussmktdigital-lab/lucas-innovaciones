@@ -180,21 +180,18 @@ test('la caja refleja las ventas del turno', async ({ page }) => {
   await expect(desglose).toContainText('Efectivo');
 });
 
-test('el cierre exige justificar la diferencia', async ({ page }) => {
+test('el cierre no pide contar el cajón', async ({ page }) => {
+  // El arqueo se sacó: el local no cuenta los billetes. Lo que queda es
+  // confirmar, y el detalle de qué entró vive en el reporte del turno.
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
   await page.getByRole('button', { name: 'Cerrar el turno' }).click();
 
-  // El cierre arranca contando billetes; escribir el total sigue estando.
   const form = page.getByRole('form', { name: 'Cerrar el turno' });
-  await form.getByRole('button', { name: 'Prefiero escribir el total' }).click();
-  await form.getByLabel('Efectivo contado').fill('1');
-
-  // Que sobre o que falte depende de lo que dejaron los tests anteriores; lo
-  // que se comprueba es que una diferencia pida explicación.
-  await expect(form.getByText(/^(Faltan|Sobran)\s/)).toBeVisible();
-  await expect(form.getByLabel('¿A qué se debe?')).toBeVisible();
+  await expect(form.getByLabel('Efectivo contado')).toHaveCount(0);
+  await expect(form.getByLabel('¿A qué se debe?')).toHaveCount(0);
+  await expect(form.getByRole('button', { name: 'Cerrar caja' })).toBeEnabled();
 });
 
 test('una variación se cobra a su precio, no al del producto padre', async ({ page }) => {

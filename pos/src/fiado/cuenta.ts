@@ -23,7 +23,7 @@
  *  - **Los cobros son inmutables** (disparador de 0001) y llevan clave de
  *    idempotencia: reintentar no cobra dos veces.
  */
-import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, or, sql } from 'drizzle-orm';
 import {
   auditLog,
   cashMovements,
@@ -34,6 +34,7 @@ import {
   sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { pesosAUsdExacto, usdAPesosExacto } from '@/lib/dinero';
 import { imputarPago } from './plan';
 import type { MedioPago } from '@/ventas/carrito';
 import { tipoDeCuentaPara } from '@/ventas/confirmar';
@@ -57,7 +58,17 @@ export class ErrorFiado extends Error {
 export interface CuentaCorriente {
   id: string;
   customerId: string;
+  /** Lo que debe en pesos. */
   saldoCentavos: number;
+  /**
+   * Lo que debe en dólares, en centavos de dólar.
+   *
+   * No se suma con el de arriba y no es una conversión suya: son dos deudas
+   * distintas. Un cliente que compró un iPhone y una funda debe US$ 400 y
+   * $20.000, y juntarlas obligaría a elegir una cotización y a que el total
+   * cambie solo todos los días.
+   */
+  saldoUsdCentavos: number;
   limiteCentavos: number | null;
   origen: 'sistema' | 'migrado_papel';
 }
@@ -69,6 +80,7 @@ export async function cuentaDe(db: BaseDatos, customerId: string): Promise<Cuent
       id: creditAccounts.id,
       customerId: creditAccounts.customerId,
       saldoCentavos: creditAccounts.saldoCentavos,
+      saldoUsdCentavos: creditAccounts.saldoUsdCentavos,
       limiteCentavos: creditAccounts.limiteCentavos,
       origen: creditAccounts.origen,
     })
@@ -97,11 +109,12 @@ async function cuentaBloqueada(
     id: string;
     customer_id: string;
     saldo_centavos: string | number;
+    saldo_usd_centavos: string | number;
     limite_centavos: string | number | null;
     origen: 'sistema' | 'migrado_papel';
   }>(
     await tx.execute(sql`
-      SELECT id, customer_id, saldo_centavos, limite_centavos, origen
+      SELECT id, customer_id, saldo_centavos, saldo_usd_centavos, limite_centavos, origen
         FROM credit_accounts WHERE customer_id = ${customerId} FOR UPDATE
     `),
   );
@@ -112,6 +125,7 @@ async function cuentaBloqueada(
     id: String(c.id),
     customerId: String(c.customer_id),
     saldoCentavos: Number(c.saldo_centavos),
+    saldoUsdCentavos: Number(c.saldo_usd_centavos),
     limiteCentavos: c.limite_centavos === null ? null : Number(c.limite_centavos),
     origen: c.origen,
   };
@@ -129,18 +143,37 @@ export async function anotarDeuda(
     saleId: string;
     numero: string;
     usuarioId: string;
+    /**
+     * En qué moneda queda la deuda. La fija la venta: lo que se vende en
+     * dólares se debe en dólares (D62), y entonces `montoCentavos` son
+     * centavos de dólar y van al saldo en dólares.
+     */
+    moneda?: 'ARS' | 'USD';
   },
-): Promise<{ saldoCentavos: number; cuentaId: string }> {
+): Promise<{ saldoCentavos: number; saldoUsdCentavos: number; cuentaId: string }> {
   if (datos.montoCentavos <= 0) {
     throw new ErrorFiado('Una deuda tiene que ser mayor a cero.', 'monto_invalido');
   }
 
+  const enDolares = datos.moneda === 'USD';
   const cuenta = await cuentaBloqueada(tx, datos.customerId);
-  const saldoCentavos = cuenta.saldoCentavos + datos.montoCentavos;
+  const saldoCentavos = enDolares
+    ? cuenta.saldoCentavos
+    : cuenta.saldoCentavos + datos.montoCentavos;
+  const saldoUsdCentavos = enDolares
+    ? cuenta.saldoUsdCentavos + datos.montoCentavos
+    : cuenta.saldoUsdCentavos;
 
-  // El limite se mira contra la deuda de este instante, no contra la que habia
-  // cuando el cajero abrio la pantalla.
-  if (cuenta.limiteCentavos !== null && saldoCentavos > cuenta.limiteCentavos) {
+  /*
+   * El límite se mira contra la deuda de este instante, no contra la que había
+   * cuando el cajero abrió la pantalla.
+   *
+   * Y es un tope **en pesos sobre la deuda en pesos**: una deuda en dólares no
+   * lo consume. Ponerle un tope a los dólares es otra decisión —otro número,
+   * que alguien tiene que elegir— y mezclarlas acá obligaría a convertir, que
+   * es justo lo que este cambio vino a sacar.
+   */
+  if (!enDolares && cuenta.limiteCentavos !== null && saldoCentavos > cuenta.limiteCentavos) {
     const [cliente] = await tx
       .select({ nombre: customers.nombre })
       .from(customers)
@@ -157,7 +190,7 @@ export async function anotarDeuda(
 
   await tx
     .update(creditAccounts)
-    .set({ saldoCentavos, updatedAt: new Date() })
+    .set({ saldoCentavos, saldoUsdCentavos, updatedAt: new Date() })
     .where(eq(creditAccounts.id, cuenta.id));
 
   await tx.insert(auditLog).values({
@@ -165,21 +198,35 @@ export async function anotarDeuda(
     accion: 'fiado.anotar',
     entidad: 'credit_accounts',
     entidadId: cuenta.id,
-    valorAnterior: { saldoCentavos: cuenta.saldoCentavos },
+    valorAnterior: {
+      saldoCentavos: cuenta.saldoCentavos,
+      saldoUsdCentavos: cuenta.saldoUsdCentavos,
+    },
     valorNuevo: {
       saldoCentavos,
+      saldoUsdCentavos,
       montoCentavos: datos.montoCentavos,
+      moneda: enDolares ? 'USD' : 'ARS',
       venta: datos.numero,
       saleId: datos.saleId,
     },
   });
 
-  return { saldoCentavos, cuentaId: cuenta.id };
+  return { saldoCentavos, saldoUsdCentavos, cuentaId: cuenta.id };
 }
 
 export interface DatosCobro {
   customerId: string;
+  /** Cuánto se le descuenta a la deuda, **en la moneda de esa deuda**. */
   montoCentavos: number;
+  /** A cuál de las dos deudas se imputa. Por omisión, la de pesos. */
+  monedaDeuda?: 'ARS' | 'USD';
+  /**
+   * La cotización del día, obligatoria solo cuando la moneda del medio de pago
+   * no es la de la deuda: una cuota en dólares pagada por transferencia, o una
+   * deuda en pesos pagada con billetes verdes.
+   */
+  cotizacionCentavos?: number | null;
   medio: MedioPago;
   monetaryAccountId?: string | null;
   cashSessionId: string;
@@ -190,9 +237,13 @@ export interface DatosCobro {
 
 export interface CobroRegistrado {
   id: string;
+  /** Lo imputado a la deuda, en su moneda. */
   montoCentavos: number;
+  monedaDeuda: 'ARS' | 'USD';
   saldoAnteriorCentavos: number;
   saldoCentavos: number;
+  /** Lo que de verdad entró a la caja, en la moneda del medio de pago. */
+  montoCajaCentavos: number;
   yaExistia: boolean;
 }
 
@@ -219,32 +270,77 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       return {
         id: existente.id,
         montoCentavos: existente.montoCentavos,
+        monedaDeuda: existente.monedaDeuda,
         saldoAnteriorCentavos: existente.saldoResultanteCentavos + existente.montoCentavos,
         saldoCentavos: existente.saldoResultanteCentavos,
+        montoCajaCentavos: existente.montoCajaCentavos ?? existente.montoCentavos,
         yaExistia: true,
       };
     }
 
     const cuenta = await cuentaBloqueada(tx, datos.customerId);
 
-    if (cuenta.saldoCentavos <= 0) {
-      throw new ErrorFiado('Ese cliente no debe nada.', 'sin_deuda');
-    }
-    if (datos.montoCentavos > cuenta.saldoCentavos) {
+    const enDolares = datos.monedaDeuda === 'USD';
+    const deudaCentavos = enDolares ? cuenta.saldoUsdCentavos : cuenta.saldoCentavos;
+    const signo = enDolares ? 'US$' : '$';
+
+    if (deudaCentavos <= 0) {
       throw new ErrorFiado(
-        `Está pagando más de lo que debe: la deuda es $${(cuenta.saldoCentavos / 100).toLocaleString('es-AR')}. ` +
+        enDolares ? 'Ese cliente no debe nada en dólares.' : 'Ese cliente no debe nada.',
+        'sin_deuda',
+      );
+    }
+    if (datos.montoCentavos > deudaCentavos) {
+      throw new ErrorFiado(
+        `Está pagando más de lo que debe: la deuda es ${signo}${(deudaCentavos / 100).toLocaleString('es-AR')}. ` +
           'Cobrale la deuda y el resto devolveselo: un saldo a favor no se lleva acá.',
         'monto_invalido',
       );
     }
 
-    const saldoCentavos = cuenta.saldoCentavos - datos.montoCentavos;
+    /*
+     * Lo que se imputa a la deuda y lo que entra a la caja pueden estar en
+     * monedas distintas, y son dos números.
+     *
+     * Una cuota de US$ 200 pagada por transferencia cancela doscientos dólares
+     * de deuda y hace entrar al banco los pesos que valgan hoy. Guardar uno
+     * solo deja el otro sin forma de reconstruirse, y eso es lo que después
+     * hace que el extracto del banco no cierre con los cobros.
+     *
+     * La conversión **no redondea al millar**: una deuda no es un precio de
+     * vidriera. Redondear a favor del local es cobrar de más y a favor del
+     * cliente es regalar, doscientas veces por año y sin que nadie lo vea.
+     */
+    const pagaConDolares = datos.medio === 'dolares';
+    const mismaMoneda = pagaConDolares === enDolares;
+    let montoCajaCentavos = datos.montoCentavos;
+
+    if (!mismaMoneda) {
+      const tc = datos.cotizacionCentavos;
+      if (!tc || tc <= 0) {
+        throw new ErrorFiado(
+          enDolares
+            ? 'Para cobrar una deuda en dólares con otro medio hace falta la cotización del día. Cargala en Dólar (F9).'
+            : 'Para cobrar una deuda en pesos con billetes de dólar hace falta la cotización del día. Cargala en Dólar (F9).',
+          'monto_invalido',
+        );
+      }
+      montoCajaCentavos = enDolares
+        ? usdAPesosExacto(datos.montoCentavos, tc)
+        : pesosAUsdExacto(datos.montoCentavos, tc);
+    }
+
+    const saldoCentavos = deudaCentavos - datos.montoCentavos;
 
     await tx
       .update(creditAccounts)
       // `estado` (al dia / vencido) queda para cuando haya vencimientos: hoy la
       // cuenta es un saldo corriente y no hay contra que compararlo.
-      .set({ saldoCentavos, updatedAt: new Date() })
+      .set(
+        enDolares
+          ? { saldoUsdCentavos: saldoCentavos, updatedAt: new Date() }
+          : { saldoCentavos, updatedAt: new Date() },
+      )
       .where(eq(creditAccounts.id, cuenta.id));
 
     const [cobro] = await tx
@@ -252,6 +348,9 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       .values({
         creditAccountId: cuenta.id,
         montoCentavos: datos.montoCentavos,
+        monedaDeuda: enDolares ? 'USD' : 'ARS',
+        montoCajaCentavos: mismaMoneda ? null : montoCajaCentavos,
+        cotizacionCentavos: mismaMoneda ? null : (datos.cotizacionCentavos ?? null),
         medio: datos.medio,
         monetaryAccountId: datos.monetaryAccountId ?? null,
         cashSessionId: datos.cashSessionId,
@@ -273,6 +372,9 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       creditAccountId: cuenta.id,
       creditPaymentId: cobro!.id,
       montoCentavos: datos.montoCentavos,
+      // Solo las cuotas de la misma moneda: un pago en dólares no cancela una
+      // cuota en pesos, por más que el número alcance.
+      moneda: enDolares ? 'USD' : 'ARS',
     });
 
     // A la caja entra plata de verdad: es lo que hace que el arqueo cierre.
@@ -284,7 +386,7 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
           monetaryAccountId: cuentaId,
           cashSessionId: datos.cashSessionId,
           tipo: 'cobro_fiado',
-          montoCentavos: datos.montoCentavos,
+          montoCentavos: montoCajaCentavos,
           referenciaTipo: 'credit_payment',
           referenciaId: cobro!.id,
           usuarioId: datos.usuarioId,
@@ -293,7 +395,7 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
 
         await tx
           .update(monetaryAccounts)
-          .set({ saldoCentavos: sql`${monetaryAccounts.saldoCentavos} + ${datos.montoCentavos}` })
+          .set({ saldoCentavos: sql`${monetaryAccounts.saldoCentavos} + ${montoCajaCentavos}` })
           .where(eq(monetaryAccounts.id, cuentaId));
       }
     }
@@ -304,14 +406,22 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       entidad: 'credit_payments',
       entidadId: cobro!.id,
       valorAnterior: { saldoCentavos: cuenta.saldoCentavos },
-      valorNuevo: { saldoCentavos, montoCentavos: datos.montoCentavos, medio: datos.medio },
+      valorNuevo: {
+        saldoCentavos,
+        montoCentavos: datos.montoCentavos,
+        monedaDeuda: enDolares ? 'USD' : 'ARS',
+        montoCajaCentavos,
+        medio: datos.medio,
+      },
     });
 
     return {
       id: cobro!.id,
       montoCentavos: datos.montoCentavos,
-      saldoAnteriorCentavos: cuenta.saldoCentavos,
+      monedaDeuda: enDolares ? 'USD' : 'ARS',
+      saldoAnteriorCentavos: deudaCentavos,
       saldoCentavos,
+      montoCajaCentavos,
       yaExistia: false,
     };
   });
@@ -405,26 +515,36 @@ export interface DeudorEnLista {
   nombre: string;
   telefono: string | null;
   saldoCentavos: number;
+  /** Lo que debe en dólares, que es una deuda aparte (D62). Nunca se suman. */
+  saldoUsdCentavos: number;
   limiteCentavos: number | null;
   origen: 'sistema' | 'migrado_papel';
   /** Cuando se le fio o se le cobro por ultima vez. */
   ultimoMovimiento: Date | null;
 }
 
-/** Quien debe y cuanto, de mayor a menor. */
+/**
+ * Quien debe y cuanto, de mayor a menor.
+ *
+ * Entra el que debe pesos **o** dólares. El que debe solo dólares —un iPhone en
+ * cuotas, que es el caso para el que existe la deuda en dólares— no aparecía en
+ * esta lista: su `saldo_centavos` es cero. Una deuda que el mostrador no ve es
+ * una deuda que nadie cobra.
+ */
 export async function deudores(db: BaseDatos): Promise<DeudorEnLista[]> {
   const filas = filasDe<{
     customer_id: string;
     nombre: string;
     telefono: string | null;
     saldo_centavos: string | number;
+    saldo_usd_centavos: string | number;
     limite_centavos: string | number | null;
     origen: 'sistema' | 'migrado_papel';
     ultimo: string | Date | null;
   }>(
     await db.execute(sql`
       SELECT c.id AS customer_id, c.nombre, c.telefono,
-             a.saldo_centavos, a.limite_centavos, a.origen,
+             a.saldo_centavos, a.saldo_usd_centavos, a.limite_centavos, a.origen,
              GREATEST(
                COALESCE((SELECT max(s.fecha) FROM sales s
                           WHERE s.cliente_id = c.id AND s.tipo = 'fiado'
@@ -434,8 +554,8 @@ export async function deudores(db: BaseDatos): Promise<DeudorEnLista[]> {
              ) AS ultimo
         FROM credit_accounts a
         JOIN customers c ON c.id = a.customer_id
-       WHERE a.saldo_centavos > 0
-       ORDER BY a.saldo_centavos DESC
+       WHERE a.saldo_centavos > 0 OR a.saldo_usd_centavos > 0
+       ORDER BY a.saldo_centavos DESC, a.saldo_usd_centavos DESC
     `),
   );
 
@@ -444,24 +564,38 @@ export async function deudores(db: BaseDatos): Promise<DeudorEnLista[]> {
     nombre: String(f.nombre),
     telefono: f.telefono,
     saldoCentavos: Number(f.saldo_centavos),
+    saldoUsdCentavos: Number(f.saldo_usd_centavos ?? 0),
     limiteCentavos: f.limite_centavos === null ? null : Number(f.limite_centavos),
     origen: f.origen,
     ultimoMovimiento: f.ultimo ? new Date(f.ultimo) : null,
   }));
 }
 
+/**
+ * Cuánto hay por cobrar, en cada moneda.
+ *
+ * Los dos totales viajan separados y la pantalla los muestra separados: sumar
+ * pesos con dólares da un número que no es plata de nadie, y convertirlos acá
+ * sería inventar una cotización para un total que cambia cada dos horas.
+ */
 export async function totalFiado(
   db: BaseDatos,
-): Promise<{ totalCentavos: number; clientes: number }> {
+): Promise<{ totalCentavos: number; totalUsdCentavos: number; clientes: number }> {
   const [r] = await db
     .select({
       totalCentavos: sql<number>`COALESCE(SUM(${creditAccounts.saldoCentavos}), 0)`.mapWith(Number),
+      totalUsdCentavos:
+        sql<number>`COALESCE(SUM(${creditAccounts.saldoUsdCentavos}), 0)`.mapWith(Number),
       clientes: sql<number>`count(*)`.mapWith(Number),
     })
     .from(creditAccounts)
-    .where(gt(creditAccounts.saldoCentavos, 0));
+    .where(or(gt(creditAccounts.saldoCentavos, 0), gt(creditAccounts.saldoUsdCentavos, 0)));
 
-  return { totalCentavos: r?.totalCentavos ?? 0, clientes: r?.clientes ?? 0 };
+  return {
+    totalCentavos: r?.totalCentavos ?? 0,
+    totalUsdCentavos: r?.totalUsdCentavos ?? 0,
+    clientes: r?.clientes ?? 0,
+  };
 }
 
 export type MovimientoDeCuenta =
@@ -535,7 +669,7 @@ export async function movimientosDe(
 
 async function cuentaPorTipo(
   tx: BaseDatos,
-  tipo: 'efectivo' | 'banco' | 'mercadopago',
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares',
 ): Promise<string | null> {
   const [cuenta] = await tx
     .select({ id: monetaryAccounts.id })

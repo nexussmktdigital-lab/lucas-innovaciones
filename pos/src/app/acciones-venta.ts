@@ -16,7 +16,7 @@ import { puede, type Rol } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
-import { CUOTAS_MAXIMAS } from '@/fiado/plan';
+import { CUOTAS_MAXIMAS, DIAS_MAXIMOS } from '@/fiado/plan';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { calcularTotales } from '@/ventas/carrito';
 import type { Sospecha } from '@/ventas/cordura';
@@ -76,7 +76,9 @@ const esquemaVenta = z.object({
   /** Cómo se van a pagar las cuotas de lo fiado. Sin esto queda como saldo abierto. */
   plan: z
     .object({
-      frecuencia: z.enum(['semanal', 'quincenal', 'mensual']),
+      frecuencia: z.enum(['semanal', 'quincenal', 'mensual', 'dias']),
+      /** Solo con `dias`. El dominio lo valida de nuevo; acá se ataja lo grosero. */
+      dias: z.number().int().min(1).max(DIAS_MAXIMOS).nullish(),
       cuotas: z.number().int().min(1).max(CUOTAS_MAXIMAS),
     })
     .nullish(),
@@ -207,7 +209,13 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       autorizadaPorId: hayDescuento ? sesion.user.id : null,
       confirmarSospechas: confirmaSospechas,
       // Un plan sin fiado no es nada: si no quedó deuda, no hay qué financiar.
-      plan: hayFiado ? (validado.data.plan ?? null) : null,
+      plan:
+        hayFiado && validado.data.plan
+          ? {
+              cadencia: { frecuencia: validado.data.plan.frecuencia, dias: validado.data.plan.dias ?? null },
+              cuotas: validado.data.plan.cuotas,
+            }
+          : null,
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
@@ -383,7 +391,13 @@ export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<R
       nota: d.nota ?? null,
       // El plan viaja con la venta guardada sin conexión: las fechas se cuentan
       // desde el día en que se cobró de verdad, no desde el día que sube.
-      plan: hayFiado ? (d.plan ?? null) : null,
+      plan:
+        hayFiado && d.plan
+          ? {
+              cadencia: { frecuencia: d.plan.frecuencia, dias: d.plan.dias ?? null },
+              cuotas: d.plan.cuotas,
+            }
+          : null,
       diferida: {
         capturadaEn: new Date(d.capturadaEn),
         preciosCobradosCentavos: d.preciosCobradosCentavos,

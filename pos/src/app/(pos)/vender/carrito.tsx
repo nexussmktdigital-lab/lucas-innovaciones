@@ -195,7 +195,14 @@ export default function Carrito({
               {clientes.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nombre}
-                  {c.saldoCentavos > 0 ? ` — debe ${formatearARS(c.saldoCentavos)}` : ''}
+                  {c.saldoCentavos > 0 || c.saldoUsdCentavos > 0
+                    ? ` — debe ${[
+                        c.saldoCentavos > 0 ? formatearARS(c.saldoCentavos) : null,
+                        c.saldoUsdCentavos > 0 ? formatearUSD(c.saldoUsdCentavos) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' y ')}`
+                    : ''}
                 </option>
               ))}
             </select>
@@ -217,11 +224,16 @@ export default function Carrito({
               />
             ) : null}
 
-            {puedeFiar && elegido && elegido.saldoCentavos > 0 ? (
+            {puedeFiar && elegido && (elegido.saldoCentavos > 0 || elegido.saldoUsdCentavos > 0) ? (
               <p className="mt-1 text-xs text-(--color-alerta-tinta)">
                 Ya debe{' '}
                 <span className="tabular font-semibold">
-                  {formatearARS(elegido.saldoCentavos)}
+                  {[
+                    elegido.saldoCentavos > 0 ? formatearARS(elegido.saldoCentavos) : null,
+                    elegido.saldoUsdCentavos > 0 ? formatearUSD(elegido.saldoUsdCentavos) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' y ')}
                 </span>
                 {elegido.limiteCentavos !== null
                   ? `, y su tope es ${formatearARS(elegido.limiteCentavos)}.`

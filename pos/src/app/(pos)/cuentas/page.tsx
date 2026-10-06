@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { puede } from '@/auth/permisos';
 import { db } from '@/db';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
 import { cuentasConSaldo, descuadres, extracto } from '@/gastos/cuentas';
 import FormularioTransferencia from './formulario-transferencia';
@@ -42,7 +42,21 @@ export default async function PaginaCuentas({
   const movimientos = elegida ? await extracto(db, elegida.id, 40) : [];
   const problemas = await descuadres(db);
 
-  const total = cuentas.reduce((n, c) => n + c.saldoCentavos, 0);
+  /*
+   * El total es de las cuentas en pesos. El cajón de dólares va aparte.
+   *
+   * Sumado al resto, sus centavos de dólar entraban al total como si fueran
+   * centavos de peso: un total que no es plata de nadie y que además cambia de
+   * sentido cada vez que el dólar se mueve. Son dos monedas y son dos totales.
+   */
+  const enDolares = (tipo: string) => tipo === 'dolares';
+  const cifraDe = (tipo: string) => (enDolares(tipo) ? formatearUSD : formatearARS);
+  const total = cuentas
+    .filter((c) => !enDolares(c.tipo))
+    .reduce((n, c) => n + c.saldoCentavos, 0);
+  const totalUsd = cuentas
+    .filter((c) => enDolares(c.tipo))
+    .reduce((n, c) => n + c.saldoCentavos, 0);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -100,7 +114,7 @@ export default async function PaginaCuentas({
                 c.saldoCentavos < 0 ? 'text-(--color-error)' : ''
               }`}
             >
-              {formatearARS(c.saldoCentavos)}
+              {cifraDe(c.tipo)(c.saldoCentavos)}
             </p>
             <p className="text-xs text-(--color-tinta-suave)">
               {c.movimientos === 0
@@ -113,9 +127,15 @@ export default async function PaginaCuentas({
 
       <div className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-sm text-(--color-tinta-suave)">Total en todas las cuentas</span>
+          <span className="text-sm text-(--color-tinta-suave)">Total en las cuentas en pesos</span>
           <span className="tabular text-xl font-bold">{formatearARS(total)}</span>
         </div>
+        {totalUsd > 0 ? (
+          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm text-(--color-tinta-suave)">Y en dólares, aparte</span>
+            <span className="tabular text-xl font-bold">{formatearUSD(totalUsd)}</span>
+          </div>
+        ) : null}
       </div>
 
       <FormularioTransferencia cuentas={cuentas} />
@@ -151,10 +171,10 @@ export default async function PaginaCuentas({
                     }`}
                   >
                     {m.montoCentavos < 0 ? '−' : '+'}
-                    {formatearARS(Math.abs(m.montoCentavos))}
+                    {cifraDe(elegida.tipo)(Math.abs(m.montoCentavos))}
                   </span>
                   <span className="tabular w-full text-right text-xs text-(--color-tinta-suave)">
-                    quedó en {formatearARS(m.saldoCentavos)}
+                    quedó en {cifraDe(elegida.tipo)(m.saldoCentavos)}
                   </span>
                 </li>
               ))}

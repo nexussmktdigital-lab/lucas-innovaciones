@@ -47,7 +47,8 @@ import {
   type VarianteVendible,
 } from './carrito';
 import { anotarDeuda } from '@/fiado/cuenta';
-import { crearPlan, type Frecuencia } from '@/fiado/plan';
+import { crearPlan, type Cadencia } from '@/fiado/plan';
+import { pesosAUsdExacto } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import { recargoDeTienda } from '@/precios/config';
 import { precioDeMostrador } from '@/precios/mostrador';
@@ -141,7 +142,7 @@ export interface SolicitudDeVenta {
    * el fiado de toda la vida y sigue siendo lo correcto para los $5.000 del
    * vecino. El plan es para la compra grande.
    */
-  plan?: { frecuencia: Frecuencia; cuotas: number } | null;
+  plan?: { cadencia: Cadencia; cuotas: number } | null;
   ip?: string | null;
 }
 
@@ -160,11 +161,21 @@ export interface VentaConfirmada {
 }
 
 /** Cuenta monetaria que corresponde a cada medio de pago. */
-export function tipoDeCuentaPara(medio: MedioPago): 'efectivo' | 'banco' | 'mercadopago' | null {
+export function tipoDeCuentaPara(
+  medio: MedioPago,
+): 'efectivo' | 'banco' | 'mercadopago' | 'dolares' | null {
   switch (medio) {
     case 'efectivo':
-    case 'dolares':
       return 'efectivo';
+    /*
+     * Los dólares tienen cajón propio, y antes caían en el de pesos.
+     *
+     * Era un error que no se veía porque el medio nunca llegó a la pantalla de
+     * cobro: mil dólares entraban al cajón de pesos como mil pesos, y el saldo
+     * del efectivo quedaba mal por la diferencia entera.
+     */
+    case 'dolares':
+      return 'dolares';
     case 'transferencia':
     case 'debito':
     case 'credito':
@@ -621,6 +632,8 @@ export async function confirmarVenta(
         medio: p.medio,
         monetaryAccountId: p.monetaryAccountId ?? null,
         montoCentavos: p.montoCentavos,
+        montoUsdCentavos: p.medio === 'dolares' ? (p.montoUsdCentavos ?? null) : null,
+        cotizacionCentavos: p.medio === 'dolares' ? (p.cotizacionCentavos ?? null) : null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,
@@ -638,9 +651,39 @@ export async function confirmarVenta(
       if (!solicitud.clienteId) {
         throw new ErrorVenta('Para fiar hace falta elegir un cliente.', 'datos_invalidos');
       }
+
+      /*
+       * **Lo que se vende en dólares se debe en dólares** (D62).
+       *
+       * Es la razón de todo esto: el comprobante de un iPhone dice «3 cuotas de
+       * US$ 200» porque así se pactó. Si la deuda quedara en pesos del día de
+       * la venta, el papel y el sistema se separan en la primera corrida del
+       * dólar y el sistema le dice «pagaste todo» a alguien que todavía debe.
+       *
+       * El carrito tiene que estar **entero** en dólares. Uno mezclado —un
+       * iPhone y una funda— queda en pesos: inventar una deuda en dólares sobre
+       * un carrito que tiene cosas en pesos sería hacer que la funda también
+       * siga al dólar, que nadie pactó.
+       */
+      const ventaEnDolares = lineas.length > 0 && lineas.every((l) => l.monedaOriginal === 'USD');
+
+      if (ventaEnDolares && !tcCentavos) {
+        throw new ErrorVenta(
+          'No hay cotización cargada y esta venta se fía en dólares. Cargá el tipo de cambio antes de vender.',
+          'datos_invalidos',
+        );
+      }
+
+      // Lo fiado viene en pesos, que es como se cobra. En dólares, la deuda son
+      // los dólares que esos pesos valen al cambio de esta venta, sin redondear.
+      const deudaCentavos = ventaEnDolares
+        ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
+        : fiadoCentavos;
+
       const deuda = await anotarDeuda(tx, {
         customerId: solicitud.clienteId,
-        montoCentavos: fiadoCentavos,
+        montoCentavos: deudaCentavos,
+        moneda: ventaEnDolares ? 'USD' : 'ARS',
         saleId: ventaId,
         numero,
         usuarioId: solicitud.vendedorId,
@@ -658,9 +701,10 @@ export async function confirmarVenta(
         await crearPlan(tx, {
           creditAccountId: deuda.cuentaId,
           saleId: ventaId,
-          montoCentavos: fiadoCentavos,
+          montoCentavos: deudaCentavos,
           cantidad: solicitud.plan.cuotas,
-          frecuencia: solicitud.plan.frecuencia,
+          cadencia: solicitud.plan.cadencia,
+          moneda: ventaEnDolares ? 'USD' : 'ARS',
           desdeISO: fechaLocalISO(solicitud.diferida?.capturadaEn ?? new Date()),
           descripcion: `Venta ${numero}`,
         });
@@ -731,7 +775,18 @@ export async function confirmarVenta(
       const vueltoDeEstePago = esEfectivo ? Math.min(vueltoPorDescontar, pago.montoCentavos) : 0;
       vueltoPorDescontar -= vueltoDeEstePago;
 
-      const monto = pago.montoCentavos - vueltoDeEstePago;
+      /*
+       * Al cajón de dólares entran DÓLARES, no su equivalente en pesos: su
+       * saldo está en centavos de dólar. Meterle los pesos lo dejaría diciendo
+       * que hay un millón y medio de billetes verdes.
+       *
+       * El vuelto nunca se descuenta de acá: si hay que dar vuelto, sale del
+       * cajón de pesos, que es de donde sale siempre.
+       */
+      const monto =
+        pago.medio === 'dolares'
+          ? (pago.montoUsdCentavos ?? 0)
+          : pago.montoCentavos - vueltoDeEstePago;
       if (monto === 0) continue;
 
       await tx.insert(cashMovements).values({
@@ -850,7 +905,7 @@ export async function confirmarVenta(
 
 async function cuentaPorTipo(
   tx: BaseDatos,
-  tipo: 'efectivo' | 'banco' | 'mercadopago',
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares',
 ): Promise<string | null> {
   const [cuenta] = await tx
     .select({ id: monetaryAccounts.id })

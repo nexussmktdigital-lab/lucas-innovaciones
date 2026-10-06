@@ -267,7 +267,18 @@ export type MedioPago =
 
 export interface Pago {
   medio: MedioPago;
+  /** Siempre en pesos: es lo que suma contra el total de la venta. */
   montoCentavos: number;
+  /**
+   * Solo `dolares`: los billetes que entraron, en centavos de dólar.
+   *
+   * Van los dos datos —los dólares y los pesos que valen— porque son dos hechos
+   * distintos. El cajón de dólares se mueve con este; el total de la venta, con
+   * `montoCentavos`.
+   */
+  montoUsdCentavos?: number | null;
+  /** Solo `dolares`: la cotización con la que se convirtió, congelada. */
+  cotizacionCentavos?: number | null;
   monetaryAccountId?: string | null;
   /** Solo tarjeta: el Posnet es un aparato aparte, el POS solo registra. */
   marcaTarjeta?: string | null;
@@ -346,6 +357,24 @@ export function problemasDelCobro(
       enCero === 1
         ? 'Hay un pago sin monto. Escribilo o quitá ese renglón.'
         : `Hay ${enCero} pagos sin monto. Escribilos o quitá esos renglones.`,
+    );
+    return problemas;
+  }
+
+  /*
+   * Un pago en dólares tiene que traer los dólares y la cotización.
+   *
+   * La base lo exige con un check, pero ahí ya es tarde: la venta revienta
+   * con el cliente enfrente y un mensaje de Postgres. Acá se dice qué falta.
+   */
+  const dolaresSinDatos = pagos.filter(
+    (p) =>
+      p.medio === 'dolares' &&
+      (!p.montoUsdCentavos || p.montoUsdCentavos <= 0 || !p.cotizacionCentavos),
+  ).length;
+  if (dolaresSinDatos > 0) {
+    problemas.push(
+      'Falta cuántos dólares entraron. Si no hay cotización cargada, cargala en Dólar (F9).',
     );
     return problemas;
   }

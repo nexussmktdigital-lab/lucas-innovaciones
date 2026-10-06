@@ -13,12 +13,14 @@ import {
   cashSessions,
   creditAccounts,
   creditPayments,
+  exchangeRates,
   customers,
   monetaryAccounts,
   products,
   users,
 } from '@/db/schema';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
+import { pesosAUsdExacto, usdAPesos } from '@/lib/dinero';
 import {
   cobrarFiado,
   cuentaDe,
@@ -29,6 +31,7 @@ import {
   ponerLimite,
   totalFiado,
 } from './cuenta';
+import { cadencia, cuotasDeCuenta } from './plan';
 import { anularVenta } from '@/ventas/anular';
 import {
   devolucionesPendientes,
@@ -602,7 +605,11 @@ describe('consultas', () => {
       usuarioId: duenioId,
     });
 
-    expect(await totalFiado(db)).toEqual({ totalCentavos: 6_000_000, clientes: 2 });
+    expect(await totalFiado(db)).toEqual({
+      totalCentavos: 6_000_000,
+      totalUsdCentavos: 0,
+      clientes: 2,
+    });
   });
 
   it('los movimientos muestran lo que se fió y lo que se cobró, juntos', async () => {
@@ -626,6 +633,321 @@ describe('consultas', () => {
       tipo: 'venta',
       descripcion: `Venta ${venta.numero}`,
       montoCentavos: 1_000_000,
+    });
+  });
+});
+
+describe('lo que se vende en dólares se debe en dólares (D62)', () => {
+  /** $1.571 por dólar: la cotización con la que se hacen todas estas cuentas. */
+  const TC = 1_571_00;
+  let iphoneId: string;
+  let dolaresId: string;
+
+  beforeEach(async () => {
+    await db.insert(exchangeRates).values({
+      valorCentavos: TC,
+      vigenteDesde: new Date(),
+      origen: 'infodolar',
+    });
+
+    const [p] = await db
+      .insert(products)
+      .values({
+        nombre: 'iPhone 15 Pro Max 256GB',
+        moneda: 'USD',
+        precioUsdCentavos: 1_500_00,
+        precioCentavos: usdAPesos(1_500_00, TC),
+        stock: 1,
+      })
+      .returning();
+    iphoneId = p!.id;
+
+    const [c] = await db
+      .insert(monetaryAccounts)
+      .values({ nombre: 'Caja en dólares', tipo: 'dolares' })
+      .returning();
+    dolaresId = c!.id;
+  });
+
+  /** Vende el iPhone y fía `fiadoCentavos` pesos; el resto entra en efectivo. */
+  async function venderIphoneFiando(fiadoCentavos: number) {
+    const total = usdAPesos(1_500_00, TC);
+    return confirmarVenta(db, {
+      lineas: [{ productId: iphoneId, cantidad: 1 }],
+      pagos: [
+        { medio: 'efectivo', montoCentavos: total - fiadoCentavos, monetaryAccountId: cajaId },
+        { medio: 'cuenta_corriente', montoCentavos: fiadoCentavos },
+      ],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `usd-${Math.random()}`,
+    });
+  }
+
+  it('la deuda queda en dólares, no en pesos', async () => {
+    // Es el cambio entero: el comprobante dice dólares porque así se pactó, y
+    // la base ahora dice lo mismo.
+    await venderIphoneFiando(314_200_00);
+
+    const cuenta = await cuentaDe(db, clienteId);
+    expect(cuenta!.saldoCentavos).toBe(0);
+    expect(cuenta!.saldoUsdCentavos).toBe(pesosAUsdExacto(314_200_00, TC));
+  });
+
+  it('la deuda en dólares no se mueve cuando se mueve el dólar', async () => {
+    /*
+     * El motivo de todo esto. Con la deuda en pesos del día de la venta, el
+     * cliente que vuelve con el dólar más caro debía menos de lo que firmó y
+     * el sistema le decía «pagaste todo» cuando faltaba.
+     */
+    await venderIphoneFiando(314_200_00);
+    const antes = (await cuentaDe(db, clienteId))!.saldoUsdCentavos;
+
+    await db.insert(exchangeRates).values({
+      valorCentavos: 1_800_00,
+      vigenteDesde: new Date(Date.now() + 1000),
+      origen: 'infodolar',
+    });
+
+    expect((await cuentaDe(db, clienteId))!.saldoUsdCentavos).toBe(antes);
+  });
+
+  it('un carrito mezclado NO se fía en dólares', async () => {
+    /*
+     * Un iPhone y una funda en la misma venta: la funda se pactó en pesos y
+     * hacerla seguir al dólar sería cambiarle el precio a algo que nadie
+     * acordó así. La venta mezclada queda en pesos, entera.
+     */
+    const total = usdAPesos(1_500_00, TC) + 500_000;
+    await confirmarVenta(db, {
+      lineas: [
+        { productId: iphoneId, cantidad: 1 },
+        { productId: vidrioId, cantidad: 1 },
+      ],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: total }],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `mezcla-${Math.random()}`,
+    });
+
+    const cuenta = await cuentaDe(db, clienteId);
+    expect(cuenta!.saldoUsdCentavos).toBe(0);
+    expect(cuenta!.saldoCentavos).toBe(total);
+  });
+
+  it('las dos deudas conviven y no se suman', async () => {
+    // Un cliente que compró un iPhone y después un vidrio debe dos cosas
+    // distintas. Juntarlas obligaría a elegir una cotización.
+    await venderIphoneFiando(314_200_00);
+    await fiar(2, 'vidrios-aparte');
+
+    const cuenta = await cuentaDe(db, clienteId);
+    expect(cuenta!.saldoUsdCentavos).toBe(pesosAUsdExacto(314_200_00, TC));
+    expect(cuenta!.saldoCentavos).toBe(1_000_000);
+  });
+
+  it('se cobra en billetes verdes: la deuda baja en dólares y el cajón verde sube', async () => {
+    await venderIphoneFiando(314_200_00);
+    const deuda = (await cuentaDe(db, clienteId))!.saldoUsdCentavos;
+
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 100_00,
+      monedaDeuda: 'USD',
+      medio: 'dolares',
+      monetaryAccountId: dolaresId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: `cobro-usd-${Math.random()}`,
+    });
+
+    expect(r.saldoCentavos).toBe(deuda - 100_00);
+    // Mismo signo en los dos lados: no hubo conversión.
+    expect(r.montoCajaCentavos).toBe(100_00);
+
+    const [verde] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, dolaresId));
+    expect(verde!.saldoCentavos).toBe(100_00);
+  });
+
+  it('se cobra en pesos: cancela dólares y entran los pesos de hoy', async () => {
+    /*
+     * El caso que más va a pasar: el cliente debe dólares y paga con una
+     * transferencia. Son dos números —los dólares que se cancelan y los pesos
+     * que entraron— y los dos quedan guardados.
+     */
+    await venderIphoneFiando(314_200_00);
+    const deuda = (await cuentaDe(db, clienteId))!.saldoUsdCentavos;
+
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 137_00,
+      monedaDeuda: 'USD',
+      cotizacionCentavos: TC,
+      medio: 'efectivo',
+      monetaryAccountId: cajaId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: `cobro-pesos-${Math.random()}`,
+    });
+
+    expect(r.saldoCentavos).toBe(deuda - 137_00);
+
+    /*
+     * US$ 137 al dólar de $1.571 son **$215.227 exactos**.
+     *
+     * El monto está elegido para que el redondeo al millar de `usdAPesos` dé
+     * distinto —$215.000— porque con cifras redondas los dos coinciden y el
+     * test no prueba nada. La primera versión usaba US$ 100 a $1.800 y pasaba
+     * igual con el redondeo puesto.
+     *
+     * Son $227 de diferencia en un cobro. Doscientas veces por año, siempre
+     * para el mismo lado.
+     */
+    expect(r.montoCajaCentavos).toBe(215_227_00);
+    expect(usdAPesos(137_00, TC)).not.toBe(r.montoCajaCentavos);
+  });
+
+  it('sin cotización, cobrar una deuda en dólares con otro medio se frena', async () => {
+    await venderIphoneFiando(314_200_00);
+
+    await rechazaCon(
+      cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 100_00,
+        monedaDeuda: 'USD',
+        medio: 'transferencia',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: `sin-tc-${Math.random()}`,
+      }),
+      /cotizaci/i,
+    );
+  });
+
+  it('pagar dólares no marca pagada una cuota en pesos', async () => {
+    /*
+     * La trampa de tener las dos deudas en la misma cuenta. Sin filtrar por
+     * moneda, cobrar US$ 100 encuentra la cuota en pesos más vieja —que para la
+     * aritmética es «10000 centavos»— y la marca pagada. La deuda en pesos se
+     * borra sola y nadie se entera.
+     *
+     * Hace falta que la deuda en pesos TENGA cuotas: con un saldo abierto no
+     * hay nada que imputar y el filtro no se ejercita. La primera versión de
+     * este test no las tenía y pasaba con el filtro sacado.
+     */
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrioId, cantidad: 2 }],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `pesos-con-plan-${Math.random()}`,
+      plan: { cadencia: cadencia('mensual'), cuotas: 2 },
+    });
+    await venderIphoneFiando(314_200_00);
+
+    await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 100_00,
+      monedaDeuda: 'USD',
+      medio: 'dolares',
+      monetaryAccountId: dolaresId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: `no-toca-pesos-${Math.random()}`,
+    });
+
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(1_000_000);
+
+    // Y ninguna cuota en pesos quedó tocada.
+    const enPesos = await cuotasDeCuenta(db, (await cuentaDe(db, clienteId))!.id, 'ARS');
+    expect(enPesos).toHaveLength(2);
+    expect(enPesos.every((c) => c.pagadoCentavos === 0)).toBe(true);
+  });
+
+  it('no se puede pagar más dólares de los que se deben', async () => {
+    await venderIphoneFiando(314_200_00);
+
+    await rechazaCon(
+      cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 10_000_00,
+        monedaDeuda: 'USD',
+        medio: 'dolares',
+        monetaryAccountId: dolaresId,
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: `de-mas-${Math.random()}`,
+      }),
+      /US\$/,
+    );
+  });
+
+  it('el que debe SOLO dólares aparece en la lista de Fiado', async () => {
+    /*
+     * El agujero que dejaba el cambio a medio hacer: la lista filtraba por
+     * `saldo_centavos > 0` y el que compró un iPhone en cuotas tiene ese saldo
+     * en cero. La deuda existía en la base y no la veía nadie, así que no la
+     * cobraba nadie.
+     */
+    await venderIphoneFiando(314_200_00);
+
+    const lista = await deudores(db);
+
+    expect(lista).toHaveLength(1);
+    expect(lista[0]!.saldoCentavos).toBe(0);
+    expect(lista[0]!.saldoUsdCentavos).toBe(pesosAUsdExacto(314_200_00, TC));
+
+    // Y cuenta como cliente con saldo en el encabezado: «nadie debe nada» con un
+    // iPhone sin cobrar es la misma mentira, más grande.
+    expect(await totalFiado(db)).toEqual({
+      totalCentavos: 0,
+      totalUsdCentavos: pesosAUsdExacto(314_200_00, TC),
+      clientes: 1,
+    });
+  });
+
+  it('el total por cobrar lleva las dos monedas separadas', async () => {
+    // Nunca sumadas: un total mezclado sería plata que no es de nadie, y
+    // convertirlo acá sería congelar una cotización que cambia cada dos horas.
+    await venderIphoneFiando(314_200_00);
+    await fiar(2, 'pesos-y-dolares');
+
+    expect(await totalFiado(db)).toEqual({
+      totalCentavos: 1_000_000,
+      totalUsdCentavos: pesosAUsdExacto(314_200_00, TC),
+      clientes: 1,
+    });
+  });
+
+  it('el que terminó de pagar los dólares sale de la lista', async () => {
+    await venderIphoneFiando(314_200_00);
+    const deuda = (await cuentaDe(db, clienteId))!.saldoUsdCentavos;
+
+    await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: deuda,
+      monedaDeuda: 'USD',
+      medio: 'dolares',
+      monetaryAccountId: dolaresId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: `saldar-usd-${Math.random()}`,
+    });
+
+    expect(await deudores(db)).toHaveLength(0);
+    expect(await totalFiado(db)).toEqual({
+      totalCentavos: 0,
+      totalUsdCentavos: 0,
+      clientes: 0,
     });
   });
 });

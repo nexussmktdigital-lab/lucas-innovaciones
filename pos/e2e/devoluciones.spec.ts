@@ -57,19 +57,13 @@ async function abrirCaja(page: Page, monto: string) {
   await expect(page.getByText('Turno abierto')).toBeVisible();
 }
 
-/** Cierra el turno escribiendo lo que el sistema espera, para no descuadrar. */
+/** Cierra el turno. Desde que se sacó el arqueo es confirmar y listo. */
 async function cerrarCaja(page: Page) {
   await page.goto('/caja');
   if (!(await page.getByText('Turno abierto').isVisible().catch(() => false))) return;
 
-  const esperado = aCentavosDeTexto(
-    await page.getByText('Efectivo esperado').locator('..').innerText(),
-  );
-
   await page.getByRole('button', { name: 'Cerrar el turno' }).click();
   const form = page.getByRole('form', { name: 'Cerrar el turno' });
-  await form.getByRole('button', { name: 'Prefiero escribir el total' }).click();
-  await form.getByLabel('Efectivo contado').fill(String(esperado / 100));
   await form.getByRole('button', { name: 'Cerrar caja' }).click();
 
   await expect(page.getByRole('button', { name: 'Imprimir' })).toBeVisible({ timeout: 15_000 });

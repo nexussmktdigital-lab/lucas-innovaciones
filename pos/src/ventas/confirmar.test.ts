@@ -23,6 +23,7 @@ import {
   syncQueue,
   users,
 } from '@/db/schema';
+import { usdAPesos } from '@/lib/dinero';
 import { confirmarVenta, ErrorVenta, type SolicitudDeVenta } from './confirmar';
 
 const TC = 156_100; // $1.561,00
@@ -31,6 +32,7 @@ let db: TestDb;
 let vendedorId: string;
 let cajaId: string;
 let bancoId: string;
+let dolaresId: string;
 let sesionId: string;
 let vidrioId: string;
 let iphoneId: string;
@@ -55,10 +57,12 @@ beforeEach(async () => {
     .values([
       { nombre: 'Caja en efectivo', tipo: 'efectivo' },
       { nombre: 'Banco', tipo: 'banco' },
+      { nombre: 'Caja en dólares', tipo: 'dolares' },
     ])
     .returning();
   cajaId = cuentas[0]!.id;
   bancoId = cuentas[1]!.id;
+  dolaresId = cuentas[2]!.id;
 
   const [s] = await db
     .insert(cashSessions)
@@ -983,5 +987,189 @@ describe('precio escrito en el mostrador', () => {
       .preciosEscritos;
     expect(escritos).toHaveLength(1);
     expect(escritos[0]!.centavos).toBe(620_000);
+  });
+});
+
+describe('cobro en dólares', () => {
+  /*
+   * La venta de verdad: el iPhone del fixture sale US$ 1.370 (que al dólar del
+   * fixture son $2.139.000), el cliente entrega mil dólares en billetes y el
+   * resto queda a cuenta. Es, textualmente, el caso que pidió el local.
+   */
+  const MIL_USD = 1_000_00;
+  const EN_PESOS = usdAPesos(MIL_USD, TC);
+
+  function pagoEnDolares(usdCentavos = MIL_USD) {
+    return {
+      medio: 'dolares' as const,
+      montoCentavos: usdAPesos(usdCentavos, TC),
+      montoUsdCentavos: usdCentavos,
+      cotizacionCentavos: TC,
+      monetaryAccountId: dolaresId,
+    };
+  }
+
+  function ventaDelIphone(resto: SolicitudDeVenta['pagos'][number]) {
+    return solicitud({
+      lineas: [{ productId: iphoneId, cantidad: 1 }],
+      clienteId,
+      pagos: [pagoEnDolares(), resto],
+    });
+  }
+
+  it('los billetes van al cajón de dólares, no al de pesos', async () => {
+    /*
+     * Es el error que esto vino a arreglar: `tipoDeCuentaPara('dolares')`
+     * devolvía 'efectivo', así que mil dólares se sumaban al cajón de pesos
+     * como si fueran mil pesos.
+     */
+    const [antesPesos] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+
+    await confirmarVenta(
+      db,
+      ventaDelIphone({ medio: 'cuenta_corriente', montoCentavos: 213_900_000 - EN_PESOS }),
+    );
+
+    const [verde] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, dolaresId));
+    const [pesos] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+
+    // Al cajón verde entran DÓLARES, no su equivalente en pesos.
+    expect(verde!.saldoCentavos).toBe(MIL_USD);
+    // Y el de pesos no se movió: por ahí no pasó nada.
+    expect(pesos!.saldoCentavos).toBe(antesPesos!.saldoCentavos);
+  });
+
+  it('sin cuenta indicada, el servidor igual los manda al cajón verde', async () => {
+    /*
+     * Este es el test que de verdad sostiene el arreglo. Los otros pasan la
+     * cuenta explícita —como hace la pantalla— así que `tipoDeCuentaPara` ni se
+     * consulta: con la función rota seguían en verde. Acá no se manda ninguna,
+     * que es cuando el servidor tiene que decidir solo, y es el caso en que
+     * mandaba los dólares al cajón de pesos.
+     */
+    const [antesPesos] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+
+    await confirmarVenta(
+      db,
+      solicitud({
+        lineas: [{ productId: iphoneId, cantidad: 1 }],
+        clienteId,
+        pagos: [
+          {
+            medio: 'dolares',
+            montoCentavos: EN_PESOS,
+            montoUsdCentavos: MIL_USD,
+            cotizacionCentavos: TC,
+            // Sin `monetaryAccountId`: lo resuelve el servidor.
+          },
+          { medio: 'cuenta_corriente', montoCentavos: 213_900_000 - EN_PESOS },
+        ],
+      }),
+    );
+
+    const [verde] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, dolaresId));
+    const [pesos] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, cajaId));
+
+    expect(verde!.saldoCentavos).toBe(MIL_USD);
+    expect(pesos!.saldoCentavos).toBe(antesPesos!.saldoCentavos);
+  });
+
+  it('guarda los dólares y la cotización, además del monto en pesos', async () => {
+    // Son dos hechos distintos: lo que el cliente entregó y lo que valía ese
+    // día. Sin los dos, cuando cambia el dólar ya no se sabe cuántos billetes
+    // habían entrado.
+    const r = await confirmarVenta(
+      db,
+      ventaDelIphone({ medio: 'cuenta_corriente', montoCentavos: 213_900_000 - EN_PESOS }),
+    );
+
+    const pagos = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
+    const enDolares = pagos.find((p) => p.medio === 'dolares');
+
+    expect(enDolares!.montoUsdCentavos).toBe(MIL_USD);
+    expect(enDolares!.cotizacionCentavos).toBe(TC);
+    expect(enDolares!.montoCentavos).toBe(EN_PESOS);
+  });
+
+  it('se combina con transferencia en la misma venta', async () => {
+    const r = await confirmarVenta(
+      db,
+      ventaDelIphone({
+        medio: 'transferencia',
+        montoCentavos: 213_900_000 - EN_PESOS,
+        monetaryAccountId: bancoId,
+      }),
+    );
+
+    const pagos = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
+    expect(pagos).toHaveLength(2);
+
+    const [verde] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, dolaresId));
+    expect(verde!.saldoCentavos).toBe(MIL_USD);
+
+    // Y lo transferido fue al banco, en pesos.
+    const [banco] = await db
+      .select()
+      .from(monetaryAccounts)
+      .where(eq(monetaryAccounts.id, bancoId));
+    expect(banco!.saldoCentavos).toBe(213_900_000 - EN_PESOS);
+  });
+
+  it('la base rechaza un pago en dólares sin los dólares', async () => {
+    /*
+     * El check de `sale_payments` es la última red: sin él, un pago en dólares
+     * al que le falte el dato queda guardado como un pago en pesos cualquiera y
+     * el cajón verde no se entera nunca.
+     */
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          pagos: [{ medio: 'dolares', montoCentavos: 1_000_000, monetaryAccountId: dolaresId }],
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('un medio que no es dólares no guarda cotización aunque se la manden', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        pagos: [
+          {
+            medio: 'efectivo',
+            montoCentavos: 1_000_000,
+            montoUsdCentavos: 500_00,
+            cotizacionCentavos: TC,
+            monetaryAccountId: cajaId,
+          },
+        ],
+      }),
+    );
+
+    const [pago] = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
+    expect(pago!.montoUsdCentavos).toBeNull();
+    expect(pago!.cotizacionCentavos).toBeNull();
   });
 });

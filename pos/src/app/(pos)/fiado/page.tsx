@@ -3,12 +3,13 @@ import { auth } from '@/auth';
 import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { config } from '@/lib/config';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO, formatearFecha } from '@/lib/fecha';
 import { sesionAbierta } from '@/caja/sesion';
 import { deudores, totalFiado } from '@/fiado/cuenta';
-import { estadosDeClientes } from '@/fiado/plan';
+import { elMasUrgente, estadosDeClientes, URGENCIA } from '@/fiado/plan';
 import { devolucionesPendientes } from '@/fiado/devoluciones';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { recordatorioDe, ultimosRecordatorios } from '@/whatsapp/mensajes';
 import FilaDeudor from './fila-deudor';
@@ -44,16 +45,32 @@ export default async function PaginaFiado() {
   );
 
   // El semáforo: quién está atrasado, a quién le vence una cuota y a quién
-  // todavía le falta. Una sola consulta para toda la lista, con el día del
+  // todavía le falta. Una consulta por moneda para toda la lista, con el día del
   // calendario del local —no el del servidor, que a las 21:30 ya es mañana.
+  //
+  // Dos consultas y no una porque son dos semáforos: las cuotas en dólares de un
+  // iPhone no se mezclan con las cuotas en pesos de un vidrio templado (D62).
   const hoy = fechaLocalISO();
-  const estados = await estadosDeClientes(
-    db,
-    lista.map((d) => d.customerId),
-    hoy,
-  );
+  const ids = lista.map((d) => d.customerId);
+  const estados = await estadosDeClientes(db, ids, hoy, 'ARS');
+  const estadosUsd = await estadosDeClientes(db, ids, hoy, 'USD');
 
-  const atrasados = [...estados.values()].filter((e) => e.color === 'rojo');
+  // Para cobrar una cuota en dólares con otro medio —o una en pesos con billetes
+  // verdes— hace falta la cotización del día. Si no hay, la pantalla lo dice en
+  // vez de dejar que el cobro falle recién al apretar el botón.
+  const cotizacion = await cotizacionVigente(db);
+
+  /** De cuál de las dos deudas habla la tarjeta: de la que más apura. */
+  const urgenciaDe = (id: string) =>
+    elMasUrgente(estados.get(id) ?? null, estadosUsd.get(id) ?? null);
+
+  const atrasados = ids.map(urgenciaDe).filter((u) => u.estado?.color === 'rojo');
+  const vencidoArs = atrasados
+    .filter((u) => u.moneda === 'ARS')
+    .reduce((s, u) => s + (u.estado?.vencidoCentavos ?? 0), 0);
+  const vencidoUsd = atrasados
+    .filter((u) => u.moneda === 'USD')
+    .reduce((s, u) => s + (u.estado?.vencidoCentavos ?? 0), 0);
 
   /*
    * El orden de la lista es el orden en que hay que llamar.
@@ -62,16 +79,21 @@ export default async function PaginaFiado() {
    * llamo hoy»: un atrasado de $15.000 importa más que uno al día de $400.000.
    * Primero el semáforo, y dentro de cada color, lo más viejo y lo más grande.
    */
-  const URGENCIA: Record<string, number> = { rojo: 0, amarillo: 1, gris: 2, verde: 3 };
   const ordenada = [...lista].sort((a, b) => {
-    const ea = estados.get(a.customerId);
-    const eb = estados.get(b.customerId);
-    const ua = URGENCIA[ea?.color ?? 'gris'] ?? 2;
-    const ub = URGENCIA[eb?.color ?? 'gris'] ?? 2;
+    const ea = urgenciaDe(a.customerId).estado;
+    const eb = urgenciaDe(b.customerId).estado;
+    const ua = URGENCIA[ea?.color ?? 'gris'];
+    const ub = URGENCIA[eb?.color ?? 'gris'];
     if (ua !== ub) return ua - ub;
     // Dentro del rojo, primero el que hace más que se pasó.
     if (ua === 0) return (eb?.diasDeAtraso ?? 0) - (ea?.diasDeAtraso ?? 0);
-    return b.saldoCentavos - a.saldoCentavos;
+    // Entre iguales, el que debe más. El que debe dólares va antes que el que
+    // debe pesos solo si debe más plata; con la cotización del día alcanza para
+    // ponerlos en un mismo orden sin guardar esa conversión en ninguna parte.
+    const tc = cotizacion?.valorCentavos ?? 0;
+    const peso = (d: (typeof lista)[number]) =>
+      d.saldoCentavos + (tc > 0 ? (d.saldoUsdCentavos * tc) / 100 : d.saldoUsdCentavos);
+    return peso(b) - peso(a);
   });
 
   return (
@@ -85,11 +107,18 @@ export default async function PaginaFiado() {
               : `${total.clientes} ${total.clientes === 1 ? 'cliente' : 'clientes'} con saldo · ordenados por urgencia`}
           </p>
         </div>
+        {/* Los dos totales, uno debajo del otro y nunca sumados: pesos y dólares
+            son dos deudas distintas y un solo número sería mentira. */}
         <div className="text-right">
           <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
             Por cobrar
           </p>
           <p className="cifra text-4xl leading-none">{formatearARS(total.totalCentavos)}</p>
+          {total.totalUsdCentavos > 0 ? (
+            <p className="cifra mt-1 text-2xl leading-none text-(--color-tinta-media)">
+              {formatearUSD(total.totalUsdCentavos)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -103,7 +132,9 @@ export default async function PaginaFiado() {
           <span>
             · deben{' '}
             <span className="tabular">
-              {formatearARS(atrasados.reduce((s, e) => s + e.vencidoCentavos, 0))}
+              {vencidoArs > 0 ? formatearARS(vencidoArs) : null}
+              {vencidoArs > 0 && vencidoUsd > 0 ? ' y ' : null}
+              {vencidoUsd > 0 ? formatearUSD(vencidoUsd) : null}
             </span>{' '}
             entre {atrasados.length === 1 ? 'ese' : 'todos'}.
           </span>
@@ -167,10 +198,16 @@ export default async function PaginaFiado() {
               key={d.customerId}
               deudor={d}
               estado={estados.get(d.customerId) ?? null}
+              estadoUsd={estadosUsd.get(d.customerId) ?? null}
               hayCaja={Boolean(caja)}
+              hayCotizacion={Boolean(cotizacion)}
               puedeFiar={puedeFiar}
               recordatorio={recordatorioDe(
-                { ...d, estado: estados.get(d.customerId) ?? null },
+                {
+                  ...d,
+                  estado: urgenciaDe(d.customerId).estado,
+                  monedaDelPlan: urgenciaDe(d.customerId).moneda,
+                },
                 ajustes,
               )}
               ultimoAviso={avisos.get(d.customerId) ?? null}
@@ -183,7 +220,9 @@ export default async function PaginaFiado() {
         <p className="text-sm text-(--color-tinta-suave)">
           Cobrar acá suma la plata a la caja del turno, igual que una venta. Lo que dice «de la
           libreta» es un saldo que se cargó a mano al migrar las fichas de papel, sin venta detrás.
-          Última actividad: la fecha de la última compra fiada o del último pago.
+          Última actividad: la fecha de la última compra fiada o del último pago. Lo que se vendió
+          en dólares se debe en dólares: esa deuda se muestra aparte y se cobra aparte, nunca
+          sumada con la de pesos.
         </p>
       ) : null}
 

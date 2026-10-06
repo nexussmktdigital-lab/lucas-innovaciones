@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aCentavos, formatearARS } from '@/lib/dinero';
+import { aCentavos, formatearARS, formatearUSD, pesosAUsdExacto, usdAPesos } from '@/lib/dinero';
 import PlanDeCuotas, { type PlanElegido } from './plan-de-cuotas';
 import {
   calcularCobro,
@@ -25,6 +25,8 @@ interface Props {
   /** Si puede fiar. Hoy el vendedor también: `fiado.crear` no es del dueño. */
   puedeFiar: boolean;
   cuentas: Cuenta[];
+  /** La cotización del día. Sin ella no se puede cobrar en dólares. */
+  tcCentavos: number | null;
   onCerrar: () => void;
   onConfirmar: (datos: Parameters<typeof registrarVenta>[0]) => Promise<ResultadoDelCobro>;
 }
@@ -42,6 +44,14 @@ const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'credito', tipoCuenta: 'banco' },
   { medio: 'mercadopago', tipoCuenta: 'mercadopago' },
   { medio: 'cheque', tipoCuenta: 'banco' },
+  /*
+   * Los dólares van a su propio cajón, no al de pesos.
+   *
+   * El monto se escribe EN DÓLARES —es lo que el cliente pone sobre el
+   * mostrador— y el sistema calcula los pesos con la cotización del día. Al
+   * revés sería pedirle a quien atiende que haga la cuenta de cabeza.
+   */
+  { medio: 'dolares', tipoCuenta: 'dolares' },
 ];
 
 const CUENTA_CORRIENTE = {
@@ -77,6 +87,7 @@ export default function Cobro({
   cliente,
   puedeFiar,
   cuentas,
+  tcCentavos,
   onCerrar,
   onConfirmar,
 }: Props) {
@@ -127,6 +138,27 @@ export default function Cobro({
     .reduce((suma, p) => suma + p.montoCentavos, 0);
   const hayFiado = fiadoCentavos > 0;
 
+  /*
+   * Lo que se vende en dólares se debe en dólares (D62).
+   *
+   * Es la misma regla que aplica el servidor al confirmar: si **todo** el
+   * carrito está cotizado en dólares, el saldo fiado queda en dólares. Un
+   * carrito mezclado queda en pesos, a propósito: no hay forma de partir una
+   * deuda sola en dos monedas sin inventar cuál parte es cuál.
+   *
+   * Se calcula también acá para que la pantalla diga lo mismo que va a quedar
+   * guardado: el vendedor acuerda las cuotas mirando esto.
+   */
+  const carritoEnDolares = lineas.length > 0 && lineas.every((l) => l.monedaOriginal === 'USD');
+  // Sin cotización el servidor rechaza la venta fiada en dólares, así que acá no
+  // se muestra un monto en dólares que nunca va a existir: se avisa y listo.
+  const ventaEnDolares = carritoEnDolares && (tcCentavos ?? 0) > 0;
+  const faltaElDolar = carritoEnDolares && !(tcCentavos ?? 0);
+  const fiadoEnDeudaCentavos = ventaEnDolares
+    ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
+    : fiadoCentavos;
+  const cifraDeuda = ventaEnDolares ? formatearUSD : formatearARS;
+
   function cuentaPara(tipo: Cuenta['tipo'] | null): string | null {
     if (!tipo) return null;
     return cuentas.find((c) => c.tipo === tipo)?.id ?? null;
@@ -134,6 +166,25 @@ export default function Cobro({
 
   function agregarMedio(medio: MedioPago, tipoCuenta: Cuenta['tipo'] | null) {
     const faltante = Math.max(0, cobro?.faltanteCentavos ?? totales.totalCentavos);
+
+    // En dólares el renglón arranca vacío: lo que falta en pesos convertido a
+    // dólares da un número con centavos que nadie va a pagar en billetes.
+    if (medio === 'dolares') {
+      setPagos((p) => [
+        ...p,
+        {
+          clave: nuevaClave(),
+          medio,
+          montoCentavos: 0,
+          montoUsdCentavos: 0,
+          cotizacionCentavos: tcCentavos,
+          texto: '',
+          monetaryAccountId: cuentaPara(tipoCuenta),
+        },
+      ]);
+      return;
+    }
+
     setPagos((p) => [
       ...p,
       {
@@ -153,13 +204,34 @@ export default function Cobro({
   /** Lo tipeado se guarda tal cual; el monto se actualiza si ya se puede leer. */
   function escribirMonto(clave: string, crudo: string) {
     const texto = crudo.trim();
-    let montoCentavos: number | undefined;
+    let leido: number | undefined;
     try {
-      montoCentavos = texto === '' ? 0 : aCentavos(texto);
+      leido = texto === '' ? 0 : aCentavos(texto);
     } catch {
       // A medio escribir («12.» o «-»): se guarda el texto y nada más.
+      actualizar(clave, { texto });
+      return;
     }
-    actualizar(clave, montoCentavos === undefined ? { texto } : { texto, montoCentavos });
+
+    const pago = pagos.find((p) => p.clave === clave);
+
+    /*
+     * En dólares, lo tipeado SON dólares: se guardan como tales y los pesos
+     * salen de la cotización. Es el único renglón del cobro donde el número
+     * del campo no es el que suma contra el total.
+     */
+    if (pago?.medio === 'dolares') {
+      const tc = pago.cotizacionCentavos ?? tcCentavos;
+      actualizar(clave, {
+        texto,
+        montoUsdCentavos: leido,
+        cotizacionCentavos: tc,
+        montoCentavos: tc ? usdAPesos(leido, tc) : 0,
+      });
+      return;
+    }
+
+    actualizar(clave, { texto, montoCentavos: leido });
   }
 
   async function confirmar(saltearGuardaDePrecios = false) {
@@ -237,11 +309,15 @@ export default function Cobro({
               key={medio}
               type="button"
               onClick={() => agregarMedio(medio, tipoCuenta)}
-              disabled={medio === 'cuenta_corriente' && !cliente}
+              disabled={
+                (medio === 'cuenta_corriente' && !cliente) || (medio === 'dolares' && !tcCentavos)
+              }
               title={
                 medio === 'cuenta_corriente' && !cliente
                   ? 'Elegí un cliente en el carrito para poder fiar'
-                  : undefined
+                  : medio === 'dolares' && !tcCentavos
+                    ? 'No hay cotización cargada: cargala en Dólar (F9) para poder cobrar en dólares'
+                    : undefined
               }
               className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 text-sm font-medium hover:border-(--color-marca) disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -262,7 +338,19 @@ export default function Cobro({
                 className="rounded-(--radius-caja) border border-(--color-borde) p-2.5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 text-sm font-medium">{nombreDelMedio(p.medio)}</span>
+                  <span className="flex-1 text-sm font-medium">
+                    {nombreDelMedio(p.medio)}
+                    {p.medio === 'dolares' ? (
+                      <span className="ml-1 text-xs font-normal text-(--color-tinta-suave)">
+                        en billetes
+                      </span>
+                    ) : null}
+                  </span>
+                  {p.medio === 'dolares' ? (
+                    <span aria-hidden="true" className="text-(--color-tinta-suave)">
+                      US$
+                    </span>
+                  ) : null}
                   <input
                     ref={i === 0 ? primerCampo : undefined}
                     type="text"
@@ -281,6 +369,25 @@ export default function Cobro({
                     ✕
                   </button>
                 </div>
+
+                {/* En dólares, el número del campo no es el que suma contra el
+                    total: acá se dice a cuántos pesos equivale y con qué dólar,
+                    para que nadie tenga que confiar a ciegas. */}
+                {p.medio === 'dolares' ? (
+                  <p className="mt-1 text-xs text-(--color-tinta-suave)">
+                    {p.montoUsdCentavos && p.cotizacionCentavos ? (
+                      <>
+                        Equivale a{' '}
+                        <strong className="tabular font-semibold text-(--color-tinta)">
+                          {formatearARS(p.montoCentavos)}
+                        </strong>{' '}
+                        al dólar de hoy ({formatearARS(p.cotizacionCentavos)})
+                      </>
+                    ) : (
+                      <>Escribí cuántos dólares entraron.</>
+                    )}
+                  </p>
+                ) : null}
 
                 {p.medio === 'credito' || p.medio === 'debito' ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -329,21 +436,47 @@ export default function Cobro({
 
         {hayFiado && cliente ? (
           <p className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
-            Le vas a fiar <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
-            <strong>{cliente.nombre}</strong>.{' '}
-            {cliente.saldoCentavos > 0 ? (
+            Le vas a fiar <strong className="tabular">{cifraDeuda(fiadoEnDeudaCentavos)}</strong> a{' '}
+            <strong>{cliente.nombre}</strong>
+            {ventaEnDolares ? (
               <>
-                Ya debe <span className="tabular">{formatearARS(cliente.saldoCentavos)}</span>, así
-                que va a quedar en{' '}
+                {' '}
+                —en dólares, como se vendió—{' '}
+                <span className="text-(--color-tinta-media)">
+                  ({formatearARS(fiadoCentavos)} de hoy)
+                </span>
+              </>
+            ) : null}
+            .{' '}
+            {faltaElDolar ? (
+              <strong className="text-(--color-error)">
+                Esta venta se fía en dólares y no hay cotización cargada: el sistema no la va a
+                dejar pasar hasta que la carguen en Dólar.
+              </strong>
+            ) : null}{' '}
+            {(ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos) > 0 ? (
+              <>
+                Ya debe{' '}
+                <span className="tabular">
+                  {cifraDeuda(ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos)}
+                </span>
+                , así que va a quedar en{' '}
                 <span className="tabular font-semibold">
-                  {formatearARS(cliente.saldoCentavos + fiadoCentavos)}
+                  {cifraDeuda(
+                    (ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos) +
+                      fiadoEnDeudaCentavos,
+                  )}
                 </span>
                 .
               </>
             ) : (
               'Es la primera vez que le fiás.'
             )}
-            {cliente.limiteCentavos !== null &&
+            {/* El tope mide la deuda en pesos, que es la que limita. Una venta en
+                dólares no la mueve, así que tampoco se avisa de un tope que no
+                se va a pasar. */}
+            {!ventaEnDolares &&
+            cliente.limiteCentavos !== null &&
             cliente.saldoCentavos + fiadoCentavos > cliente.limiteCentavos ? (
               <>
                 {' '}
@@ -357,7 +490,12 @@ export default function Cobro({
         ) : null}
 
         {hayFiado && cliente ? (
-          <PlanDeCuotas montoCentavos={fiadoCentavos} plan={plan} onCambiar={setPlan} />
+          <PlanDeCuotas
+            montoCentavos={fiadoEnDeudaCentavos}
+            moneda={ventaEnDolares ? 'USD' : 'ARS'}
+            plan={plan}
+            onCambiar={setPlan}
+          />
         ) : null}
 
         {cobro && pagos.length > 0 ? (

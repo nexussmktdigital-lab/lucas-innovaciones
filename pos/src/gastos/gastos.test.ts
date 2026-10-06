@@ -527,6 +527,42 @@ describe('transferir entre cuentas', () => {
     expect(r.gastosCentavos).toBe(0);
   });
 
+  it('no se transfiere entre pesos y dólares', async () => {
+    /*
+     * El cajón de dólares guarda centavos de dólar; las demás cuentas, centavos
+     * de peso. Mover «5.000» de uno al otro saca US$ 50 y pone $50: dos saldos
+     * mal con un solo clic, y ninguno vuelve a cerrar contra sus movimientos.
+     * Cambiar dólares es una venta de dólares, no una transferencia.
+     */
+    const [verde] = await db
+      .insert(monetaryAccounts)
+      .values({ nombre: 'Caja en dólares', tipo: 'dolares', saldoCentavos: 1_000_00 })
+      .returning();
+
+    await expect(
+      transferir(db, {
+        origenId: verde!.id,
+        destinoId: banco,
+        montoCentavos: 50_00,
+        usuarioId: duenio,
+      }),
+    ).rejects.toBeInstanceOf(ErrorCuenta);
+
+    // Y tampoco al revés.
+    await expect(
+      transferir(db, {
+        origenId: caja,
+        destinoId: verde!.id,
+        montoCentavos: 50_00,
+        usuarioId: duenio,
+      }),
+    ).rejects.toBeInstanceOf(ErrorCuenta);
+
+    // Ninguno de los dos saldos se movió: la transferencia no se hizo a medias.
+    expect(await saldo(verde!.id)).toBe(1_000_00);
+    expect(await saldo(caja)).toBe(APERTURA);
+  });
+
   it('no se transfiere más de lo que hay', async () => {
     await expect(
       transferir(db, {

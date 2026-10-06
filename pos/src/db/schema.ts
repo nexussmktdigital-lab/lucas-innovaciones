@@ -60,6 +60,15 @@ export const tipoCuentaEnum = pgEnum('tipo_cuenta_monetaria', [
   'efectivo',
   'banco',
   'mercadopago',
+  /**
+   * El cajon de los dolares, aparte del de pesos.
+   *
+   * Su `saldo_centavos` esta en CENTAVOS DE DOLAR, no de peso: son billetes
+   * verdes, y convertirlos a pesos para guardarlos haria que el saldo cambie
+   * solo cada vez que se mueve la cotizacion. Lo mismo vale para los
+   * movimientos de esta cuenta.
+   */
+  'dolares',
   'otro',
 ]);
 
@@ -500,7 +509,19 @@ export const salePayments = pgTable(
       .references(() => sales.id, { onDelete: 'restrict' }),
     medio: medioPagoEnum().notNull(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
+    /** Siempre en pesos: es lo que suma contra el total de la venta. */
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /**
+     * Solo `dolares`: los billetes que entraron, en centavos de dolar.
+     *
+     * Se guarda ademas del monto en pesos porque son dos hechos distintos: lo
+     * que el cliente entrego (mil dolares) y lo que eso vale hoy. Sin esto, el
+     * dia que cambia la cotizacion ya no se puede saber cuantos billetes
+     * entraron.
+     */
+    montoUsdCentavos: bigint({ mode: 'number' }),
+    /** Solo `dolares`: la cotizacion con la que se convirtio, congelada. */
+    cotizacionCentavos: bigint({ mode: 'number' }),
     /** Solo tarjeta: el Posnet es un aparato aparte, el POS unicamente registra. */
     marcaTarjeta: text(),
     cuotas: integer(),
@@ -510,6 +531,19 @@ export const salePayments = pgTable(
   (t) => [
     index('sale_payments_sale_idx').on(t.saleId),
     check('sale_payments_monto_ck', sql`${t.montoCentavos} > 0`),
+    /*
+     * Un pago en dolares trae los dolares y su cotizacion, y ningun otro medio
+     * los trae. Sin esto, un pago en dolares sin el dato queda como un pago en
+     * pesos cualquiera y el cajon de dolares no se entera.
+     */
+    check(
+      'sale_payments_dolares_ck',
+      sql`(${t.medio} = 'dolares') = (${t.montoUsdCentavos} IS NOT NULL AND ${t.cotizacionCentavos} IS NOT NULL)`,
+    ),
+    check(
+      'sale_payments_usd_positivo_ck',
+      sql`${t.montoUsdCentavos} IS NULL OR ${t.montoUsdCentavos} > 0`,
+    ),
   ],
 );
 
@@ -524,8 +558,21 @@ export const creditAccounts = pgTable(
     customerId: uuid()
       .notNull()
       .references(() => customers.id),
-    /** Cuanto debe hoy. Positivo es deuda; nunca baja de cero. */
+    /** Cuanto debe hoy EN PESOS. Positivo es deuda; nunca baja de cero. */
     saldoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Cuanto debe hoy EN DOLARES, en centavos de dolar.
+     *
+     * Es un segundo saldo, no una conversion del primero, y **los dos nunca se
+     * suman**: un cliente que compro un iPhone y una funda debe US$ 400 y
+     * $20.000, y esas son dos deudas. Sumarlas obligaria a elegir una
+     * cotizacion, y la deuda cambiaria sola todos los dias segun el dolar.
+     *
+     * Lo que se vende en dolares se debe en dolares (D62): si la cuota dice
+     * US$ 200, al cliente se le cobran los pesos que valgan US$ 200 el dia que
+     * paga, no los que valian el dia de la venta.
+     */
+    saldoUsdCentavos: bigint({ mode: 'number' }).notNull().default(0),
     /**
      * Hasta cuanto se le puede fiar. `null` es sin tope, que es lo que hay hoy
      * en la libreta de papel; ponerle un numero es la forma de que el sistema
@@ -555,8 +602,25 @@ export const creditPlans = pgTable(
     recargoCentavos: bigint({ mode: 'number' }).notNull().default(0),
     cantidadCuotas: integer().notNull(),
     totalAPagarCentavos: bigint({ mode: 'number' }).notNull(),
-    /** Cada cuánto vence una cuota: `semanal`, `quincenal` o `mensual`. */
+    /**
+     * Cada cuánto vence una cuota: `semanal`, `quincenal`, `mensual` o `dias`.
+     *
+     * Los tres primeros son atajos. `mensual` va por calendario y no cada 30
+     * dias —si compro un 5, paga los 5— y por eso no se puede escribir como un
+     * numero de dias.
+     */
     frecuencia: text(),
+    /** Cada cuantos dias, cuando `frecuencia` es `dias`. Null en el resto. */
+    frecuenciaDias: integer(),
+    /**
+     * En que moneda esta el plan, y por lo tanto sus cuotas.
+     *
+     * La fija la venta: lo que se vende en dolares se debe en dolares. Los
+     * montos de `credit_plans` y de sus `installments` estan SIEMPRE en esta
+     * moneda — en centavos de peso o en centavos de dolar segun el caso— y por
+     * eso toda lectura de una cuota pasa por su plan.
+     */
+    moneda: monedaEnum().notNull().default('ARS'),
     /**
      * Cuándo se anuló, si se anuló.
      *
@@ -572,7 +636,17 @@ export const creditPlans = pgTable(
     check('credit_plans_cuotas_ck', sql`${t.cantidadCuotas} > 0`),
     check(
       'credit_plans_frecuencia_ck',
-      sql`${t.frecuencia} IS NULL OR ${t.frecuencia} IN ('semanal', 'quincenal', 'mensual')`,
+      sql`${t.frecuencia} IS NULL OR ${t.frecuencia} IN ('semanal', 'quincenal', 'mensual', 'dias')`,
+    ),
+    /*
+     * El numero va con `dias` y con ningun otro. Sin esto, un plan `dias` sin
+     * numero no sabe cuando vence nada, y un `mensual` con un 30 al lado invita
+     * a que alguien lo lea y le crea en vez de usar el calendario.
+     */
+    check(
+      'credit_plans_frecuencia_dias_ck',
+      sql`(${t.frecuencia} = 'dias') = (${t.frecuenciaDias} IS NOT NULL)
+          AND (${t.frecuenciaDias} IS NULL OR (${t.frecuenciaDias} >= 1 AND ${t.frecuenciaDias} <= 365))`,
     ),
   ],
 );
@@ -604,7 +678,20 @@ export const creditPayments = pgTable(
     creditAccountId: uuid()
       .notNull()
       .references(() => creditAccounts.id),
+    /** Cuanto se le descuenta a la deuda, EN LA MONEDA DE ESA DEUDA. */
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /** Cual de las dos deudas se pago. Los montos de arriba van en esta moneda. */
+    monedaDeuda: monedaEnum().notNull().default('ARS'),
+    /**
+     * Lo que de verdad se movio de caja, cuando la moneda del pago no es la de
+     * la deuda, y la cotizacion con la que se cruzaron.
+     *
+     * Pagar una deuda en dolares con una transferencia en pesos son dos
+     * numeros: los dolares que se cancelan y los pesos que entraron al banco.
+     * Guardar solo uno deja el otro sin forma de reconstruirse.
+     */
+    montoCajaCentavos: bigint({ mode: 'number' }),
+    cotizacionCentavos: bigint({ mode: 'number' }),
     medio: medioPagoEnum().notNull(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
     cashSessionId: uuid().references(() => cashSessions.id),

@@ -14,8 +14,9 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
-import { aCentavos, ErrorDinero, formatearARS } from '@/lib/dinero';
+import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import { crearCliente, editarCliente, ErrorCliente } from '@/clientes/clientes';
 import { cobrarFiado, ErrorFiado, migrarFichaDePapel, ponerLimite } from '@/fiado/cuenta';
 import { ErrorDevolucion, marcarDevuelta } from '@/fiado/devoluciones';
@@ -137,8 +138,16 @@ export async function editarClienteAccion(
   }
 }
 
+/*
+ * Con qué se puede pagar una cuota.
+ *
+ * `dolares` y `cheque` están porque el cliente paga con lo que tiene, y eso vale
+ * para cualquier producto. `cuenta_corriente` no: una deuda no se paga con más
+ * deuda, y el dominio también lo rechaza.
+ */
 const mediosDeCobro = z.enum([
   'efectivo',
+  'dolares',
   'transferencia',
   'debito',
   'credito',
@@ -168,6 +177,10 @@ export async function cobrarFiadoAccion(
   const medio = mediosDeCobro.safeParse(String(datos.get('medio') ?? 'efectivo'));
   if (!medio.success) return { error: 'Ese medio de pago no sirve para cobrar fiado.' };
 
+  // A cuál de las dos deudas se imputa. Por omisión la de pesos, que es la de
+  // siempre: una pantalla vieja que no manda el campo sigue cobrando pesos.
+  const monedaDeuda = String(datos.get('monedaDeuda') ?? 'ARS') === 'USD' ? 'USD' : 'ARS';
+
   let montoCentavos: number;
   try {
     montoCentavos = aCentavos(String(datos.get('monto') ?? ''));
@@ -182,10 +195,23 @@ export async function cobrarFiadoAccion(
     return { error: 'No hay una caja abierta. Abrila antes de recibir la plata.' };
   }
 
+  /*
+   * La cotización se busca solo cuando el medio y la deuda no son de la misma
+   * moneda: una cuota en dólares pagada por transferencia, o una deuda en pesos
+   * pagada con billetes verdes. Pagar dólares con dólares, o pesos con pesos, no
+   * necesita ninguna conversión y no tiene por qué depender de que el dólar esté
+   * cargado.
+   */
+  const pagaConDolares = medio.data === 'dolares';
+  const necesitaCotizacion = pagaConDolares !== (monedaDeuda === 'USD');
+  const cotizacion = necesitaCotizacion ? await cotizacionVigente(db) : null;
+
   try {
     const r = await cobrarFiado(db, {
       customerId,
       montoCentavos,
+      monedaDeuda,
+      cotizacionCentavos: cotizacion?.valorCentavos ?? null,
       medio: medio.data,
       cashSessionId: caja.id,
       usuarioId: sesion.user.id,
@@ -215,11 +241,22 @@ export async function cobrarFiadoAccion(
       };
     }
 
+    /*
+     * El mensaje habla en la moneda de la deuda que se cobró, y aclara lo que
+     * entró a la caja cuando son distintas: «cobré US$ 200» y «entraron
+     * $314.200» son dos hechos y el que cierra la caja necesita los dos.
+     */
+    const cifra = r.monedaDeuda === 'USD' ? formatearUSD : formatearARS;
+    const enCaja =
+      r.montoCajaCentavos !== r.montoCentavos
+        ? ` Entraron ${r.monedaDeuda === 'USD' ? formatearARS(r.montoCajaCentavos) : formatearUSD(r.montoCajaCentavos)} a la caja.`
+        : '';
+
     return {
       ok:
         r.saldoCentavos === 0
-          ? `Cobrado ${formatearARS(r.montoCentavos)}. Quedó al día.`
-          : `Cobrado ${formatearARS(r.montoCentavos)}. Le queda una deuda de ${formatearARS(r.saldoCentavos)}.`,
+          ? `Cobrado ${cifra(r.montoCentavos)}.${enCaja} Quedó al día${r.monedaDeuda === 'USD' ? ' con los dólares' : ''}.`
+          : `Cobrado ${cifra(r.montoCentavos)}.${enCaja} Le queda una deuda de ${cifra(r.saldoCentavos)}.`,
     };
   } catch (error) {
     if (error instanceof ErrorFiado) return { error: error.message };

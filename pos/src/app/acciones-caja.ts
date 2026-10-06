@@ -14,7 +14,6 @@ import { monetaryAccounts } from '@/db/schema';
 import { config } from '@/lib/config';
 import { aCentavos, ErrorDinero } from '@/lib/dinero';
 import { abrirCaja, cerrarCaja, ErrorCaja, sesionAbierta } from '@/caja/sesion';
-import { ErrorArqueo, hayConteo, leerConteo, totalDelConteo } from '@/caja/arqueo';
 
 export interface EstadoCaja {
   error?: string;
@@ -76,45 +75,21 @@ export async function cerrarCajaAccion(
   if (!abierta) return { error: 'No hay ninguna caja abierta.' };
 
   /*
-   * El cajón se puede contar de dos maneras y las dos valen.
+   * El turno se cierra sin arqueo: el local no cuenta los billetes.
    *
-   * Si vino el conteo por denominación, el total lo calcula el servidor a
-   * partir de los billetes: lo que sume el navegador es una comodidad para el
-   * cajero, no un dato en el que confiar. Si no vino, se toma el total escrito
-   * a mano, que es lo que se hacía hasta ahora.
+   * No quedó un conteo opcional ni un campo escondido. Un arqueo que está pero
+   * nadie hace es peor que no tenerlo: la columna se llena de ceros y después
+   * alguien los lee como si significaran algo. Fue literalmente lo que pasó en
+   * el POS viejo, donde el efectivo contado figuraba siempre en cero.
+   *
+   * `cerrarCaja` sin `saldoContadoCentavos` cierra con lo que el sistema
+   * espera: diferencia cero, sin justificación y sin asiento de ajuste.
    */
-  const conteo = leerConteo(Object.fromEntries(datos.entries()));
-
-  let sueltoCentavos = 0;
-  const sueltoCrudo = String(datos.get('suelto') ?? '').trim();
-  if (sueltoCrudo !== '') {
-    try {
-      sueltoCentavos = aCentavos(sueltoCrudo);
-    } catch {
-      return { error: 'El monto de monedas y sueltos no es válido.' };
-    }
-  }
-
-  const seConto = hayConteo(conteo, sueltoCentavos);
-
-  let saldoContadoCentavos: number;
-  try {
-    saldoContadoCentavos = seConto
-      ? totalDelConteo(conteo, sueltoCentavos)
-      : montoDelFormulario(datos, 'saldoContado');
-  } catch (e) {
-    if (e instanceof ErrorArqueo) return { error: e.message };
-    return { error: e instanceof ErrorDinero ? e.message : 'Monto inválido.' };
-  }
-
   try {
     await cerrarCaja(db, {
       sesionId: abierta.id,
       usuarioId: sesion.user.id,
-      saldoContadoCentavos,
-      justificacion: String(datos.get('justificacion') ?? '').trim() || null,
       nota: String(datos.get('nota') ?? '').trim() || null,
-      conteo: seConto ? { conteo, sueltoCentavos } : null,
     });
   } catch (e) {
     if (e instanceof ErrorCaja) return { error: e.message };

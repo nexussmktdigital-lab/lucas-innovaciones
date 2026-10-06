@@ -87,8 +87,10 @@ export interface CierreEnLista {
   cerradaEn: Date;
   cerradaPor: string | null;
   esperadoCentavos: number;
-  contadoCentavos: number;
-  diferenciaCentavos: number;
+  /** Null cuando el turno se cerró sin arqueo, que es lo habitual. */
+  contadoCentavos: number | null;
+  /** Null cuando no se contó: no es lo mismo que una diferencia de cero. */
+  diferenciaCentavos: number | null;
   justificacion: string | null;
   /** True si el cajón se contó billete por billete y no se escribió el total. */
   seConto: boolean;
@@ -126,8 +128,8 @@ export async function cierresRecientes(db: BaseDatos, limite = 20): Promise<Cier
       cerradaEn: f.cerradaEn!,
       cerradaPor: f.cerradaPor,
       esperadoCentavos: f.esperado ?? 0,
-      contadoCentavos: f.contado ?? 0,
-      diferenciaCentavos: f.diferencia ?? 0,
+      contadoCentavos: f.contado,
+      diferenciaCentavos: f.diferencia,
       justificacion: f.justificacion,
       seConto: billetes > 0 || (guardado.sueltoCentavos ?? 0) > 0,
     };

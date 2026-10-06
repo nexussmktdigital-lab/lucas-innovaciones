@@ -106,6 +106,27 @@
       "when": 1789495144190,
       "tag": "0014_plan_de_cuotas",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789495144191,
+      "tag": "0015_cobro_en_dolares",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789495144192,
+      "tag": "0016_cuotas_cada_n_dias",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789495144193,
+      "tag": "0017_fiado_en_dolares",
+      "breakpoints": true
     }
   ]
 }
