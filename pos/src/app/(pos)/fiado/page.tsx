@@ -30,35 +30,53 @@ export default async function PaginaFiado() {
   // le pueda recibir la plata sería peor que cualquier control.
   const puedeFiar = sesion?.user ? puede(sesion.user.rol, 'fiado.crear') : false;
 
-  const lista = await deudores(db);
-  const total = await totalFiado(db);
-  const caja = await sesionAbierta(db, config().POS_TERMINAL);
-
-  // Los recordatorios se arman acá, con los datos que la lista ya trajo, y no
-  // uno por fila: una consulta más para saber a quién ya se le avisó.
-  const aDevolver = await devolucionesPendientes(db);
-  const ajustes = await ajustesDeWhatsApp(db);
-  const avisos = await ultimosRecordatorios(
-    db,
-    lista.map((d) => d.customerId),
-    ajustes.diasEntreRecordatorios,
-  );
-
-  // El semáforo: quién está atrasado, a quién le vence una cuota y a quién
-  // todavía le falta. Una consulta por moneda para toda la lista, con el día del
-  // calendario del local —no el del servidor, que a las 21:30 ya es mañana.
-  //
-  // Dos consultas y no una porque son dos semáforos: las cuotas en dólares de un
-  // iPhone no se mezclan con las cuotas en pesos de un vidrio templado (D62).
+  /*
+   * Las consultas van en dos tandas en paralelo, no de a una.
+   *
+   * Eran nueve `await` seguidos, cada uno esperando al anterior para pedirle
+   * algo a una base que está en São Paulo. Con todo caliente no se nota; con el
+   * servidor recién levantado y la base despertándose, nueve viajes de ida y
+   * vuelta tardan **más de cuatro segundos**, que es justo el plazo que el
+   * service worker espera antes de servir lo guardado. La primera vez que se
+   * abrió esta pantalla después de un despliegue, el POS declaró que no había
+   * internet —había— porque nadie le dio tiempo a contestar.
+   *
+   * Solo lo que de verdad depende de otra consulta espera: los recordatorios
+   * necesitan los ajustes y la lista de deudores, y los semáforos necesitan los
+   * ids. El resto no se mira entre sí y sale todo junto.
+   */
   const hoy = fechaLocalISO();
-  const ids = lista.map((d) => d.customerId);
-  const estados = await estadosDeClientes(db, ids, hoy, 'ARS');
-  const estadosUsd = await estadosDeClientes(db, ids, hoy, 'USD');
 
-  // Para cobrar una cuota en dólares con otro medio —o una en pesos con billetes
-  // verdes— hace falta la cotización del día. Si no hay, la pantalla lo dice en
-  // vez de dejar que el cobro falle recién al apretar el botón.
-  const cotizacion = await cotizacionVigente(db);
+  const [lista, total, caja, aDevolver, ajustes, cotizacion] = await Promise.all([
+    deudores(db),
+    totalFiado(db),
+    sesionAbierta(db, config().POS_TERMINAL),
+    devolucionesPendientes(db),
+    ajustesDeWhatsApp(db),
+    // Para cobrar una cuota en dólares con otro medio —o una en pesos con
+    // billetes verdes— hace falta la cotización del día. Si no hay, la pantalla
+    // lo dice en vez de dejar que el cobro falle recién al apretar el botón.
+    cotizacionVigente(db),
+  ]);
+
+  const ids = lista.map((d) => d.customerId);
+
+  /*
+   * El semáforo: quién está atrasado, a quién le vence una cuota y a quién
+   * todavía le falta. Una consulta por moneda para toda la lista, con el día del
+   * calendario del local —no el del servidor, que a las 21:30 ya es mañana.
+   *
+   * Dos consultas y no una porque son dos semáforos: las cuotas en dólares de un
+   * iPhone no se mezclan con las cuotas en pesos de un vidrio templado (D62).
+   *
+   * Y los recordatorios se arman con los datos que la lista ya trajo, no uno por
+   * fila: una consulta más para saber a quién ya se le avisó.
+   */
+  const [avisos, estados, estadosUsd] = await Promise.all([
+    ultimosRecordatorios(db, ids, ajustes.diasEntreRecordatorios),
+    estadosDeClientes(db, ids, hoy, 'ARS'),
+    estadosDeClientes(db, ids, hoy, 'USD'),
+  ]);
 
   /** De cuál de las dos deudas habla la tarjeta: de la que más apura. */
   const urgenciaDe = (id: string) =>
