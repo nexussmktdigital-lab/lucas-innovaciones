@@ -558,8 +558,21 @@ export const creditAccounts = pgTable(
     customerId: uuid()
       .notNull()
       .references(() => customers.id),
-    /** Cuanto debe hoy. Positivo es deuda; nunca baja de cero. */
+    /** Cuanto debe hoy EN PESOS. Positivo es deuda; nunca baja de cero. */
     saldoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Cuanto debe hoy EN DOLARES, en centavos de dolar.
+     *
+     * Es un segundo saldo, no una conversion del primero, y **los dos nunca se
+     * suman**: un cliente que compro un iPhone y una funda debe US$ 400 y
+     * $20.000, y esas son dos deudas. Sumarlas obligaria a elegir una
+     * cotizacion, y la deuda cambiaria sola todos los dias segun el dolar.
+     *
+     * Lo que se vende en dolares se debe en dolares (D62): si la cuota dice
+     * US$ 200, al cliente se le cobran los pesos que valgan US$ 200 el dia que
+     * paga, no los que valian el dia de la venta.
+     */
+    saldoUsdCentavos: bigint({ mode: 'number' }).notNull().default(0),
     /**
      * Hasta cuanto se le puede fiar. `null` es sin tope, que es lo que hay hoy
      * en la libreta de papel; ponerle un numero es la forma de que el sistema
@@ -599,6 +612,15 @@ export const creditPlans = pgTable(
     frecuencia: text(),
     /** Cada cuantos dias, cuando `frecuencia` es `dias`. Null en el resto. */
     frecuenciaDias: integer(),
+    /**
+     * En que moneda esta el plan, y por lo tanto sus cuotas.
+     *
+     * La fija la venta: lo que se vende en dolares se debe en dolares. Los
+     * montos de `credit_plans` y de sus `installments` estan SIEMPRE en esta
+     * moneda — en centavos de peso o en centavos de dolar segun el caso— y por
+     * eso toda lectura de una cuota pasa por su plan.
+     */
+    moneda: monedaEnum().notNull().default('ARS'),
     /**
      * Cuándo se anuló, si se anuló.
      *
@@ -656,7 +678,20 @@ export const creditPayments = pgTable(
     creditAccountId: uuid()
       .notNull()
       .references(() => creditAccounts.id),
+    /** Cuanto se le descuenta a la deuda, EN LA MONEDA DE ESA DEUDA. */
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /** Cual de las dos deudas se pago. Los montos de arriba van en esta moneda. */
+    monedaDeuda: monedaEnum().notNull().default('ARS'),
+    /**
+     * Lo que de verdad se movio de caja, cuando la moneda del pago no es la de
+     * la deuda, y la cotizacion con la que se cruzaron.
+     *
+     * Pagar una deuda en dolares con una transferencia en pesos son dos
+     * numeros: los dolares que se cancelan y los pesos que entraron al banco.
+     * Guardar solo uno deja el otro sin forma de reconstruirse.
+     */
+    montoCajaCentavos: bigint({ mode: 'number' }),
+    cotizacionCentavos: bigint({ mode: 'number' }),
     medio: medioPagoEnum().notNull(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
     cashSessionId: uuid().references(() => cashSessions.id),

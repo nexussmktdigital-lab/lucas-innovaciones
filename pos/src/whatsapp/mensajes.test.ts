@@ -7,16 +7,19 @@
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD, usdAPesos } from '@/lib/dinero';
 import {
   cashSessions,
   customers,
+  exchangeRates,
   monetaryAccounts,
   products,
   users,
   whatsappMessages,
 } from '@/db/schema';
 import { confirmarVenta } from '@/ventas/confirmar';
+import { cadencia, cuotasDeCuenta } from '@/fiado/plan';
+import { cuentaDe } from '@/fiado/cuenta';
 import { anularVenta } from '@/ventas/anular';
 import { ajustesDeWhatsApp, guardarAjustesDeWhatsApp } from './config';
 import {
@@ -92,6 +95,41 @@ async function vender(clienteId: string | undefined, opciones: { fiado?: boolean
     cashSessionId: sesionId,
     terminal: 'T1',
     idempotencyKey: `v-${Math.random()}`,
+  });
+}
+
+/** Vende un iPhone cotizado en dólares y lo fía entero: la deuda queda en USD. */
+async function venderIphoneFiado(clienteId: string, opciones: { cuotas?: number } = {}) {
+  const TC = 1_571_00;
+  await db.insert(exchangeRates).values({
+    valorCentavos: TC,
+    vigenteDesde: new Date(),
+    origen: 'infodolar',
+  });
+
+  const total = usdAPesos(1_500_00, TC);
+  const [iphone] = await db
+    .insert(products)
+    .values({
+      nombre: 'iPhone 15 Pro Max 256GB',
+      moneda: 'USD',
+      precioUsdCentavos: 1_500_00,
+      precioCentavos: total,
+      stock: 1,
+    })
+    .returning();
+
+  return confirmarVenta(db, {
+    lineas: [{ productId: iphone!.id, cantidad: 1 }],
+    pagos: [{ medio: 'cuenta_corriente', montoCentavos: total }],
+    clienteId,
+    vendedorId: duenioId,
+    cashSessionId: sesionId,
+    terminal: 'T1',
+    idempotencyKey: `iphone-${Math.random()}`,
+    plan: opciones.cuotas
+      ? { cadencia: cadencia('mensual'), cuotas: opciones.cuotas }
+      : undefined,
   });
 }
 
@@ -222,6 +260,39 @@ describe('recordatorio de deuda', () => {
     expect(p.listo).toBe(false);
     if (p.listo) return;
     expect(p.codigo).toBe('sin_deuda');
+  });
+
+  it('al que debe dólares se le reclama en dólares', async () => {
+    /*
+     * El que compró un iPhone en cuotas debe dólares y su `saldo_centavos` es
+     * cero. Mirando solo los pesos, el recordatorio decía «no debe nada» y el
+     * botón de WhatsApp no aparecía: una deuda de mil quinientos dólares sin
+     * forma de reclamarla desde la pantalla.
+     */
+    await venderIphoneFiado(conTelefono);
+    const p = await armarRecordatorio(db, conTelefono);
+
+    expect(p.listo).toBe(true);
+    if (!p.listo) return;
+    expect(p.mensaje.texto).toContain('US$');
+    // Y no inventa una deuda en pesos que no existe.
+    expect(p.mensaje.texto).not.toContain(formatearARS(0));
+  });
+
+  it('las cuotas del iPhone se reclaman en dólares, no en pesos', async () => {
+    // Pedirle «$ 500» por una cuota de US$ 500 es pedirle mil veces menos.
+    await venderIphoneFiado(conTelefono, { cuotas: 3 });
+    const p = await armarRecordatorio(db, conTelefono);
+
+    expect(p.listo).toBe(true);
+    if (!p.listo) return;
+
+    const cuenta = await cuentaDe(db, conTelefono);
+    const cuotas = await cuotasDeCuenta(db, cuenta!.id, 'USD');
+
+    // Con el signo de dólar. El mismo número como «$ 500,11» le pediría al
+    // cliente mil veces menos de lo que firmó, y es lo que pasaba.
+    expect(p.mensaje.texto).toContain(formatearUSD(cuotas[0]!.montoCentavos));
   });
 
   it('con la deuda saldada deja de haber mensaje', async () => {

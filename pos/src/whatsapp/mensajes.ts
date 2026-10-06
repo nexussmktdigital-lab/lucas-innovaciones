@@ -18,13 +18,13 @@
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { whatsappMessages } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO, formatearFecha } from '@/lib/fecha';
 import { NEGOCIO_POR_DEFECTO } from '@/ventas/ticket';
 import { ajustesDeWhatsApp, type AjustesDeWhatsApp } from './config';
 import { enlaceDeWhatsApp } from './enlace';
 import { acortarDetalle, nombreDePila, renderizar, type TipoDeMensaje } from './plantillas';
-import { estadosDeClientes, type EstadoDeDeuda } from '@/fiado/plan';
+import { elMasUrgente, estadosDeClientes, type EstadoDeDeuda } from '@/fiado/plan';
 
 export interface MensajePreparado {
   tipo: TipoDeMensaje;
@@ -195,6 +195,7 @@ interface FilaDeuda {
   nombre: string;
   telefono: string | null;
   saldo_centavos: string | number | null;
+  saldo_usd_centavos: string | number | null;
   ultimo: string | Date | null;
 }
 
@@ -204,6 +205,8 @@ export interface DeudaParaRecordar {
   nombre: string;
   telefono: string | null;
   saldoCentavos: number;
+  /** Lo que debe en dólares, que es otra deuda (D62). No se suma con la de pesos. */
+  saldoUsdCentavos?: number;
   ultimoMovimiento: Date | null;
   /**
    * El estado de su plan de cuotas, si tiene uno.
@@ -213,6 +216,25 @@ export interface DeudaParaRecordar {
    * que el fiado abierto de siempre.
    */
   estado?: EstadoDeDeuda | null;
+  /**
+   * En qué moneda están las cuotas de ese plan. Decide con qué signo se escriben
+   * `{cuota}` y `{vencido}` en el mensaje: un iPhone en cuotas de US$ 200 que
+   * dijera «$ 200» le pediría al cliente mil veces menos de lo pactado.
+   */
+  monedaDelPlan?: 'ARS' | 'USD';
+}
+
+/**
+ * «$120.000», «US$ 600» o «$120.000 y US$ 600».
+ *
+ * Las dos deudas se nombran por separado en el mismo mensaje. Sumarlas daría un
+ * número que no existe, y mandar dos mensajes al mismo cliente el mismo día por
+ * lo mismo es la forma más rápida de que deje de leerlos.
+ */
+function comoSeDiceLaDeuda(arsCentavos: number, usdCentavos: number): string {
+  if (usdCentavos <= 0) return formatearARS(arsCentavos);
+  if (arsCentavos <= 0) return formatearUSD(usdCentavos);
+  return `${formatearARS(arsCentavos)} y ${formatearUSD(usdCentavos)}`;
 }
 
 /** «hoy», «mañana», «en 5 días»: como se dice una fecha cercana. */
@@ -235,7 +257,7 @@ function fechaCorta(iso: string): string {
  * los deudores en una consulta: no hace falta volver a preguntar por cada uno.
  */
 export function recordatorioDe(d: DeudaParaRecordar, cfg: AjustesDeWhatsApp): Preparacion {
-  if (d.saldoCentavos <= 0) {
+  if (d.saldoCentavos <= 0 && (d.saldoUsdCentavos ?? 0) <= 0) {
     return { listo: false, codigo: 'sin_deuda', motivo: `${d.nombre} no debe nada.` };
   }
   if (!d.telefono) {
@@ -276,10 +298,13 @@ function textoDelRecordatorio(
   cfg: AjustesDeWhatsApp,
 ): { tipo: TipoDeMensaje; texto: string } {
   const e = d.estado;
+  // Las cuotas del plan se escriben en la moneda del plan: la del iPhone en
+  // dólares, todo lo demás en pesos.
+  const cifra = d.monedaDelPlan === 'USD' ? formatearUSD : formatearARS;
   const comun = {
     cliente: nombreDePila(d.nombre),
     local: NEGOCIO_POR_DEFECTO.nombre,
-    deuda: formatearARS(d.saldoCentavos),
+    deuda: comoSeDiceLaDeuda(d.saldoCentavos, d.saldoUsdCentavos ?? 0),
   };
 
   if (e && e.color === 'rojo' && e.proxima) {
@@ -287,7 +312,7 @@ function textoDelRecordatorio(
       tipo: 'recordatorio_atrasado',
       texto: renderizar(cfg.recordatorio_atrasado, {
         ...comun,
-        vencido: formatearARS(e.vencidoCentavos),
+        vencido: cifra(e.vencidoCentavos),
         atraso: `hace ${e.diasDeAtraso} ${e.diasDeAtraso === 1 ? 'día' : 'días'}`,
         vencimiento: fechaCorta(e.proxima.vencimiento),
       }),
@@ -299,7 +324,7 @@ function textoDelRecordatorio(
       tipo: 'recordatorio_cuota',
       texto: renderizar(cfg.recordatorio_cuota, {
         ...comun,
-        cuota: formatearARS(e.proxima.faltaCentavos),
+        cuota: cifra(e.proxima.faltaCentavos),
         vencimiento: fechaCorta(e.proxima.vencimiento),
         cuando: comoSeDiceElPlazo(e.proxima.enDias),
         numero: `${e.proxima.numero} de ${e.cuotasTotales}`,
@@ -324,7 +349,7 @@ export async function armarRecordatorio(
   const [c] = filasDe<FilaDeuda>(
     await db.execute(sql`
       SELECT c.id, c.nombre, c.telefono,
-             a.saldo_centavos,
+             a.saldo_centavos, a.saldo_usd_centavos,
              GREATEST(
                COALESCE((SELECT max(s.fecha) FROM sales s
                           WHERE s.cliente_id = c.id AND s.tipo = 'fiado'
@@ -343,16 +368,25 @@ export async function armarRecordatorio(
   // El estado del plan se pide acá y no en `recordatorioDe`, que es pura: la
   // lista de fiado ya lo trae para todos de una sola consulta y no tiene por
   // qué volver a preguntarlo cliente por cliente.
-  const estados = await estadosDeClientes(db, [String(c.id)], fechaLocalISO());
+  //
+  // Uno por moneda: el plan en pesos y el plan en dólares son dos semáforos, y
+  // el mensaje habla del que más apura.
+  const hoy = fechaLocalISO();
+  const id = String(c.id);
+  const enPesos = await estadosDeClientes(db, [id], hoy, 'ARS');
+  const enDolares = await estadosDeClientes(db, [id], hoy, 'USD');
+  const urgente = elMasUrgente(enPesos.get(id) ?? null, enDolares.get(id) ?? null);
 
   return recordatorioDe(
     {
-      customerId: String(c.id),
+      customerId: id,
       nombre: String(c.nombre),
       telefono: c.telefono,
       saldoCentavos: Number(c.saldo_centavos ?? 0),
+      saldoUsdCentavos: Number(c.saldo_usd_centavos ?? 0),
       ultimoMovimiento: c.ultimo ? new Date(c.ultimo) : null,
-      estado: estados.get(String(c.id)) ?? null,
+      estado: urgente.estado,
+      monedaDelPlan: urgente.moneda,
     },
     ajustes ?? (await ajustesDeWhatsApp(db)),
   );

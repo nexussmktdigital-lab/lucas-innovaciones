@@ -120,6 +120,13 @@
       "when": 1789495144192,
       "tag": "0016_cuotas_cada_n_dias",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789495144193,
+      "tag": "0017_fiado_en_dolares",
+      "breakpoints": true
     }
   ]
 }

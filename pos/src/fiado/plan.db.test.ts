@@ -15,6 +15,7 @@ import {
   creditPaymentAllocations,
   creditPlans,
   customers,
+  exchangeRates,
   installments,
   monetaryAccounts,
   products,
@@ -31,6 +32,7 @@ import {
   type Cadencia,
 } from './plan';
 import { fechaLocalISO, sumarDias } from '@/lib/fecha';
+import { usdAPesos } from '@/lib/dinero';
 
 let db: TestDb;
 let duenioId: string;
@@ -315,6 +317,79 @@ describe('anular una venta fiada apaga su plan', () => {
       .where(eq(creditPaymentAllocations.creditPaymentId, cobro.id));
     expect(imputaciones).toHaveLength(1);
     expect(await db.select().from(installments)).toHaveLength(6);
+  });
+});
+
+describe('el semáforo es uno por moneda (D62)', () => {
+  /*
+   * Un cliente con un plan en pesos y otro en dólares tiene DOS semáforos.
+   *
+   * Juntarlos pone en la misma fila una cuota de US$ 500 —50.000 centavos— y una
+   * de $100.000 —10.000.000 de centavos—, y el «vencido» que sale de sumarlas no
+   * es plata de nadie. Peor: el orden por vencimiento mezclado haría que un pago
+   * en pesos se impute contra la cuota del iPhone.
+   */
+  /** $1.571 por dólar, el mismo de los demás tests de dólares. */
+  const TC = 1_571_00;
+
+  async function fiarIphoneEnDolares(cuotas = 3) {
+    await db.insert(exchangeRates).values({
+      valorCentavos: TC,
+      vigenteDesde: new Date(),
+      origen: 'infodolar',
+    });
+
+    const total = usdAPesos(1_500_00, TC);
+    const [iphone] = await db
+      .insert(products)
+      .values({
+        nombre: 'iPhone 15 Pro Max 256GB',
+        moneda: 'USD',
+        precioUsdCentavos: 1_500_00,
+        precioCentavos: total,
+        stock: 1,
+      })
+      .returning();
+
+    return confirmarVenta(db, {
+      lineas: [{ productId: iphone!.id, cantidad: 1 }],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: total }],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `usd-plan-${Math.random()}`,
+      plan: { cadencia: cadencia('mensual'), cuotas },
+    });
+  }
+
+  it('las cuotas en dólares no entran en el estado de la deuda en pesos', async () => {
+    await fiarEnCuotas(3); // $600.000 en 3 cuotas de $200.000
+    await fiarIphoneEnDolares(3); // US$ 1.500 en 3 cuotas de US$ 500
+
+    const hoy = sumarDias(HOY, 40); // ya venció la primera de cada plan
+
+    const enPesos = (await estadosDeClientes(db, [clienteId], hoy, 'ARS')).get(clienteId);
+    const enDolares = (await estadosDeClientes(db, [clienteId], hoy, 'USD')).get(clienteId);
+
+    expect(enPesos!.cuotasTotales).toBe(3);
+    expect(enPesos!.vencidoCentavos).toBe(200_000_00);
+
+    const cuentaId = (await cuentaDe(db, clienteId))!.id;
+    const cuotasUsd = await cuotasDeCuenta(db, cuentaId, 'USD');
+
+    expect(enDolares!.cuotasTotales).toBe(3);
+    expect(enDolares!.vencidoCentavos).toBe(cuotasUsd[0]!.montoCentavos);
+    // Son dólares: quinientos y algo, no doscientos mil. Si los dos estados se
+    // mezclaran, acá habría seis cuotas y un vencido que suma las dos monedas.
+    expect(enDolares!.vencidoCentavos).toBeLessThan(1_000_00);
+  });
+
+  it('el que debe solo dólares no tiene estado en pesos', async () => {
+    await fiarIphoneEnDolares(3);
+
+    expect((await estadosDeClientes(db, [clienteId], HOY, 'ARS')).get(clienteId)).toBeUndefined();
+    expect((await estadosDeClientes(db, [clienteId], HOY, 'USD')).get(clienteId)).toBeDefined();
   });
 });
 

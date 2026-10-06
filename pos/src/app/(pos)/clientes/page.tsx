@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { db } from '@/db';
 import { buscarClientes } from '@/clientes/clientes';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import FormularioCliente from './formulario-cliente';
 
 export const dynamic = 'force-dynamic';
@@ -19,7 +19,7 @@ export default async function PaginaClientes({
 }) {
   const { q } = await searchParams;
   const clientes = await buscarClientes(db, q ?? '');
-  const conDeuda = clientes.filter((c) => c.saldoCentavos > 0).length;
+  const conDeuda = clientes.filter((c) => c.saldoCentavos > 0 || c.saldoUsdCentavos > 0).length;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -87,9 +87,17 @@ export default async function PaginaClientes({
                     </span>
                   ) : null}
 
-                  {c.saldoCentavos > 0 ? (
+                  {/* Las dos deudas se nombran por separado: el que debe un
+                      iPhone en cuotas debe dólares, y «Al día» ahí sería falso. */}
+                  {c.saldoCentavos > 0 || c.saldoUsdCentavos > 0 ? (
                     <span className="tabular ml-auto font-bold text-(--color-alerta-tinta)">
-                      Debe {formatearARS(c.saldoCentavos)}
+                      Debe{' '}
+                      {[
+                        c.saldoCentavos > 0 ? formatearARS(c.saldoCentavos) : null,
+                        c.saldoUsdCentavos > 0 ? formatearUSD(c.saldoUsdCentavos) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' y ')}
                     </span>
                   ) : (
                     <span className="ml-auto text-xs text-(--color-tinta-suave)">Al día</span>

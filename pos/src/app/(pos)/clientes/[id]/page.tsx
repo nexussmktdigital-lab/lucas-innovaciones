@@ -9,7 +9,7 @@ import { cuotasDeCuenta, estadoDeDeuda } from '@/fiado/plan';
 import { devolucionesDe } from '@/fiado/devoluciones';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { armarRecordatorio, mensajesDe, ultimoRecordatorio } from '@/whatsapp/mensajes';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO, formatearFechaHora } from '@/lib/fecha';
 import BotonWhatsApp from '../../boton-whatsapp';
 import Devoluciones from './devoluciones';
@@ -37,10 +37,29 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
   const cuenta = await cuentaDe(db, id);
   const movimientos = await movimientosDe(db, id);
 
-  // Las cuotas de sus planes vivos, si tiene alguno. Es la pregunta que se le
-  // hace a la ficha cuando el cliente está enfrente: «¿cuánto te toca hoy?».
-  const cuotas = cuenta ? await cuotasDeCuenta(db, cuenta.id) : [];
-  const estado = cuotas.length > 0 ? estadoDeDeuda(cuotas, fechaLocalISO()) : null;
+  /*
+   * Las cuotas de sus planes vivos, si tiene alguno. Es la pregunta que se le
+   * hace a la ficha cuando el cliente está enfrente: «¿cuánto te toca hoy?».
+   *
+   * Uno por moneda: el iPhone se pacta en dólares y sus cuotas son en dólares
+   * (D62). Mostrarlas juntas pondría «$ 200» al lado de «$ 200.000» como si
+   * fueran comparables.
+   */
+  const hoy = fechaLocalISO();
+  const cuotasArs = cuenta ? await cuotasDeCuenta(db, cuenta.id, 'ARS') : [];
+  const cuotasUsd = cuenta ? await cuotasDeCuenta(db, cuenta.id, 'USD') : [];
+  const planes = (
+    [
+      { moneda: 'ARS' as const, cuotas: cuotasArs },
+      { moneda: 'USD' as const, cuotas: cuotasUsd },
+    ] as const
+  )
+    .filter((p) => p.cuotas.length > 0)
+    .map((p) => ({
+      ...p,
+      estado: estadoDeDeuda(p.cuotas, hoy),
+      cifra: p.moneda === 'USD' ? formatearUSD : formatearARS,
+    }));
 
   const aDevolver = await devolucionesDe(db, id);
   const ajustes = await ajustesDeWhatsApp(db);
@@ -85,6 +104,16 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
             >
               {formatearARS(cliente.saldoCentavos)}
             </p>
+            {/* La deuda en dólares va aparte y con su signo: es otra deuda, no
+                un subtotal de la de pesos (D62). */}
+            {cliente.saldoUsdCentavos > 0 ? (
+              <p className="tabular text-2xl font-bold text-(--color-alerta-tinta)">
+                {formatearUSD(cliente.saldoUsdCentavos)}{' '}
+                <span className="text-xs font-bold tracking-[0.06em] text-(--color-tinta-suave) uppercase">
+                  en dólares
+                </span>
+              </p>
+            ) : null}
             {cuenta?.origen === 'migrado_papel' ? (
               <p className="text-xs text-(--color-tinta-suave)">
                 Viene de una ficha de papel migrada
@@ -92,7 +121,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
             ) : null}
           </div>
 
-          {cliente.saldoCentavos > 0 ? (
+          {cliente.saldoCentavos > 0 || cliente.saldoUsdCentavos > 0 ? (
             <Link
               href="/fiado"
               className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 py-2.5 font-semibold text-(--color-marca-texto)"
@@ -102,19 +131,21 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           ) : null}
         </div>
 
-        {estado ? (
-          <div className="mt-3 rounded-(--radius-caja) bg-(--color-papel) p-3">
+        {planes.map((plan) => (
+          <div key={plan.moneda} className="mt-3 rounded-(--radius-caja) bg-(--color-papel) p-3">
             <p className="text-sm font-semibold">
-              {estado.titulo} · {estado.cuotasPagadas} de {estado.cuotasTotales} cuotas pagas
+              {plan.estado.titulo} · {plan.estado.cuotasPagadas} de {plan.estado.cuotasTotales}{' '}
+              cuotas pagas
+              {planes.length > 1 ? (plan.moneda === 'USD' ? ' · en dólares' : ' · en pesos') : ''}
             </p>
             <ol className="mt-2 flex flex-col gap-1 text-sm">
-              {cuotas.map((c) => {
+              {plan.cuotas.map((c) => {
                 const falta = Math.max(0, c.montoCentavos - c.pagadoCentavos);
-                const vencida = falta > 0 && c.vencimiento < fechaLocalISO();
+                const vencida = falta > 0 && c.vencimiento < hoy;
                 return (
                   <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
                     <span className="w-16 text-(--color-tinta-suave)">Cuota {c.numero}</span>
-                    <span className="tabular font-medium">{formatearARS(c.montoCentavos)}</span>
+                    <span className="tabular font-medium">{plan.cifra(c.montoCentavos)}</span>
                     <span
                       className={
                         vencida
@@ -126,7 +157,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                     </span>
                     {falta > 0 && falta !== c.montoCentavos ? (
                       <span className="tabular text-xs text-(--color-tinta-suave)">
-                        falta {formatearARS(falta)}
+                        falta {plan.cifra(falta)}
                       </span>
                     ) : null}
                   </li>
@@ -134,7 +165,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
               })}
             </ol>
           </div>
-        ) : null}
+        ))}
 
         {recordatorio.listo ? (
           <div className="mt-3">
@@ -160,7 +191,9 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
         {puedeFiar ? (
           <div className="mt-4 space-y-3 border-t border-(--color-borde) pt-3">
             <FormularioLimite clienteId={cliente.id} limiteCentavos={cliente.limiteCentavos} />
-            {cliente.saldoCentavos === 0 && movimientos.length === 0 ? (
+            {cliente.saldoCentavos === 0 &&
+            cliente.saldoUsdCentavos === 0 &&
+            movimientos.length === 0 ? (
               <FormularioFicha clienteId={cliente.id} nombre={cliente.nombre} />
             ) : null}
           </div>

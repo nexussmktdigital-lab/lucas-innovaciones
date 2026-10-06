@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from 'react';
 import { transferirAccion, type EstadoGastos } from '@/app/acciones-gastos';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import type { CuentaConSaldo } from '@/gastos/cuentas';
 
 const INICIAL: EstadoGastos = {};
@@ -26,7 +26,20 @@ export default function FormularioTransferencia({ cuentas }: { cuentas: CuentaCo
   if (cuentas.length < 2) return null;
 
   const cuentaOrigen = cuentas.find((c) => c.id === origen);
-  const destinos = cuentas.filter((c) => c.id !== origen);
+
+  /*
+   * Los destinos posibles son los de la misma moneda.
+   *
+   * El cajón de dólares guarda centavos de dólar y las demás cuentas centavos de
+   * peso: pasar «5.000» de uno al otro saca US$ 50 y pone $50, y deja los dos
+   * saldos mal. El servidor lo rechaza igual; no ofrecerlo evita que alguien lo
+   * intente con la plata en la mano.
+   */
+  const enDolares = (c: CuentaConSaldo) => c.tipo === 'dolares';
+  const destinos = cuentas.filter(
+    (c) => c.id !== origen && (!cuentaOrigen || enDolares(c) === enDolares(cuentaOrigen)),
+  );
+  const cifra = cuentaOrigen && enDolares(cuentaOrigen) ? formatearUSD : formatearARS;
 
   if (!abierto) {
     return (
@@ -73,7 +86,7 @@ export default function FormularioTransferencia({ cuentas }: { cuentas: CuentaCo
           </select>
           {cuentaOrigen ? (
             <p className="mt-1 text-xs text-(--color-tinta-suave)">
-              Tiene {formatearARS(cuentaOrigen.saldoCentavos)}
+              Tiene {cifra(cuentaOrigen.saldoCentavos)}
             </p>
           ) : null}
         </div>
@@ -97,7 +110,7 @@ export default function FormularioTransferencia({ cuentas }: { cuentas: CuentaCo
 
         <div>
           <label htmlFor="monto-transfe" className="mb-1 block text-sm font-medium">
-            Cuánto
+            Cuánto {cuentaOrigen && enDolares(cuentaOrigen) ? 'en dólares' : ''}
           </label>
           <input
             id="monto-transfe"

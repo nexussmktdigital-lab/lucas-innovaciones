@@ -174,6 +174,8 @@ export interface ClienteEnLista {
   dni: string | null;
   notas: string | null;
   saldoCentavos: number;
+  /** Lo que debe en dólares, que es una deuda aparte (D62). Nunca se suman. */
+  saldoUsdCentavos: number;
   limiteCentavos: number | null;
   /** Cuántas compras fiadas tiene registradas. */
   comprasFiadas: number;
@@ -213,12 +215,13 @@ export async function buscarClientes(
     dni: string | null;
     notas: string | null;
     saldo_centavos: string | number | null;
+    saldo_usd_centavos: string | number | null;
     limite_centavos: string | number | null;
     compras_fiadas: string | number;
   }>(
     await db.execute(sql`
       SELECT c.id, c.nombre, c.telefono, c.telefono_raw, c.dni, c.notas,
-             a.saldo_centavos, a.limite_centavos,
+             a.saldo_centavos, a.saldo_usd_centavos, a.limite_centavos,
              (SELECT count(*) FROM sales s
                WHERE s.cliente_id = c.id AND s.tipo = 'fiado' AND s.estado = 'completed')
                AS compras_fiadas
@@ -238,6 +241,7 @@ export async function buscarClientes(
     dni: f.dni,
     notas: f.notas,
     saldoCentavos: Number(f.saldo_centavos ?? 0),
+    saldoUsdCentavos: Number(f.saldo_usd_centavos ?? 0),
     limiteCentavos: f.limite_centavos === null ? null : Number(f.limite_centavos),
     comprasFiadas: Number(f.compras_fiadas),
   }));
@@ -258,6 +262,7 @@ export async function clientePorId(
       email: customers.email,
       direccion: customers.direccion,
       saldoCentavos: creditAccounts.saldoCentavos,
+      saldoUsdCentavos: creditAccounts.saldoUsdCentavos,
       limiteCentavos: creditAccounts.limiteCentavos,
     })
     .from(customers)
@@ -270,6 +275,7 @@ export async function clientePorId(
   return {
     ...c,
     saldoCentavos: c.saldoCentavos ?? 0,
+    saldoUsdCentavos: c.saldoUsdCentavos ?? 0,
     limiteCentavos: c.limiteCentavos,
     comprasFiadas: 0,
   };
@@ -296,6 +302,7 @@ export async function clientesParaVender(db: BaseDatos, limite = 1000) {
       nombre: customers.nombre,
       telefono: customers.telefono,
       saldoCentavos: creditAccounts.saldoCentavos,
+      saldoUsdCentavos: creditAccounts.saldoUsdCentavos,
       limiteCentavos: creditAccounts.limiteCentavos,
     })
     .from(customers)
@@ -309,6 +316,7 @@ export async function clientesParaVender(db: BaseDatos, limite = 1000) {
     nombre: c.nombre,
     telefono: c.telefono,
     saldoCentavos: c.saldoCentavos ?? 0,
+    saldoUsdCentavos: c.saldoUsdCentavos ?? 0,
     limiteCentavos: c.limiteCentavos,
   }));
 }

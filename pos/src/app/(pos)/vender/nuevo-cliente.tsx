@@ -87,6 +87,7 @@ export default function NuevoCliente({
         nombre: nombre.trim(),
         telefono: telefono.trim() || null,
         saldoCentavos: 0,
+        saldoUsdCentavos: 0,
         limiteCentavos: null,
       });
     } catch {

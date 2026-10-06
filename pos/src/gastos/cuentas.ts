@@ -22,7 +22,14 @@ export class ErrorCuenta extends Error {}
 export interface CuentaConSaldo {
   id: string;
   nombre: string;
-  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'otro';
+  /**
+   * `dolares` faltaba en esta lista y la base lo tiene desde la fase 1: el
+   * cajón de dólares existía con el tipo puesto y acá se leía como si fuera
+   * `otro`. Mientras nadie lo usaba no se notaba; desde que los billetes verdes
+   * entran de verdad, el tipo decide con qué signo se escribe el saldo.
+   */
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares' | 'otro';
+  /** En centavos de **su** moneda: el cajón de dólares lleva centavos de dólar. */
   saldoCentavos: number;
   /** Cuántos movimientos tiene, para saber si está en uso. */
   movimientos: number;
@@ -146,6 +153,27 @@ export async function transferir(
     const origen = cuentas.find((c) => String(c.id) === datos.origenId);
     const destino = cuentas.find((c) => String(c.id) === datos.destinoId);
     if (!origen || !destino) throw new ErrorCuenta('No se encuentra alguna de las cuentas.');
+
+    /*
+     * No se transfiere entre monedas distintas.
+     *
+     * El saldo del cajón de dólares está en centavos de dólar y el de las demás
+     * cuentas en centavos de peso. Mover «5.000» de uno al otro le saca US$ 50 a
+     * uno y le pone $50 al otro: dos saldos mal con un solo clic, y ninguno de
+     * los dos vuelve a cerrar contra sus movimientos.
+     *
+     * Cambiar dólares por pesos no es una transferencia, es una venta de
+     * dólares: tiene una cotización y un resultado. El día que el local lo
+     * necesite se hace como tal; hasta entonces esto se frena acá, donde se
+     * puede explicar, y no en una columna que nadie mira.
+     */
+    const enDolares = (tipo: unknown) => String(tipo) === 'dolares';
+    if (enDolares(origen.tipo) !== enDolares(destino.tipo)) {
+      throw new ErrorCuenta(
+        'No se puede transferir entre pesos y dólares: son dos monedas y el saldo quedaría mal ' +
+          'en las dos cuentas. Cambiar dólares es una venta de dólares, no una transferencia.',
+      );
+    }
 
     const saldoOrigen = Number(origen.saldo_centavos);
     if (saldoOrigen < datos.montoCentavos) {

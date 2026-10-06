@@ -12,7 +12,7 @@
  * la venta más común. El plan aparece cuando alguien lo elige.
  */
 import { useMemo } from 'react';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import {
   CUOTAS_MAXIMAS,
@@ -31,14 +31,24 @@ const ATAJOS = [1, 2, 3, 6, 12];
 
 export default function PlanDeCuotas({
   montoCentavos,
+  moneda = 'ARS',
   plan,
   onCambiar,
 }: {
+  /** Lo que se fía, **en la moneda de la deuda**. */
   montoCentavos: number;
+  /**
+   * La moneda de la deuda y de sus cuotas, que la fija la venta: un iPhone se
+   * pacta en dólares y sus cuotas son en dólares (D62). Mostrarlas en pesos acá
+   * haría que el mostrador le prometa al cliente un número y el sistema le
+   * guarde otro —y el papel que firma sale de este.
+   */
+  moneda?: 'ARS' | 'USD';
   plan: PlanElegido | null;
   onCambiar: (plan: PlanElegido | null) => void;
 }) {
   const hoy = fechaLocalISO();
+  const cifra = moneda === 'USD' ? formatearUSD : formatearARS;
 
   const cuotas = useMemo(() => {
     if (!plan) return [];
@@ -145,7 +155,7 @@ export default function PlanDeCuotas({
             <p className="mt-2 text-sm">
               <strong className="tabular">
                 {plan.cuotas} {plan.cuotas === 1 ? 'pago' : 'cuotas'} de{' '}
-                {formatearARS(primera.montoCentavos)}
+                {cifra(primera.montoCentavos)}
               </strong>
               . {plan.cuotas === 1 ? 'Vence' : 'La primera vence'} el{' '}
               <strong>{comoSeLee(primera.vencimiento)}</strong>
@@ -162,6 +172,7 @@ export default function PlanDeCuotas({
       ) : (
         <p className="mt-2 text-xs text-(--color-tinta-suave)">
           Queda como saldo en su cuenta, sin fecha de cobro. Es el fiado de siempre.
+          {moneda === 'USD' ? ' El saldo queda en dólares, igual que la venta.' : ''}
         </p>
       )}
     </div>

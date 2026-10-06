@@ -2064,3 +2064,61 @@ reventado en la primera tabla que ya existe.
 
 Las migraciones de este proyecto se escriben a mano. Quedó dicho en el
 encabezado de la 0015 y vale para la próxima.
+
+## La deuda que existía en la base y no la veía nadie
+
+Terminé el dominio de la deuda en dólares —la cuenta, el plan, el cobro, los
+tests— y lo di por hecho. Faltaba lo más simple: la lista de Fiado filtraba por
+`saldo_centavos > 0`, y el que compra un iPhone en cuotas tiene ese saldo **en
+cero**. Su deuda eran mil quinientos dólares guardados correctamente en una
+columna que la pantalla no miraba.
+
+O sea: el caso exacto para el que se hizo todo el cambio era el único que no
+aparecía en la pantalla donde se cobra. Y el encabezado decía «Nadie debe nada».
+
+Lo mismo pasaba en cadena, cada uno en su lugar: el total por cobrar, la lista de
+clientes («Al día»), la ficha del cliente, el recordatorio de WhatsApp —que
+devolvía `sin_deuda` y por eso no mostraba ni el botón— y el aviso de la pantalla
+de venta al fiarle de nuevo.
+
+Agregar la columna al dominio es una cosa; que la deuda sea **visible y
+cobrable** es otra, y la segunda es la que hace que el local cobre. Un cambio de
+modelo no termina en el modelo: termina cuando todas las pantallas que preguntan
+«¿cuánto debe?» saben que ahora hay dos respuestas.
+
+## El semáforo que sumaba dólares con pesos
+
+`estadosDeClientes` juntaba todas las cuotas vivas del cliente sin mirar la
+moneda. Con un plan en pesos y otro en dólares, armaba una sola lista ordenada
+por vencimiento y sumaba los montos: una cuota de US$ 500 —50.000 centavos— con
+una de $200.000 —20.000.000 de centavos—. El «vencido» que salía de ahí no es
+plata de nadie, y el número de cuota que decide la imputación salía del orden
+mezclado.
+
+No lo encontró un test. Lo encontré leyendo la función para pasarle la moneda, y
+solo porque el filtro ya estaba puesto en `cuotasDeCuenta` y me llamó la atención
+que acá no estuviera. Las dos consultas hacen casi lo mismo y una se había
+quedado atrás.
+
+## El cajón de dólares entraba al total como si fueran pesos
+
+Lo encontró un test de punta a punta que iba a verificar otra cosa: fue a
+`/cuentas` a ver los billetes verdes y resultó que la pantalla los escribía con
+signo de peso **y los sumaba al total de todas las cuentas**. Centavos de dólar
+sumados con centavos de peso: el total del negocio, que es el número que se mira
+para saber cómo va el mes, estaba mal por la diferencia entera.
+
+`CuentaConSaldo.tipo` ni siquiera incluía `'dolares'` —el tipo existe en la base
+desde la fase 1 y acá se leía como `'otro'`—, así que no había forma de que la
+pantalla supiera qué moneda estaba mostrando. El tipo mentía y nadie lo notó
+mientras el cajón estuvo vacío.
+
+Y tirando del hilo apareció el peor: `transferir` no miraba la moneda. Pasar
+«5.000» del cajón de dólares al banco le sacaba US$ 50 a uno y le ponía $50 al
+otro, con un clic, desde un formulario que ofrecía las dos cuentas juntas. Dos
+saldos mal y ninguno de los dos vuelve a cerrar contra sus movimientos.
+
+Es el mismo patrón que `tipoDeCuentaPara('dolares')` devolviendo `'efectivo'`:
+código escrito cuando los dólares eran una idea, correcto mientras nadie los
+usara, y roto en la primera operación real. Habilitar un medio de pago no es
+agregar un botón: es revisar todo lo que toca esa plata después.

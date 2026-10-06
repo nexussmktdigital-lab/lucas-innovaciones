@@ -33,8 +33,10 @@ export interface Cliente {
   id: string;
   nombre: string;
   telefono: string | null;
-  /** Lo que ya debe. Se muestra al elegirlo: fiarle es sumarle a esto. */
+  /** Lo que ya debe en pesos. Se muestra al elegirlo: fiarle es sumarle a esto. */
   saldoCentavos: number;
+  /** Lo que ya debe en dólares, que es otra deuda (D62). Nunca se suman. */
+  saldoUsdCentavos: number;
   limiteCentavos: number | null;
 }
 

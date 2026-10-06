@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aCentavos, formatearARS, usdAPesos } from '@/lib/dinero';
+import { aCentavos, formatearARS, formatearUSD, pesosAUsdExacto, usdAPesos } from '@/lib/dinero';
 import PlanDeCuotas, { type PlanElegido } from './plan-de-cuotas';
 import {
   calcularCobro,
@@ -137,6 +137,27 @@ export default function Cobro({
     .filter((p) => p.medio === 'cuenta_corriente')
     .reduce((suma, p) => suma + p.montoCentavos, 0);
   const hayFiado = fiadoCentavos > 0;
+
+  /*
+   * Lo que se vende en dólares se debe en dólares (D62).
+   *
+   * Es la misma regla que aplica el servidor al confirmar: si **todo** el
+   * carrito está cotizado en dólares, el saldo fiado queda en dólares. Un
+   * carrito mezclado queda en pesos, a propósito: no hay forma de partir una
+   * deuda sola en dos monedas sin inventar cuál parte es cuál.
+   *
+   * Se calcula también acá para que la pantalla diga lo mismo que va a quedar
+   * guardado: el vendedor acuerda las cuotas mirando esto.
+   */
+  const carritoEnDolares = lineas.length > 0 && lineas.every((l) => l.monedaOriginal === 'USD');
+  // Sin cotización el servidor rechaza la venta fiada en dólares, así que acá no
+  // se muestra un monto en dólares que nunca va a existir: se avisa y listo.
+  const ventaEnDolares = carritoEnDolares && (tcCentavos ?? 0) > 0;
+  const faltaElDolar = carritoEnDolares && !(tcCentavos ?? 0);
+  const fiadoEnDeudaCentavos = ventaEnDolares
+    ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
+    : fiadoCentavos;
+  const cifraDeuda = ventaEnDolares ? formatearUSD : formatearARS;
 
   function cuentaPara(tipo: Cuenta['tipo'] | null): string | null {
     if (!tipo) return null;
@@ -415,21 +436,47 @@ export default function Cobro({
 
         {hayFiado && cliente ? (
           <p className="mt-3 rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
-            Le vas a fiar <strong className="tabular">{formatearARS(fiadoCentavos)}</strong> a{' '}
-            <strong>{cliente.nombre}</strong>.{' '}
-            {cliente.saldoCentavos > 0 ? (
+            Le vas a fiar <strong className="tabular">{cifraDeuda(fiadoEnDeudaCentavos)}</strong> a{' '}
+            <strong>{cliente.nombre}</strong>
+            {ventaEnDolares ? (
               <>
-                Ya debe <span className="tabular">{formatearARS(cliente.saldoCentavos)}</span>, así
-                que va a quedar en{' '}
+                {' '}
+                —en dólares, como se vendió—{' '}
+                <span className="text-(--color-tinta-media)">
+                  ({formatearARS(fiadoCentavos)} de hoy)
+                </span>
+              </>
+            ) : null}
+            .{' '}
+            {faltaElDolar ? (
+              <strong className="text-(--color-error)">
+                Esta venta se fía en dólares y no hay cotización cargada: el sistema no la va a
+                dejar pasar hasta que la carguen en Dólar.
+              </strong>
+            ) : null}{' '}
+            {(ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos) > 0 ? (
+              <>
+                Ya debe{' '}
+                <span className="tabular">
+                  {cifraDeuda(ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos)}
+                </span>
+                , así que va a quedar en{' '}
                 <span className="tabular font-semibold">
-                  {formatearARS(cliente.saldoCentavos + fiadoCentavos)}
+                  {cifraDeuda(
+                    (ventaEnDolares ? cliente.saldoUsdCentavos : cliente.saldoCentavos) +
+                      fiadoEnDeudaCentavos,
+                  )}
                 </span>
                 .
               </>
             ) : (
               'Es la primera vez que le fiás.'
             )}
-            {cliente.limiteCentavos !== null &&
+            {/* El tope mide la deuda en pesos, que es la que limita. Una venta en
+                dólares no la mueve, así que tampoco se avisa de un tope que no
+                se va a pasar. */}
+            {!ventaEnDolares &&
+            cliente.limiteCentavos !== null &&
             cliente.saldoCentavos + fiadoCentavos > cliente.limiteCentavos ? (
               <>
                 {' '}
@@ -443,7 +490,12 @@ export default function Cobro({
         ) : null}
 
         {hayFiado && cliente ? (
-          <PlanDeCuotas montoCentavos={fiadoCentavos} plan={plan} onCambiar={setPlan} />
+          <PlanDeCuotas
+            montoCentavos={fiadoEnDeudaCentavos}
+            moneda={ventaEnDolares ? 'USD' : 'ARS'}
+            plan={plan}
+            onCambiar={setPlan}
+          />
         ) : null}
 
         {cobro && pagos.length > 0 ? (

@@ -170,13 +170,16 @@ test('pasar plata de la caja al banco no cambia el total del negocio', async ({ 
   await asegurarCajaAbierta(page);
 
   await page.goto('/cuentas');
-  const totalAntes = await page.getByText('Total en todas las cuentas').locator('..').innerText();
+  const totalAntes = await page
+    .getByText('Total en las cuentas en pesos')
+    .locator('..')
+    .innerText();
 
   await page.getByRole('button', { name: 'Pasar plata de una cuenta a otra' }).click();
   const transfe = page.getByRole('form', { name: 'Pasar plata entre cuentas' });
   await transfe.getByLabel('De qué cuenta').selectOption({ label: 'Caja en efectivo' });
   await transfe.getByLabel('A qué cuenta').selectOption({ label: 'Banco' });
-  await transfe.getByLabel('Cuánto').fill('10000');
+  await transfe.getByLabel(/^Cuánto/).fill('10000');
   await transfe.getByLabel('Nota (opcional)').fill('Depósito de la recaudación');
   await transfe.getByRole('button', { name: 'Pasar la plata' }).click();
 
@@ -186,7 +189,10 @@ test('pasar plata de la caja al banco no cambia el total del negocio', async ({ 
   });
 
   // …el total no se movió, porque la plata no salió del negocio…
-  const totalDespues = await page.getByText('Total en todas las cuentas').locator('..').innerText();
+  const totalDespues = await page
+    .getByText('Total en las cuentas en pesos')
+    .locator('..')
+    .innerText();
   expect(totalDespues).toBe(totalAntes);
 
   // …y nunca hay descuadres entre el saldo y los movimientos.

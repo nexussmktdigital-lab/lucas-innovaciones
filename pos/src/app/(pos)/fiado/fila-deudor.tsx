@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import type { DeudorEnLista } from '@/fiado/cuenta';
 import { comoSeDice, type Color, type EstadoDeDeuda, type Cadencia } from '@/fiado/plan';
@@ -12,12 +12,22 @@ import BotonWhatsApp from '../boton-whatsapp';
 
 const INICIAL: EstadoFiado = {};
 
+/*
+ * Con qué se puede pagar una cuota.
+ *
+ * «Billetes de dólar» y «Cheque» están porque el cliente paga con lo que tiene
+ * —eso lo pidió el local, y vale para cualquier producto, no solo para los
+ * iPhone—. Cada medio va al cajón que le toca: los dólares al cajón de dólares,
+ * el cheque al banco.
+ */
 const MEDIOS = [
   { valor: 'efectivo', etiqueta: 'Efectivo' },
+  { valor: 'dolares', etiqueta: 'Billetes de dólar' },
   { valor: 'transferencia', etiqueta: 'Transferencia' },
   { valor: 'mercadopago', etiqueta: 'Mercado Pago' },
   { valor: 'debito', etiqueta: 'Débito' },
   { valor: 'credito', etiqueta: 'Crédito' },
+  { valor: 'cheque', etiqueta: 'Cheque' },
 ] as const;
 
 /** «hoy», «ayer», «hace 5 días»: como se cuenta el tiempo en el mostrador. */
@@ -80,6 +90,11 @@ const ETIQUETA_WHATSAPP: Record<Color, string> = {
   gris: 'Recordarle por WhatsApp',
 };
 
+/** Un monto en la moneda de su deuda: `$120.000` o `US$ 200`. */
+function comoSeEscribe(centavos: number, moneda: 'ARS' | 'USD'): string {
+  return moneda === 'USD' ? formatearUSD(centavos) : formatearARS(centavos);
+}
+
 /** `2026-10-18` → `18/10/2026`. */
 function comoSeLee(iso: string): string {
   const [a, m, d] = iso.split('-');
@@ -91,18 +106,34 @@ function nuevaClave(): string {
   return globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}-${Math.random()}`;
 }
 
+type EstadoConCadencia = EstadoDeDeuda & { cadencia: Cadencia | null };
+
+/** Una de las dos deudas del cliente, con su plan y su forma de escribirse. */
+interface Deuda {
+  moneda: 'ARS' | 'USD';
+  centavos: number;
+  texto: string;
+  estado: EstadoConCadencia | null;
+}
+
 export default function FilaDeudor({
   deudor,
   estado,
+  estadoUsd,
   hayCaja,
+  hayCotizacion,
   puedeFiar,
   recordatorio,
   ultimoAviso,
 }: {
   deudor: DeudorEnLista;
-  /** Su plan de cuotas, si tiene. `null` es el fiado abierto de siempre. */
-  estado: (EstadoDeDeuda & { cadencia: Cadencia | null }) | null;
+  /** Su plan de cuotas en pesos, si tiene. `null` es el fiado abierto de siempre. */
+  estado: EstadoConCadencia | null;
+  /** Su plan en dólares, el del iPhone. Es otro plan y otro semáforo (D62). */
+  estadoUsd: EstadoConCadencia | null;
   hayCaja: boolean;
+  /** Si hay cotización del día: sin ella no se puede cruzar de moneda al cobrar. */
+  hayCotizacion: boolean;
   puedeFiar: boolean;
   recordatorio: Preparacion;
   ultimoAviso: UltimoAviso | null;
@@ -110,6 +141,56 @@ export default function FilaDeudor({
   const [resultado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
   const [clave, setClave] = useState(nuevaClave);
+
+  /*
+   * Las dos deudas, cada una con lo suyo.
+   *
+   * Nunca se suman ni se muestran como un solo número: lo que se vendió en
+   * dólares se debe en dólares y se cobra en dólares (D62). Un total mezclado
+   * sería plata que no existe, y el que la cobra lo cobraría mal.
+   */
+  const deudas: Deuda[] = [
+    deudor.saldoCentavos > 0
+      ? {
+          moneda: 'ARS' as const,
+          centavos: deudor.saldoCentavos,
+          texto: formatearARS(deudor.saldoCentavos),
+          estado,
+        }
+      : null,
+    deudor.saldoUsdCentavos > 0
+      ? {
+          moneda: 'USD' as const,
+          centavos: deudor.saldoUsdCentavos,
+          texto: formatearUSD(deudor.saldoUsdCentavos),
+          estado: estadoUsd,
+        }
+      : null,
+  ].filter((d): d is Deuda => d !== null);
+
+  // De cuál se habla cuando hay una sola, y cuál viene elegida de entrada cuando
+  // hay dos: la que más apura.
+  const masUrgente =
+    deudas.length > 1
+      ? (deudas.find((d) => d.estado?.color === 'rojo') ?? deudas[0]!)
+      : (deudas[0] ?? null);
+
+  const [moneda, setMoneda] = useState<'ARS' | 'USD'>(masUrgente?.moneda ?? 'ARS');
+  const [medio, setMedio] = useState<string>('efectivo');
+
+  const aCobrar = deudas.find((d) => d.moneda === moneda) ?? masUrgente;
+  const enDolares = aCobrar?.moneda === 'USD';
+
+  /*
+   * Cruzar de moneda necesita la cotización del día.
+   *
+   * Una cuota de US$ 200 pagada por transferencia entra al banco en pesos, y esos
+   * pesos salen de la cotización. Sin cotización el cobro falla en el servidor;
+   * avisarlo acá evita que el cliente esté esperando con la plata en la mano.
+   */
+  const pagaConDolares = medio === 'dolares';
+  const necesitaCotizacion = pagaConDolares !== enDolares;
+  const faltaCotizacion = necesitaCotizacion && !hayCotizacion;
 
   /*
    * Cobrado el pago, el formulario se cierra solo y la clave se renueva.
@@ -132,10 +213,13 @@ export default function FilaDeudor({
     }
   }, [resultado.ok]);
 
+  // El tope mide la deuda en pesos, que es la que el tope limita: un límite en
+  // pesos contra una deuda en dólares compararía dos cosas distintas.
   const pasadoDeLimite =
     deudor.limiteCentavos !== null && deudor.saldoCentavos >= deudor.limiteCentavos;
 
-  const color = estado?.color ?? 'gris';
+  // La barra de color muestra lo que más apura entre las dos deudas.
+  const color = masUrgente?.estado?.color ?? 'gris';
   const tono = SEMAFORO[color];
 
   return (
@@ -157,45 +241,60 @@ export default function FilaDeudor({
           <span
             className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold tracking-[0.03em] uppercase ${tono.chip} ${tono.tinta}`}
           >
-            {enPocasPalabras(estado)}
+            {enPocasPalabras(masUrgente?.estado ?? null)}
           </span>
         </div>
 
-        <p className="cifra text-[28px] leading-none">{formatearARS(deudor.saldoCentavos)}</p>
+        {/* Un bloque por deuda. El que debe un iPhone en cuotas y además un
+            vidrio templado ve las dos cosas separadas, cada una con su plan. */}
+        {deudas.map((d, i) => (
+          <div key={d.moneda} className={i === 0 ? '' : 'border-t border-(--color-borde) pt-3'}>
+            <p className={`cifra leading-none ${i === 0 ? 'text-[28px]' : 'text-[22px]'}`}>
+              {d.texto}
+              {deudas.length > 1 ? (
+                <span className="ml-2 text-xs font-bold tracking-[0.06em] text-(--color-tinta-suave) uppercase">
+                  {d.moneda === 'USD' ? 'en dólares' : 'en pesos'}
+                </span>
+              ) : null}
+            </p>
 
-        {estado ? (
-          <p className="text-sm text-(--color-tinta-media)">
-            {estado.proxima ? (
-              <>
-                Cuota {estado.proxima.numero} de {estado.cuotasTotales} ·{' '}
-                <span className="tabular">{formatearARS(estado.proxima.faltaCentavos)}</span> ·{' '}
-                {color === 'rojo' ? 'vencía el' : 'vence el'}{' '}
-                {comoSeLee(estado.proxima.vencimiento)}
-              </>
+            {d.estado ? (
+              <p className="mt-2 text-sm text-(--color-tinta-media)">
+                {d.estado.proxima ? (
+                  <>
+                    Cuota {d.estado.proxima.numero} de {d.estado.cuotasTotales} ·{' '}
+                    <span className="tabular">{comoSeEscribe(d.estado.proxima.faltaCentavos, d.moneda)}</span> ·{' '}
+                    {d.estado.color === 'rojo' ? 'vencía el' : 'vence el'}{' '}
+                    {comoSeLee(d.estado.proxima.vencimiento)}
+                  </>
+                ) : (
+                  <>Las {d.estado.cuotasTotales} cuotas están pagas</>
+                )}
+              </p>
             ) : (
-              <>Las {estado.cuotasTotales} cuotas están pagas</>
+              <p className="mt-2 text-sm text-(--color-tinta-media)">
+                Fiado suelto, sin fechas acordadas
+              </p>
             )}
-          </p>
-        ) : (
-          <p className="text-sm text-(--color-tinta-media)">Fiado suelto, sin fechas acordadas</p>
-        )}
 
-        {estado?.color === 'rojo' && estado.vencidoCentavos > 0 ? (
-          <p className="rounded-(--radius-caja) bg-(--color-error-fondo) px-3 py-2 text-sm">
-            Vencido y sin pagar:{' '}
-            <strong className="tabular text-(--color-error)">
-              {formatearARS(estado.vencidoCentavos)}
-            </strong>
-          </p>
-        ) : null}
+            {d.estado?.color === 'rojo' && d.estado.vencidoCentavos > 0 ? (
+              <p className="mt-2 rounded-(--radius-caja) bg-(--color-error-fondo) px-3 py-2 text-sm">
+                Vencido y sin pagar:{' '}
+                <strong className="tabular text-(--color-error)">
+                  {comoSeEscribe(d.estado.vencidoCentavos, d.moneda)}
+                </strong>
+              </p>
+            ) : null}
+          </div>
+        ))}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--color-tinta-suave)">
           {deudor.telefono ? <span>{deudor.telefono}</span> : null}
           {deudor.origen === 'migrado_papel' ? <span>De la libreta</span> : null}
-          {estado?.cadencia ? (
+          {masUrgente?.estado?.cadencia ? (
             <span>
-              Paga {comoSeDice(estado.cadencia)} · {estado.cuotasPagadas} de{' '}
-              {estado.cuotasTotales} pagas
+              Paga {comoSeDice(masUrgente.estado.cadencia)} · {masUrgente.estado.cuotasPagadas} de{' '}
+              {masUrgente.estado.cuotasTotales} pagas
             </span>
           ) : null}
           {deudor.ultimoMovimiento ? (
@@ -267,6 +366,33 @@ export default function FilaDeudor({
           >
             <input type="hidden" name="clienteId" value={deudor.customerId} />
             <input type="hidden" name="clave" value={clave} />
+            <input type="hidden" name="monedaDeuda" value={moneda} />
+
+            {/* Cuál de las dos deudas está pagando. Solo aparece cuando debe en
+                las dos: preguntarlo cuando hay una sola es una pregunta de más
+                en el mostrador, y una forma de equivocarse. */}
+            {deudas.length > 1 ? (
+              <div>
+                <span className="mb-1 block text-xs font-medium">¿Qué deuda paga?</span>
+                <div className="flex gap-2">
+                  {deudas.map((d) => (
+                    <button
+                      key={d.moneda}
+                      type="button"
+                      onClick={() => setMoneda(d.moneda)}
+                      aria-pressed={moneda === d.moneda}
+                      className={`min-h-10 flex-1 rounded-(--radius-caja) border px-2 text-sm font-semibold ${
+                        moneda === d.moneda
+                          ? 'border-(--color-marca) bg-(--color-marca) text-(--color-marca-texto)'
+                          : 'border-(--color-borde) bg-(--color-panel)'
+                      }`}
+                    >
+                      {d.texto}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-end gap-2">
               <div>
@@ -274,16 +400,19 @@ export default function FilaDeudor({
                   htmlFor={`monto-${deudor.customerId}`}
                   className="mb-1 block text-xs font-medium"
                 >
-                  ¿Cuánto paga?
+                  ¿Cuánto paga? {enDolares ? 'En dólares' : 'En pesos'}
                 </label>
                 <input
+                  // La clave fuerza a rehacer el campo al cambiar de deuda: si no,
+                  // quedaría el monto de la otra moneda escrito y se cobraría eso.
+                  key={moneda}
                   id={`monto-${deudor.customerId}`}
                   name="monto"
                   type="text"
                   inputMode="decimal"
                   required
                   autoFocus
-                  defaultValue={String(deudor.saldoCentavos / 100)}
+                  defaultValue={String((aCobrar?.centavos ?? 0) / 100)}
                   className="tabular min-h-11 w-36 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
                 />
               </div>
@@ -298,7 +427,8 @@ export default function FilaDeudor({
                 <select
                   id={`medio-${deudor.customerId}`}
                   name="medio"
-                  defaultValue="efectivo"
+                  value={medio}
+                  onChange={(e) => setMedio(e.target.value)}
                   className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
                 >
                   {MEDIOS.map((m) => (
@@ -327,6 +457,37 @@ export default function FilaDeudor({
               </div>
             </div>
 
+            {/* La deuda y el medio están en monedas distintas: el monto se
+                imputa a la deuda y a la caja entra lo que valga hoy. Se dice
+                antes de cobrar, no después. */}
+            {necesitaCotizacion ? (
+              <p
+                className={`rounded-(--radius-caja) px-3 py-2 text-sm ${
+                  faltaCotizacion ? 'bg-(--color-error-fondo)' : 'bg-(--color-alerta-fondo)'
+                }`}
+              >
+                {faltaCotizacion ? (
+                  <>
+                    Falta la cotización del día y hace falta para pasar de{' '}
+                    {enDolares ? 'dólares a pesos' : 'pesos a dólares'}.{' '}
+                    <Link href="/cotizacion" className="font-semibold underline underline-offset-2">
+                      Cargala en Dólar
+                    </Link>
+                  </>
+                ) : enDolares ? (
+                  <>
+                    Se le descuentan dólares de la deuda y a la caja entran los pesos que valgan
+                    hoy, con la cotización del día.
+                  </>
+                ) : (
+                  <>
+                    Se le descuentan pesos de la deuda y al cajón de dólares entran los billetes,
+                    convertidos con la cotización del día.
+                  </>
+                )}
+              </p>
+            ) : null}
+
             {resultado.error ? (
               <p role="alert" className="text-sm font-medium text-(--color-error)">
                 {resultado.error}
@@ -343,7 +504,7 @@ export default function FilaDeudor({
               </button>
               <button
                 type="submit"
-                disabled={pendiente}
+                disabled={pendiente || faltaCotizacion}
                 className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-accion) text-sm font-semibold text-(--color-accion-texto) disabled:opacity-60"
               >
                 {pendiente ? 'Registrando…' : 'Registrar el pago'}

@@ -186,6 +186,25 @@ export interface EstadoDeDeuda {
   cuotasTotales: number;
 }
 
+/**
+ * El orden en que hay que llamar: primero el atrasado, al final el que está al
+ * día. Es el orden de la lista de Fiado y el que decide, cuando un cliente debe
+ * en las dos monedas, de cuál de las dos habla la tarjeta.
+ */
+export const URGENCIA: Record<Color, number> = { rojo: 0, amarillo: 1, gris: 2, verde: 3 };
+
+/** Cuál de los dos estados apura más. Empate: la deuda en pesos, que es la de siempre. */
+export function elMasUrgente<T extends EstadoDeDeuda>(
+  ars: T | null,
+  usd: T | null,
+): { estado: T | null; moneda: 'ARS' | 'USD' } {
+  if (!usd) return { estado: ars, moneda: 'ARS' };
+  if (!ars) return { estado: usd, moneda: 'USD' };
+  return URGENCIA[usd.color] < URGENCIA[ars.color]
+    ? { estado: usd, moneda: 'USD' }
+    : { estado: ars, moneda: 'ARS' };
+}
+
 /** Lo que falta de una cuota. Nunca negativo, aunque se haya imputado de más. */
 function faltaDe(c: CuotaGuardada): number {
   return Math.max(0, c.montoCentavos - c.pagadoCentavos);
@@ -340,6 +359,8 @@ export async function crearPlan(
     montoCentavos: number;
     cantidad: number;
     cadencia: Cadencia;
+    /** La moneda del plan y de sus cuotas. La fija la venta. */
+    moneda?: 'ARS' | 'USD';
     desdeISO: string;
     descripcion?: string | null;
   },
@@ -360,6 +381,7 @@ export async function crearPlan(
       totalAPagarCentavos: datos.montoCentavos,
       frecuencia: cadencia.frecuencia,
       frecuenciaDias: cadencia.dias,
+      moneda: datos.moneda ?? 'ARS',
     })
     .returning({ id: creditPlans.id });
 
@@ -396,6 +418,8 @@ export interface CuotaDeCuenta extends CuotaGuardada {
 export async function cuotasDeCuenta(
   db: BaseDatos,
   creditAccountId: string,
+  /** Las de esta moneda. Las dos deudas no se mezclan ni se suman. */
+  moneda: 'ARS' | 'USD' = 'ARS',
 ): Promise<CuotaDeCuenta[]> {
   const filas = await db
     .select({
@@ -410,7 +434,13 @@ export async function cuotasDeCuenta(
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
-    .where(and(eq(creditPlans.creditAccountId, creditAccountId), isNull(creditPlans.anuladoEn)))
+    .where(
+      and(
+        eq(creditPlans.creditAccountId, creditAccountId),
+        isNull(creditPlans.anuladoEn),
+        eq(creditPlans.moneda, moneda),
+      ),
+    )
     .orderBy(installments.vencimiento, installments.numero);
 
   return filas.map((f, i) => ({
@@ -441,9 +471,21 @@ export function aFechaISO(v: string | Date): string {
  */
 export async function imputarPago(
   tx: BaseDatos,
-  datos: { creditAccountId: string; creditPaymentId: string; montoCentavos: number },
+  datos: {
+    creditAccountId: string;
+    creditPaymentId: string;
+    montoCentavos: number;
+    /**
+     * Qué cuotas puede cancelar este pago.
+     *
+     * Un pago en dólares no cancela una cuota en pesos por más que el número
+     * alcance: son dos deudas. Sin este filtro, cobrar US$ 200 marcaría pagada
+     * una cuota de $200 y la deuda en pesos se borraría sola.
+     */
+    moneda?: 'ARS' | 'USD';
+  },
 ): Promise<{ imputadoCentavos: number }> {
-  const cuotas = await cuotasDeCuenta(tx, datos.creditAccountId);
+  const cuotas = await cuotasDeCuenta(tx, datos.creditAccountId, datos.moneda ?? 'ARS');
   if (cuotas.length === 0) return { imputadoCentavos: 0 };
 
   const { imputaciones } = imputar(cuotas, datos.montoCentavos);
@@ -486,11 +528,19 @@ export async function anularPlanesDeVenta(tx: BaseDatos, saleId: string): Promis
     .where(and(eq(creditPlans.saleId, saleId), isNull(creditPlans.anuladoEn)));
 }
 
-/** El estado de varios clientes de una vez, para la pantalla de Fiado. */
+/**
+ * El estado de varios clientes de una vez, para la pantalla de Fiado.
+ *
+ * Es **de una moneda**. Juntar las dos daría un semáforo con cuotas de US$ 200
+ * y de $200.000 en la misma fila y un «vencido» que suma veinte mil centavos de
+ * dólar con veinte millones de centavos de peso: un número que no es plata de
+ * nadie. La pantalla pide los dos estados y los muestra separados.
+ */
 export async function estadosDeClientes(
   db: BaseDatos,
   customerIds: readonly string[],
   hoyISO: string,
+  moneda: 'ARS' | 'USD' = 'ARS',
 ): Promise<Map<string, EstadoDeDeuda & { cadencia: Cadencia | null }>> {
   const estados = new Map<string, EstadoDeDeuda & { cadencia: Cadencia | null }>();
   if (customerIds.length === 0) return estados;
@@ -509,7 +559,11 @@ export async function estadosDeClientes(
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
     .innerJoin(creditAccounts, eq(creditAccounts.id, creditPlans.creditAccountId))
     .where(
-      and(inArray(creditAccounts.customerId, [...customerIds]), isNull(creditPlans.anuladoEn)),
+      and(
+        inArray(creditAccounts.customerId, [...customerIds]),
+        isNull(creditPlans.anuladoEn),
+        eq(creditPlans.moneda, moneda),
+      ),
     );
 
   const porCliente = new Map<string, { cuotas: CuotaGuardada[]; cadencia: Cadencia | null }>();
