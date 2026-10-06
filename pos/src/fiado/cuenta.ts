@@ -535,7 +535,7 @@ export async function movimientosDe(
 
 async function cuentaPorTipo(
   tx: BaseDatos,
-  tipo: 'efectivo' | 'banco' | 'mercadopago',
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares',
 ): Promise<string | null> {
   const [cuenta] = await tx
     .select({ id: monetaryAccounts.id })

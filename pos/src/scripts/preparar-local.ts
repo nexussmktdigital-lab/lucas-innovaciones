@@ -153,6 +153,8 @@ try {
     { nombre: 'Caja en efectivo', tipo: 'efectivo' as const },
     { nombre: 'Banco', tipo: 'banco' as const },
     { nombre: 'Mercado Pago', tipo: 'mercadopago' as const },
+    // El cajón de los billetes verdes. Su saldo está en centavos de DÓLAR.
+    { nombre: 'Caja en dólares', tipo: 'dolares' as const },
   ];
   const existentes = new Set(
     (await db.select({ nombre: schema.monetaryAccounts.nombre }).from(schema.monetaryAccounts)).map(

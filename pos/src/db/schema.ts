@@ -60,6 +60,15 @@ export const tipoCuentaEnum = pgEnum('tipo_cuenta_monetaria', [
   'efectivo',
   'banco',
   'mercadopago',
+  /**
+   * El cajon de los dolares, aparte del de pesos.
+   *
+   * Su `saldo_centavos` esta en CENTAVOS DE DOLAR, no de peso: son billetes
+   * verdes, y convertirlos a pesos para guardarlos haria que el saldo cambie
+   * solo cada vez que se mueve la cotizacion. Lo mismo vale para los
+   * movimientos de esta cuenta.
+   */
+  'dolares',
   'otro',
 ]);
 
@@ -500,7 +509,19 @@ export const salePayments = pgTable(
       .references(() => sales.id, { onDelete: 'restrict' }),
     medio: medioPagoEnum().notNull(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
+    /** Siempre en pesos: es lo que suma contra el total de la venta. */
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /**
+     * Solo `dolares`: los billetes que entraron, en centavos de dolar.
+     *
+     * Se guarda ademas del monto en pesos porque son dos hechos distintos: lo
+     * que el cliente entrego (mil dolares) y lo que eso vale hoy. Sin esto, el
+     * dia que cambia la cotizacion ya no se puede saber cuantos billetes
+     * entraron.
+     */
+    montoUsdCentavos: bigint({ mode: 'number' }),
+    /** Solo `dolares`: la cotizacion con la que se convirtio, congelada. */
+    cotizacionCentavos: bigint({ mode: 'number' }),
     /** Solo tarjeta: el Posnet es un aparato aparte, el POS unicamente registra. */
     marcaTarjeta: text(),
     cuotas: integer(),
@@ -510,6 +531,19 @@ export const salePayments = pgTable(
   (t) => [
     index('sale_payments_sale_idx').on(t.saleId),
     check('sale_payments_monto_ck', sql`${t.montoCentavos} > 0`),
+    /*
+     * Un pago en dolares trae los dolares y su cotizacion, y ningun otro medio
+     * los trae. Sin esto, un pago en dolares sin el dato queda como un pago en
+     * pesos cualquiera y el cajon de dolares no se entera.
+     */
+    check(
+      'sale_payments_dolares_ck',
+      sql`(${t.medio} = 'dolares') = (${t.montoUsdCentavos} IS NOT NULL AND ${t.cotizacionCentavos} IS NOT NULL)`,
+    ),
+    check(
+      'sale_payments_usd_positivo_ck',
+      sql`${t.montoUsdCentavos} IS NULL OR ${t.montoUsdCentavos} > 0`,
+    ),
   ],
 );
 

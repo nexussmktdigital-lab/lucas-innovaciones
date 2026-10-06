@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aCentavos, formatearARS } from '@/lib/dinero';
+import { aCentavos, formatearARS, usdAPesos } from '@/lib/dinero';
 import PlanDeCuotas, { type PlanElegido } from './plan-de-cuotas';
 import {
   calcularCobro,
@@ -25,6 +25,8 @@ interface Props {
   /** Si puede fiar. Hoy el vendedor también: `fiado.crear` no es del dueño. */
   puedeFiar: boolean;
   cuentas: Cuenta[];
+  /** La cotización del día. Sin ella no se puede cobrar en dólares. */
+  tcCentavos: number | null;
   onCerrar: () => void;
   onConfirmar: (datos: Parameters<typeof registrarVenta>[0]) => Promise<ResultadoDelCobro>;
 }
@@ -42,6 +44,14 @@ const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'credito', tipoCuenta: 'banco' },
   { medio: 'mercadopago', tipoCuenta: 'mercadopago' },
   { medio: 'cheque', tipoCuenta: 'banco' },
+  /*
+   * Los dólares van a su propio cajón, no al de pesos.
+   *
+   * El monto se escribe EN DÓLARES —es lo que el cliente pone sobre el
+   * mostrador— y el sistema calcula los pesos con la cotización del día. Al
+   * revés sería pedirle a quien atiende que haga la cuenta de cabeza.
+   */
+  { medio: 'dolares', tipoCuenta: 'dolares' },
 ];
 
 const CUENTA_CORRIENTE = {
@@ -77,6 +87,7 @@ export default function Cobro({
   cliente,
   puedeFiar,
   cuentas,
+  tcCentavos,
   onCerrar,
   onConfirmar,
 }: Props) {
@@ -134,6 +145,25 @@ export default function Cobro({
 
   function agregarMedio(medio: MedioPago, tipoCuenta: Cuenta['tipo'] | null) {
     const faltante = Math.max(0, cobro?.faltanteCentavos ?? totales.totalCentavos);
+
+    // En dólares el renglón arranca vacío: lo que falta en pesos convertido a
+    // dólares da un número con centavos que nadie va a pagar en billetes.
+    if (medio === 'dolares') {
+      setPagos((p) => [
+        ...p,
+        {
+          clave: nuevaClave(),
+          medio,
+          montoCentavos: 0,
+          montoUsdCentavos: 0,
+          cotizacionCentavos: tcCentavos,
+          texto: '',
+          monetaryAccountId: cuentaPara(tipoCuenta),
+        },
+      ]);
+      return;
+    }
+
     setPagos((p) => [
       ...p,
       {
@@ -153,13 +183,34 @@ export default function Cobro({
   /** Lo tipeado se guarda tal cual; el monto se actualiza si ya se puede leer. */
   function escribirMonto(clave: string, crudo: string) {
     const texto = crudo.trim();
-    let montoCentavos: number | undefined;
+    let leido: number | undefined;
     try {
-      montoCentavos = texto === '' ? 0 : aCentavos(texto);
+      leido = texto === '' ? 0 : aCentavos(texto);
     } catch {
       // A medio escribir («12.» o «-»): se guarda el texto y nada más.
+      actualizar(clave, { texto });
+      return;
     }
-    actualizar(clave, montoCentavos === undefined ? { texto } : { texto, montoCentavos });
+
+    const pago = pagos.find((p) => p.clave === clave);
+
+    /*
+     * En dólares, lo tipeado SON dólares: se guardan como tales y los pesos
+     * salen de la cotización. Es el único renglón del cobro donde el número
+     * del campo no es el que suma contra el total.
+     */
+    if (pago?.medio === 'dolares') {
+      const tc = pago.cotizacionCentavos ?? tcCentavos;
+      actualizar(clave, {
+        texto,
+        montoUsdCentavos: leido,
+        cotizacionCentavos: tc,
+        montoCentavos: tc ? usdAPesos(leido, tc) : 0,
+      });
+      return;
+    }
+
+    actualizar(clave, { texto, montoCentavos: leido });
   }
 
   async function confirmar(saltearGuardaDePrecios = false) {
@@ -237,11 +288,15 @@ export default function Cobro({
               key={medio}
               type="button"
               onClick={() => agregarMedio(medio, tipoCuenta)}
-              disabled={medio === 'cuenta_corriente' && !cliente}
+              disabled={
+                (medio === 'cuenta_corriente' && !cliente) || (medio === 'dolares' && !tcCentavos)
+              }
               title={
                 medio === 'cuenta_corriente' && !cliente
                   ? 'Elegí un cliente en el carrito para poder fiar'
-                  : undefined
+                  : medio === 'dolares' && !tcCentavos
+                    ? 'No hay cotización cargada: cargala en Dólar (F9) para poder cobrar en dólares'
+                    : undefined
               }
               className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 text-sm font-medium hover:border-(--color-marca) disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -262,7 +317,19 @@ export default function Cobro({
                 className="rounded-(--radius-caja) border border-(--color-borde) p-2.5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="flex-1 text-sm font-medium">{nombreDelMedio(p.medio)}</span>
+                  <span className="flex-1 text-sm font-medium">
+                    {nombreDelMedio(p.medio)}
+                    {p.medio === 'dolares' ? (
+                      <span className="ml-1 text-xs font-normal text-(--color-tinta-suave)">
+                        en billetes
+                      </span>
+                    ) : null}
+                  </span>
+                  {p.medio === 'dolares' ? (
+                    <span aria-hidden="true" className="text-(--color-tinta-suave)">
+                      US$
+                    </span>
+                  ) : null}
                   <input
                     ref={i === 0 ? primerCampo : undefined}
                     type="text"
@@ -281,6 +348,25 @@ export default function Cobro({
                     ✕
                   </button>
                 </div>
+
+                {/* En dólares, el número del campo no es el que suma contra el
+                    total: acá se dice a cuántos pesos equivale y con qué dólar,
+                    para que nadie tenga que confiar a ciegas. */}
+                {p.medio === 'dolares' ? (
+                  <p className="mt-1 text-xs text-(--color-tinta-suave)">
+                    {p.montoUsdCentavos && p.cotizacionCentavos ? (
+                      <>
+                        Equivale a{' '}
+                        <strong className="tabular font-semibold text-(--color-tinta)">
+                          {formatearARS(p.montoCentavos)}
+                        </strong>{' '}
+                        al dólar de hoy ({formatearARS(p.cotizacionCentavos)})
+                      </>
+                    ) : (
+                      <>Escribí cuántos dólares entraron.</>
+                    )}
+                  </p>
+                ) : null}
 
                 {p.medio === 'credito' || p.medio === 'debito' ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">

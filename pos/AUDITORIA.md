@@ -2024,3 +2024,43 @@ lado:
   pueden exportar los nombres que el framework conoce, y eso solo lo valida el
   build. Es la segunda vez que el `npm run build` antes del e2e paga el costo de
   existir.
+
+## El medio de pago que estaba escrito y nunca se había ejecutado
+
+`dolares` existía desde la fase 1: en el enum de la base, en el tipo `MedioPago`
+y en `tipoDeCuentaPara`. Lo que no existía era el botón en la pantalla de cobro,
+así que en un año nadie lo usó nunca — y por eso nadie vio que
+`tipoDeCuentaPara('dolares')` devolvía `'efectivo'`.
+
+O sea: mil dólares entraban al cajón de pesos como mil pesos. El saldo del
+efectivo quedaba mal por la diferencia entera, y el arqueo lo habría cantado…
+salvo que el arqueo lo acabábamos de sacar esta misma semana.
+
+Estaba a un botón de distancia. Si el pedido hubiera sido «agregá dólares a la
+pantalla de cobro» y yo lo hubiera agregado sin leer el dominio, habría quedado
+roto desde la primera venta.
+
+## Un test que decía probar algo y no lo probaba
+
+Escribí los tests del cobro en dólares pasando `monetaryAccountId` explícito,
+como hace la pantalla. Pasaban. Después mutilé `tipoDeCuentaPara` para que
+volviera a devolver `'efectivo'` —el bug original— y **los cincuenta tests
+siguieron en verde**: con la cuenta dada a mano, esa función ni se consulta.
+
+El test que faltaba era el del caso en que el servidor tiene que decidir solo:
+un pago en dólares **sin** cuenta indicada. Ese es el que falla con la mutación,
+y es el único que de verdad sostiene el arreglo.
+
+Vale como recordatorio de que un test verde no prueba nada por sí solo: hay que
+romper el código a propósito y ver cuál se cae.
+
+## La migración que drizzle-kit quiso escribir
+
+`npm run db:generate` produjo una migración de sesenta sentencias que incluía
+`CREATE TABLE "returns"`, las columnas de `credit_plans` y las de venta diferida
+—todo lo de las migraciones 0012 a 0014, que están escritas a mano y nunca
+actualizaron el snapshot de drizzle-kit—. Aplicarla contra producción habría
+reventado en la primera tabla que ya existe.
+
+Las migraciones de este proyecto se escriben a mano. Quedó dicho en el
+encabezado de la 0015 y vale para la próxima.

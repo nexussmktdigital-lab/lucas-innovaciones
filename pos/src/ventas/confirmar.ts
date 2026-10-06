@@ -160,11 +160,21 @@ export interface VentaConfirmada {
 }
 
 /** Cuenta monetaria que corresponde a cada medio de pago. */
-export function tipoDeCuentaPara(medio: MedioPago): 'efectivo' | 'banco' | 'mercadopago' | null {
+export function tipoDeCuentaPara(
+  medio: MedioPago,
+): 'efectivo' | 'banco' | 'mercadopago' | 'dolares' | null {
   switch (medio) {
     case 'efectivo':
-    case 'dolares':
       return 'efectivo';
+    /*
+     * Los dólares tienen cajón propio, y antes caían en el de pesos.
+     *
+     * Era un error que no se veía porque el medio nunca llegó a la pantalla de
+     * cobro: mil dólares entraban al cajón de pesos como mil pesos, y el saldo
+     * del efectivo quedaba mal por la diferencia entera.
+     */
+    case 'dolares':
+      return 'dolares';
     case 'transferencia':
     case 'debito':
     case 'credito':
@@ -621,6 +631,8 @@ export async function confirmarVenta(
         medio: p.medio,
         monetaryAccountId: p.monetaryAccountId ?? null,
         montoCentavos: p.montoCentavos,
+        montoUsdCentavos: p.medio === 'dolares' ? (p.montoUsdCentavos ?? null) : null,
+        cotizacionCentavos: p.medio === 'dolares' ? (p.cotizacionCentavos ?? null) : null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,
@@ -731,7 +743,18 @@ export async function confirmarVenta(
       const vueltoDeEstePago = esEfectivo ? Math.min(vueltoPorDescontar, pago.montoCentavos) : 0;
       vueltoPorDescontar -= vueltoDeEstePago;
 
-      const monto = pago.montoCentavos - vueltoDeEstePago;
+      /*
+       * Al cajón de dólares entran DÓLARES, no su equivalente en pesos: su
+       * saldo está en centavos de dólar. Meterle los pesos lo dejaría diciendo
+       * que hay un millón y medio de billetes verdes.
+       *
+       * El vuelto nunca se descuenta de acá: si hay que dar vuelto, sale del
+       * cajón de pesos, que es de donde sale siempre.
+       */
+      const monto =
+        pago.medio === 'dolares'
+          ? (pago.montoUsdCentavos ?? 0)
+          : pago.montoCentavos - vueltoDeEstePago;
       if (monto === 0) continue;
 
       await tx.insert(cashMovements).values({
@@ -850,7 +873,7 @@ export async function confirmarVenta(
 
 async function cuentaPorTipo(
   tx: BaseDatos,
-  tipo: 'efectivo' | 'banco' | 'mercadopago',
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares',
 ): Promise<string | null> {
   const [cuenta] = await tx
     .select({ id: monetaryAccounts.id })

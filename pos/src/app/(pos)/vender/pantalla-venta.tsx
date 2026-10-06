@@ -26,7 +26,7 @@ import BarraOffline from './barra-offline';
 export interface Cuenta {
   id: string;
   nombre: string;
-  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'otro';
+  tipo: 'efectivo' | 'banco' | 'mercadopago' | 'dolares' | 'otro';
 }
 
 export interface Cliente {
@@ -518,6 +518,7 @@ export default function PantallaVenta({
           cliente={todosLosClientes.find((c) => c.id === clienteId) ?? null}
           puedeFiar={puedeFiar}
           cuentas={cuentas}
+          tcCentavos={tcCentavos}
           onCerrar={() => setCobrando(false)}
           onConfirmar={confirmar}
         />

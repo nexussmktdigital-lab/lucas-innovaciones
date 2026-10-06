@@ -214,6 +214,8 @@ export async function sembrar(
       { nombre: 'Caja en efectivo', tipo: 'efectivo' },
       { nombre: 'Banco', tipo: 'banco' },
       { nombre: 'Mercado Pago', tipo: 'mercadopago' },
+      // El cajón de los billetes verdes. Su saldo está en centavos de DÓLAR.
+      { nombre: 'Caja en dólares', tipo: 'dolares' },
     ])
     .onConflictDoNothing();
 

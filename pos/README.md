@@ -291,6 +291,38 @@ y se puede devolver a la cola lo que agotó los seis reintentos.
 
 ---
 
+## Cobrar en dólares
+
+El local vende iPhones usados y cobra parte en billetes verdes. **Los dólares
+tienen su propio cajón**, aparte del de pesos, y su saldo está en **centavos de
+dólar**: son billetes, y guardarlos convertidos haría que el saldo se mueva solo
+cada vez que cambia la cotización, sin que entre ni salga un dólar.
+
+En la pantalla de cobro, «Dólares» pide el monto **en dólares** —es lo que el
+cliente pone sobre el mostrador— y abajo dice a cuántos pesos equivale y con qué
+cotización. Al revés sería pedirle a quien atiende que haga la cuenta de cabeza.
+
+De cada pago en dólares se guardan **tres** números y no uno:
+
+| | Qué es |
+|---|---|
+| `monto_centavos` | Lo que vale en pesos. Es lo que suma contra el total de la venta. |
+| `monto_usd_centavos` | Los billetes que entraron. Es lo que mueve el cajón verde. |
+| `cotizacion_centavos` | El dólar de ese momento, congelado. |
+
+Son tres hechos distintos, y guardar solo el primero los pierde: el día que se
+mueve la cotización ya no hay forma de saber cuántos billetes habían entrado. Un
+check en `sale_payments` ata los tres al medio de pago, para que un cobro en
+dólares sin el dato no pueda quedar registrado como un pago en pesos cualquiera.
+
+**Un error que estuvo escrito y nunca se ejecutó.** `dolares` existía como medio
+de pago desde la fase 1 —en el enum, en el tipo y en el dominio— pero nunca
+llegó a la pantalla de cobro, así que nadie lo usó. Y `tipoDeCuentaPara` lo
+mandaba a la cuenta de **efectivo**: mil dólares se habrían sumado al cajón de
+pesos como mil pesos. Estaba a un botón de distancia de descuadrar la caja.
+
+---
+
 ## Mostrador y tienda: dos precios, un solo número
 
 En la tienda online cobra Mercado Pago y esa comisión no la paga el mostrador,
