@@ -30,13 +30,55 @@ import { repartir } from '@/lib/dinero';
 
 export class ErrorPlan extends Error {}
 
-export type Frecuencia = 'semanal' | 'quincenal' | 'mensual';
+export type Frecuencia = 'semanal' | 'quincenal' | 'mensual' | 'dias';
+
+/**
+ * Cada cuánto vence una cuota.
+ *
+ * Las tres primeras son atajos y existen porque son el 95% de los planes. La
+ * cuarta, `dias`, es la que hacía falta: el fiado del mostrador se pacta en el
+ * momento —«cada tres días», «cada dos meses»— y un menú de tres opciones
+ * obligaba a elegir la que menos mentía.
+ *
+ * **`mensual` no son treinta días y por eso sigue existiendo aparte.** Va por
+ * calendario: si compró un 5, paga los 5. Con 30 días, en un año se le corre
+ * casi una semana y el cliente deja de reconocer su fecha.
+ */
+export interface Cadencia {
+  frecuencia: Frecuencia;
+  /** Solo cuando `frecuencia` es `dias`. En el resto, null. */
+  dias: number | null;
+}
 
 export const FRECUENCIAS: { valor: Frecuencia; etiqueta: string; corta: string }[] = [
   { valor: 'semanal', etiqueta: 'Cada semana', corta: 'por semana' },
   { valor: 'quincenal', etiqueta: 'Cada 15 días', corta: 'cada 15 días' },
   { valor: 'mensual', etiqueta: 'Cada mes', corta: 'por mes' },
 ];
+
+/** Más que esto no es una cuota, es otra venta. */
+export const DIAS_MAXIMOS = 365;
+
+/** Atajo para los tres de siempre, que no llevan número. */
+export function cadencia(frecuencia: Exclude<Frecuencia, 'dias'>): Cadencia {
+  return { frecuencia, dias: null };
+}
+
+/** `cada N días`, el pactado a mano. */
+export function cadaNDias(dias: number): Cadencia {
+  return { frecuencia: 'dias', dias };
+}
+
+export function validarCadencia(c: Cadencia): Cadencia {
+  if (c.frecuencia !== 'dias') return { frecuencia: c.frecuencia, dias: null };
+
+  if (!Number.isInteger(c.dias) || c.dias === null || c.dias < 1 || c.dias > DIAS_MAXIMOS) {
+    throw new ErrorPlan(
+      `Cada cuántos días se paga tiene que ser un número entre 1 y ${DIAS_MAXIMOS}.`,
+    );
+  }
+  return c;
+}
 
 /** Tope de cuotas. Más que esto no es fiado de mostrador, es otra cosa. */
 export const CUOTAS_MAXIMAS = 24;
@@ -45,17 +87,20 @@ export const CUOTAS_MAXIMAS = 24;
 export const DIAS_PARA_AVISAR = 3;
 
 export function esFrecuencia(x: unknown): x is Frecuencia {
-  return x === 'semanal' || x === 'quincenal' || x === 'mensual';
+  return x === 'semanal' || x === 'quincenal' || x === 'mensual' || x === 'dias';
 }
 
 /** Cómo se dice la frecuencia en una oración: «cada 15 días». */
-export function comoSeDice(f: Frecuencia): string {
-  return FRECUENCIAS.find((x) => x.valor === f)!.corta;
+export function comoSeDice(c: Cadencia): string {
+  if (c.frecuencia === 'dias') {
+    return c.dias === 1 ? 'todos los días' : `cada ${c.dias} días`;
+  }
+  return FRECUENCIAS.find((x) => x.valor === c.frecuencia)!.corta;
 }
 
 /** Cuándo vence la cuota número `n` (1 es la primera) de un plan que arranca hoy. */
-export function vencimientoDeCuota(desdeISO: string, frecuencia: Frecuencia, n: number): string {
-  switch (frecuencia) {
+export function vencimientoDeCuota(desdeISO: string, c: Cadencia, n: number): string {
+  switch (c.frecuencia) {
     case 'semanal':
       return sumarDias(desdeISO, 7 * n);
     case 'quincenal':
@@ -63,6 +108,8 @@ export function vencimientoDeCuota(desdeISO: string, frecuencia: Frecuencia, n: 
     case 'mensual':
       // Por calendario y no cada 30 días: si compró un 5, paga los 5.
       return sumarMeses(desdeISO, n);
+    case 'dias':
+      return sumarDias(desdeISO, validarCadencia(c).dias! * n);
   }
 }
 
@@ -86,7 +133,7 @@ export interface CuotaPlanificada {
 export function cuotasDelPlan(
   totalCentavos: number,
   cantidad: number,
-  frecuencia: Frecuencia,
+  c: Cadencia,
   desdeISO: string,
 ): CuotaPlanificada[] {
   if (!Number.isInteger(totalCentavos) || totalCentavos <= 0) {
@@ -99,7 +146,7 @@ export function cuotasDelPlan(
   return repartir(totalCentavos, cantidad).map((montoCentavos, i) => ({
     numero: i + 1,
     montoCentavos,
-    vencimiento: vencimientoDeCuota(desdeISO, frecuencia, i + 1),
+    vencimiento: vencimientoDeCuota(desdeISO, c, i + 1),
   }));
 }
 
@@ -292,17 +339,13 @@ export async function crearPlan(
     saleId: string | null;
     montoCentavos: number;
     cantidad: number;
-    frecuencia: Frecuencia;
+    cadencia: Cadencia;
     desdeISO: string;
     descripcion?: string | null;
   },
 ): Promise<{ planId: string; cuotas: CuotaPlanificada[] }> {
-  const cuotas = cuotasDelPlan(
-    datos.montoCentavos,
-    datos.cantidad,
-    datos.frecuencia,
-    datos.desdeISO,
-  );
+  const cadencia = validarCadencia(datos.cadencia);
+  const cuotas = cuotasDelPlan(datos.montoCentavos, datos.cantidad, cadencia, datos.desdeISO);
 
   const [plan] = await tx
     .insert(creditPlans)
@@ -315,7 +358,8 @@ export async function crearPlan(
       // que lo cobre, las columnas ya están.
       cantidadCuotas: datos.cantidad,
       totalAPagarCentavos: datos.montoCentavos,
-      frecuencia: datos.frecuencia,
+      frecuencia: cadencia.frecuencia,
+      frecuenciaDias: cadencia.dias,
     })
     .returning({ id: creditPlans.id });
 
@@ -337,7 +381,8 @@ export async function crearPlan(
 export interface CuotaDeCuenta extends CuotaGuardada {
   id: string;
   planId: string;
-  frecuencia: Frecuencia | null;
+  /** Cada cuánto vence, para poder decirlo en pantalla. Null si no hay plan. */
+  cadencia: Cadencia | null;
 }
 
 /**
@@ -361,6 +406,7 @@ export async function cuotasDeCuenta(
       pagadoCentavos: installments.pagadoCentavos,
       vencimiento: installments.vencimiento,
       frecuencia: creditPlans.frecuencia,
+      frecuenciaDias: creditPlans.frecuenciaDias,
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
@@ -376,7 +422,9 @@ export async function cuotasDeCuenta(
     montoCentavos: f.montoCentavos,
     pagadoCentavos: f.pagadoCentavos,
     vencimiento: aFechaISO(f.vencimiento),
-    frecuencia: esFrecuencia(f.frecuencia) ? f.frecuencia : null,
+    cadencia: esFrecuencia(f.frecuencia)
+      ? { frecuencia: f.frecuencia, dias: f.frecuenciaDias }
+      : null,
   }));
 }
 
@@ -443,8 +491,8 @@ export async function estadosDeClientes(
   db: BaseDatos,
   customerIds: readonly string[],
   hoyISO: string,
-): Promise<Map<string, EstadoDeDeuda & { frecuencia: Frecuencia | null }>> {
-  const estados = new Map<string, EstadoDeDeuda & { frecuencia: Frecuencia | null }>();
+): Promise<Map<string, EstadoDeDeuda & { cadencia: Cadencia | null }>> {
+  const estados = new Map<string, EstadoDeDeuda & { cadencia: Cadencia | null }>();
   if (customerIds.length === 0) return estados;
 
   const filas = await db
@@ -455,6 +503,7 @@ export async function estadosDeClientes(
       pagadoCentavos: installments.pagadoCentavos,
       vencimiento: installments.vencimiento,
       frecuencia: creditPlans.frecuencia,
+      frecuenciaDias: creditPlans.frecuenciaDias,
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
@@ -463,17 +512,19 @@ export async function estadosDeClientes(
       and(inArray(creditAccounts.customerId, [...customerIds]), isNull(creditPlans.anuladoEn)),
     );
 
-  const porCliente = new Map<string, { cuotas: CuotaGuardada[]; frecuencia: Frecuencia | null }>();
+  const porCliente = new Map<string, { cuotas: CuotaGuardada[]; cadencia: Cadencia | null }>();
 
   for (const f of filas) {
-    const entrada = porCliente.get(f.customerId) ?? { cuotas: [], frecuencia: null };
+    const entrada = porCliente.get(f.customerId) ?? { cuotas: [], cadencia: null };
     entrada.cuotas.push({
       numero: entrada.cuotas.length + 1,
       montoCentavos: f.montoCentavos,
       pagadoCentavos: f.pagadoCentavos,
       vencimiento: aFechaISO(f.vencimiento),
     });
-    if (esFrecuencia(f.frecuencia)) entrada.frecuencia = f.frecuencia;
+    if (esFrecuencia(f.frecuencia)) {
+      entrada.cadencia = { frecuencia: f.frecuencia, dias: f.frecuenciaDias };
+    }
     porCliente.set(f.customerId, entrada);
   }
 
@@ -486,7 +537,7 @@ export async function estadosDeClientes(
 
     estados.set(customerId, {
       ...estadoDeDeuda(ordenadas, hoyISO),
-      frecuencia: entrada.frecuencia,
+      cadencia: entrada.cadencia,
     });
   }
 

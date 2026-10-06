@@ -47,7 +47,7 @@ import {
   type VarianteVendible,
 } from './carrito';
 import { anotarDeuda } from '@/fiado/cuenta';
-import { crearPlan, type Frecuencia } from '@/fiado/plan';
+import { crearPlan, type Cadencia } from '@/fiado/plan';
 import { fechaLocalISO } from '@/lib/fecha';
 import { recargoDeTienda } from '@/precios/config';
 import { precioDeMostrador } from '@/precios/mostrador';
@@ -141,7 +141,7 @@ export interface SolicitudDeVenta {
    * el fiado de toda la vida y sigue siendo lo correcto para los $5.000 del
    * vecino. El plan es para la compra grande.
    */
-  plan?: { frecuencia: Frecuencia; cuotas: number } | null;
+  plan?: { cadencia: Cadencia; cuotas: number } | null;
   ip?: string | null;
 }
 
@@ -672,7 +672,7 @@ export async function confirmarVenta(
           saleId: ventaId,
           montoCentavos: fiadoCentavos,
           cantidad: solicitud.plan.cuotas,
-          frecuencia: solicitud.plan.frecuencia,
+          cadencia: solicitud.plan.cadencia,
           desdeISO: fechaLocalISO(solicitud.diferida?.capturadaEn ?? new Date()),
           descripcion: `Venta ${numero}`,
         });

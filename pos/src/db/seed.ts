@@ -464,7 +464,7 @@ async function sembrarFiado(db: BaseDatos, usuarioId: string | null): Promise<vo
         saleId: null,
         montoCentavos: d.saldoCentavos,
         cantidad: d.plan.cuotas,
-        frecuencia: d.plan.frecuencia,
+        cadencia: { frecuencia: d.plan.frecuencia, dias: null },
         desdeISO: d.plan.desdeISO,
         descripcion: d.nota,
       });

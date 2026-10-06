@@ -6,7 +6,7 @@ import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import type { DeudorEnLista } from '@/fiado/cuenta';
-import { comoSeDice, type Color, type EstadoDeDeuda, type Frecuencia } from '@/fiado/plan';
+import { comoSeDice, type Color, type EstadoDeDeuda, type Cadencia } from '@/fiado/plan';
 import type { Preparacion, UltimoAviso } from '@/whatsapp/mensajes';
 import BotonWhatsApp from '../boton-whatsapp';
 
@@ -101,7 +101,7 @@ export default function FilaDeudor({
 }: {
   deudor: DeudorEnLista;
   /** Su plan de cuotas, si tiene. `null` es el fiado abierto de siempre. */
-  estado: (EstadoDeDeuda & { frecuencia: Frecuencia | null }) | null;
+  estado: (EstadoDeDeuda & { cadencia: Cadencia | null }) | null;
   hayCaja: boolean;
   puedeFiar: boolean;
   recordatorio: Preparacion;
@@ -192,9 +192,9 @@ export default function FilaDeudor({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--color-tinta-suave)">
           {deudor.telefono ? <span>{deudor.telefono}</span> : null}
           {deudor.origen === 'migrado_papel' ? <span>De la libreta</span> : null}
-          {estado?.frecuencia ? (
+          {estado?.cadencia ? (
             <span>
-              Paga {comoSeDice(estado.frecuencia)} · {estado.cuotasPagadas} de{' '}
+              Paga {comoSeDice(estado.cadencia)} · {estado.cuotasPagadas} de{' '}
               {estado.cuotasTotales} pagas
             </span>
           ) : null}

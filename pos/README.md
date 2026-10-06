@@ -428,7 +428,7 @@ Al cobrar, si algo se fía, la pantalla pregunta **cómo lo va a pagar**:
 | Opción | Qué hace |
 |---|---|
 | **Cuando pueda** (la que viene puesta) | Queda como saldo abierto, sin fechas. Es el fiado de siempre |
-| **Cada semana / cada 15 días / cada mes** | Arma las cuotas y muestra cuánto es cada una y cuándo vence la primera y la última |
+| **Cada semana / cada 15 días / cada mes / cada N días** | Arma las cuotas y muestra cuánto es cada una y cuándo vence la primera y la última |
 
 Tres decisiones que conviene conocer:
 
@@ -437,6 +437,18 @@ Tres decisiones que conviene conocer:
   *cuándo* se espera cada parte.
 - **La primera vence una frecuencia después de la compra**, no el mismo día. Y
   las mensuales van por calendario: si compró un 5, paga los 5.
+- **«Cada N días» existe porque el fiado se pacta en el momento.** Las tres
+  frecuencias con nombre son atajos y cubren casi todo, pero el mostrador
+  acuerda «cada tres días» con el que cobra por semana y «cada dos meses» con el
+  del aguinaldo. Con un menú de tres, quien vendía elegía la que menos mentía y
+  arreglaba el resto de palabra — justo lo que el sistema vino a sacar del
+  cuaderno. Va de 1 a 365 días.
+
+  **«Cada mes» no es un atajo de 30 días y por eso sigue aparte.** Va por
+  calendario. Escrito como 30 días, en un año se le corre casi una semana y el
+  cliente deja de reconocer su fecha. Un check en la base ata el número a «cada
+  N días» y se lo prohíbe a los otros tres: un «mensual» con un 30 al lado
+  invita a que alguien lo lea y le crea.
 - **Un pago se imputa a la cuota más vieja primero**, que es lo que hace
   cualquiera con una libreta. Lo que sobre después de cubrirlas todas queda como
   saldo a cuenta y no se le inventa una cuota a nadie.

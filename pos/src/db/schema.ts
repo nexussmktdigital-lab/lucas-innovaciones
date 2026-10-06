@@ -589,8 +589,16 @@ export const creditPlans = pgTable(
     recargoCentavos: bigint({ mode: 'number' }).notNull().default(0),
     cantidadCuotas: integer().notNull(),
     totalAPagarCentavos: bigint({ mode: 'number' }).notNull(),
-    /** Cada cuánto vence una cuota: `semanal`, `quincenal` o `mensual`. */
+    /**
+     * Cada cuánto vence una cuota: `semanal`, `quincenal`, `mensual` o `dias`.
+     *
+     * Los tres primeros son atajos. `mensual` va por calendario y no cada 30
+     * dias —si compro un 5, paga los 5— y por eso no se puede escribir como un
+     * numero de dias.
+     */
     frecuencia: text(),
+    /** Cada cuantos dias, cuando `frecuencia` es `dias`. Null en el resto. */
+    frecuenciaDias: integer(),
     /**
      * Cuándo se anuló, si se anuló.
      *
@@ -606,7 +614,17 @@ export const creditPlans = pgTable(
     check('credit_plans_cuotas_ck', sql`${t.cantidadCuotas} > 0`),
     check(
       'credit_plans_frecuencia_ck',
-      sql`${t.frecuencia} IS NULL OR ${t.frecuencia} IN ('semanal', 'quincenal', 'mensual')`,
+      sql`${t.frecuencia} IS NULL OR ${t.frecuencia} IN ('semanal', 'quincenal', 'mensual', 'dias')`,
+    ),
+    /*
+     * El numero va con `dias` y con ningun otro. Sin esto, un plan `dias` sin
+     * numero no sabe cuando vence nada, y un `mensual` con un 30 al lado invita
+     * a que alguien lo lea y le crea en vez de usar el calendario.
+     */
+    check(
+      'credit_plans_frecuencia_dias_ck',
+      sql`(${t.frecuencia} = 'dias') = (${t.frecuenciaDias} IS NOT NULL)
+          AND (${t.frecuenciaDias} IS NULL OR (${t.frecuenciaDias} >= 1 AND ${t.frecuenciaDias} <= 365))`,
     ),
   ],
 );

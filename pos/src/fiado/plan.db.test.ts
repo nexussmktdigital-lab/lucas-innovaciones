@@ -23,7 +23,13 @@ import {
 import { confirmarVenta } from '@/ventas/confirmar';
 import { anularVenta } from '@/ventas/anular';
 import { cobrarFiado, cuentaDe } from './cuenta';
-import { cuotasDeCuenta, estadosDeClientes, vencimientoDeCuota } from './plan';
+import {
+  cadencia,
+  cuotasDeCuenta,
+  estadosDeClientes,
+  vencimientoDeCuota,
+  type Cadencia,
+} from './plan';
 import { fechaLocalISO, sumarDias } from '@/lib/fecha';
 
 let db: TestDb;
@@ -75,7 +81,7 @@ beforeEach(async () => {
 /** Fía un celular de $600.000 en `cuotas` pagos. */
 async function fiarEnCuotas(
   cuotas = 6,
-  frecuencia: 'semanal' | 'quincenal' | 'mensual' = 'mensual',
+  cad: Cadencia = cadencia('mensual'),
 ) {
   return confirmarVenta(db, {
     lineas: [{ productId: productoId, cantidad: 10 }],
@@ -85,7 +91,7 @@ async function fiarEnCuotas(
     cashSessionId: sesionId,
     terminal: 'T1',
     idempotencyKey: `plan-${Math.random()}`,
-    plan: { frecuencia, cuotas },
+    plan: { cadencia: cad, cuotas },
   });
 }
 
@@ -116,10 +122,10 @@ describe('fiar con plan', () => {
   });
 
   it('la primera vence una frecuencia después de la venta, no hoy', async () => {
-    await fiarEnCuotas(3, 'quincenal');
+    await fiarEnCuotas(3, cadencia('quincenal'));
 
     const cuotas = await cuotasDeCuenta(db, (await cuentaDe(db, clienteId))!.id);
-    expect(cuotas[0]!.vencimiento).toBe(vencimientoDeCuota(HOY, 'quincenal', 1));
+    expect(cuotas[0]!.vencimiento).toBe(vencimientoDeCuota(HOY, cadencia('quincenal'), 1));
     expect(cuotas[0]!.vencimiento > HOY).toBe(true);
   });
 
@@ -154,7 +160,7 @@ describe('fiar con plan', () => {
       cashSessionId: sesionId,
       terminal: 'T1',
       idempotencyKey: 'mixto',
-      plan: { frecuencia: 'mensual', cuotas: 3 },
+      plan: { cadencia: cadencia('mensual'), cuotas: 3 },
     });
 
     const [plan] = await db.select().from(creditPlans);
@@ -235,7 +241,7 @@ describe('cobrar imputa a las cuotas', () => {
 
 describe('el semáforo sobre datos de verdad', () => {
   it('con la primera cuota por vencer, amarillo', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     // Cinco días después de la venta la cuota de los siete días está a dos.
     const estado = (await estadosDeClientes(db, [clienteId], sumarDias(HOY, 5))).get(clienteId);
@@ -244,7 +250,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pasada la fecha sin pagar, rojo y con lo vencido sumado', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     // A los veinte días vencieron dos cuotas (7 y 14) y falta la tercera.
     const estado = (await estadosDeClientes(db, [clienteId], sumarDias(HOY, 20))).get(clienteId);
@@ -254,7 +260,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pagar lo vencido lo devuelve a verde', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
     // Son cuatro cuotas de $150.000. A los 16 días vencieron las dos primeras:
     // paga las dos.
     await cobrar(300_000_00);
@@ -266,7 +272,7 @@ describe('el semáforo sobre datos de verdad', () => {
   });
 
   it('pero si la siguiente ya está encima, amarillo y no verde', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
     await cobrar(300_000_00);
 
     // Al día 20, la tercera vence mañana: sigue estando al día, pero hay que avisarle.
@@ -314,7 +320,7 @@ describe('anular una venta fiada apaga su plan', () => {
 
 describe('varios clientes de una sola consulta', () => {
   it('cada uno con su estado, y el que no tiene plan no aparece', async () => {
-    await fiarEnCuotas(4, 'semanal');
+    await fiarEnCuotas(4, cadencia('semanal'));
 
     const [otro] = await db.insert(customers).values({ nombre: 'Marcelo Paz' }).returning();
     await db

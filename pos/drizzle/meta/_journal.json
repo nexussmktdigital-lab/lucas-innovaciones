@@ -113,6 +113,13 @@
       "when": 1789495144191,
       "tag": "0015_cobro_en_dolares",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789495144192,
+      "tag": "0016_cuotas_cada_n_dias",
+      "breakpoints": true
     }
   ]
 }
