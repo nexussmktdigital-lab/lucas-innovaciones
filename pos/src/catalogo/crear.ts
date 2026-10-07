@@ -463,6 +463,10 @@ export interface ProductoParecido {
   activo: boolean;
   /** No se publica en la tienda: su precio no lleva recargo. */
   soloMostrador: boolean;
+  /** En qué moneda está pactado su precio (D62). */
+  moneda: 'ARS' | 'USD';
+  /** Su precio en dólares, si está en dólares. */
+  precioUsdCentavos: number | null;
 }
 
 /** Menos de esto es ruido: con dos letras coincide medio catálogo. */
@@ -492,10 +496,13 @@ export async function buscarParecidos(
     stock: string | number;
     gestiona_stock: boolean;
     activo: boolean;
+    moneda: 'ARS' | 'USD';
+    precio_usd_centavos: string | number | null;
   }>(
     await db.execute(sql`
       SELECT id, nombre, sku, precio_centavos, precio_local_centavos,
-             solo_mostrador, stock, gestiona_stock, activo
+             solo_mostrador, stock, gestiona_stock, activo,
+             moneda, precio_usd_centavos
         FROM products
        WHERE ${sinAcentos(sql`nombre`)} LIKE ${patron}
           OR lower(COALESCE(sku, '')) LIKE ${patron}
@@ -524,5 +531,8 @@ export async function buscarParecidos(
     gestionaStock: Boolean(f.gestiona_stock),
     activo: Boolean(f.activo),
     soloMostrador: Boolean(f.solo_mostrador),
+    moneda: f.moneda,
+    precioUsdCentavos:
+      f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
   }));
 }

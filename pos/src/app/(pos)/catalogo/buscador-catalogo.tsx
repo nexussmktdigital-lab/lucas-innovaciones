@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './nuevo/sumar-stock';
 import CambiarPrecio from './nuevo/cambiar-precio';
@@ -55,7 +55,11 @@ export default function BuscadorCatalogo({
         signal,
       });
       if (!r.ok) throw new Error('No se pudo buscar');
-      return (await r.json()) as { parecidos: ProductoParecido[] };
+      return (await r.json()) as {
+        parecidos: ProductoParecido[];
+        /** El dólar del día, para escribir un precio en dólares. */
+        tcCentavos: number | null;
+      };
     },
   });
 
@@ -110,7 +114,12 @@ export default function BuscadorCatalogo({
                 {p.sku ? (
                   <span className="tabular text-xs text-(--color-tinta-suave)">SKU {p.sku}</span>
                 ) : null}
-                <span className="cifra ml-auto">{formatearARS(p.mostradorCentavos)}</span>
+                {/* En dólares se lee en dólares: es el precio que se pactó. */}
+                <span className="cifra ml-auto">
+                  {p.moneda === 'USD' && p.precioUsdCentavos
+                    ? formatearUSD(p.precioUsdCentavos)
+                    : formatearARS(p.mostradorCentavos)}
+                </span>
               </div>
 
               <p className="mt-0.5 text-xs text-(--color-tinta-suave)">
@@ -139,7 +148,13 @@ export default function BuscadorCatalogo({
 
               {puedeCambiarPrecio ? (
                 <div className="pt-2">
-                  <CambiarPrecio productId={p.id} mostradorCentavos={p.mostradorCentavos} />
+                  <CambiarPrecio
+                    productId={p.id}
+                    mostradorCentavos={p.mostradorCentavos}
+                    moneda={p.moneda}
+                    precioUsdCentavos={p.precioUsdCentavos}
+                    tcCentavos={data?.tcCentavos ?? null}
+                  />
                 </div>
               ) : null}
             </li>

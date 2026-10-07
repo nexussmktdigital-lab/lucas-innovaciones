@@ -25,22 +25,65 @@ import { formatearARS } from '@/lib/dinero';
 export default function CambiarPrecio({
   productId,
   mostradorCentavos,
+  moneda: monedaDeLaFicha = 'ARS',
+  precioUsdCentavos,
+  tcCentavos,
 }: {
   productId: string;
   /** Lo que se cobra hoy en el local, para prellenar el campo. */
   mostradorCentavos: number;
+  /**
+   * En qué moneda está pactado hoy. Arranca en la de la ficha: un usado que ya
+   * está en dólares se corrige en dólares sin tener que acordarse de tocar el
+   * selector.
+   */
+  moneda?: 'ARS' | 'USD';
+  /** Su precio en dólares, si lo tiene. */
+  precioUsdCentavos?: number | null;
+  /** El dólar del día, para mostrar a cuánto queda en pesos. */
+  tcCentavos?: number | null;
 }) {
   const [abierto, setAbierto] = useState(false);
-  const [precio, setPrecio] = useState(() => comoSeEscribe(mostradorCentavos));
+  const [moneda, setMoneda] = useState<'ARS' | 'USD'>(monedaDeLaFicha);
+  const [precio, setPrecio] = useState(() =>
+    comoSeEscribe(monedaDeLaFicha === 'USD' ? (precioUsdCentavos ?? 0) : mostradorCentavos),
+  );
   const [estado, setEstado] = useState<EstadoPrecio>({});
   const [enCurso, enTransicion] = useTransition();
+
+  function cambiarMoneda(nueva: 'ARS' | 'USD') {
+    if (nueva === moneda) return;
+    setMoneda(nueva);
+    /*
+     * El número se limpia al cambiar de moneda, a propósito.
+     *
+     * Convertirlo sería adivinar: quien pasa un producto a dólares tiene el
+     * precio en dólares en la cabeza —se lo acaba de pagar al proveedor—, no
+     * quiere los pesos de hoy divididos por el dólar de hoy. Y dejar el número
+     * viejo es peor: «630» pasaría de pesos a dólares sin que nadie lo note.
+     */
+    setPrecio(
+      nueva === monedaDeLaFicha
+        ? comoSeEscribe(nueva === 'USD' ? (precioUsdCentavos ?? 0) : mostradorCentavos)
+        : '',
+    );
+  }
 
   function guardar() {
     const datos = new FormData();
     datos.set('productId', productId);
     datos.set('precio', precio);
+    datos.set('moneda', moneda);
     enTransicion(async () => setEstado(await cambiarPrecioAccion({}, datos)));
   }
+
+  /** A cuánto queda en pesos, para verlo antes de guardar. */
+  const enPesos = (() => {
+    if (moneda !== 'USD' || !tcCentavos) return null;
+    const usd = Number(precio.replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+    return Math.round((Math.round(usd * 100) * tcCentavos) / 100 / 100_000) * 100_000;
+  })();
 
   if (estado.resultado) {
     return (
@@ -68,9 +111,18 @@ export default function CambiarPrecio({
         <label className="text-sm" htmlFor={`precio-${productId}`}>
           Precio de mostrador
         </label>
+
+        {/* Pesos o dólares. Un usado se compra y se vende en dólares, y hasta
+            acá la única forma de que una ficha quedara en dólares era que
+            viniera así de la tienda. */}
+        <div className="flex items-center gap-1">
+          <Moneda activa={moneda === 'ARS'} onClick={() => cambiarMoneda('ARS')} etiqueta="$" />
+          <Moneda activa={moneda === 'USD'} onClick={() => cambiarMoneda('USD')} etiqueta="US$" />
+        </div>
+
         <div className="flex items-center gap-1">
           <span aria-hidden="true" className="text-(--color-tinta-suave)">
-            $
+            {moneda === 'USD' ? 'US$' : '$'}
           </span>
           <input
             id={`precio-${productId}`}
@@ -88,7 +140,7 @@ export default function CambiarPrecio({
             }}
             autoFocus
             inputMode="decimal"
-            aria-label="Precio de mostrador"
+            aria-label={`Precio de mostrador en ${moneda === 'USD' ? 'dólares' : 'pesos'}`}
             className="tabular min-h-10 w-28 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-right text-base"
           />
         </div>
@@ -118,6 +170,16 @@ export default function CambiarPrecio({
         recalcula solo.
       </p>
 
+      {moneda === 'USD' ? (
+        <p className="text-xs text-(--color-tinta-suave)">
+          {enPesos
+            ? `Queda en ${formatearARS(enPesos)} con el dólar de hoy, y se reajusta solo cuando el dólar cambia.`
+            : tcCentavos
+              ? 'El precio en pesos lo calcula el dólar del día: no hay que escribirlo.'
+              : 'Ojo: no hay cotización cargada. Cargá el dólar antes de guardar un precio en dólares.'}
+        </p>
+      ) : null}
+
       {estado.error ? (
         <p role="alert" className="text-sm text-(--color-error)">
           {estado.error}
@@ -132,4 +194,31 @@ function comoSeEscribe(centavos: number): string {
   const entero = Math.trunc(centavos / 100);
   const resto = Math.abs(centavos % 100);
   return resto === 0 ? String(entero) : `${entero},${String(resto).padStart(2, '0')}`;
+}
+
+/** Pesos o dólares, en dos botones chicos al lado del campo. */
+function Moneda({
+  activa,
+  onClick,
+  etiqueta,
+}: {
+  activa: boolean;
+  onClick: () => void;
+  etiqueta: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activa}
+      aria-label={etiqueta === 'US$' ? 'Precio en dólares' : 'Precio en pesos'}
+      className={`min-h-10 rounded-(--radius-caja) border px-2.5 text-sm font-semibold ${
+        activa
+          ? 'border-(--color-marca) bg-(--color-marca) text-(--color-marca-texto)'
+          : 'border-(--color-borde) bg-(--color-papel) text-(--color-tinta-suave)'
+      }`}
+    >
+      {etiqueta}
+    </button>
+  );
 }

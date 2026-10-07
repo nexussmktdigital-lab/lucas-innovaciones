@@ -28,6 +28,7 @@ import { eq, sql } from 'drizzle-orm';
 import { auditLog, products, syncQueue } from '@/db/schema';
 import { filas, type BaseDatos } from '@/db/tipos';
 import { precioDeTienda } from '@/precios/mostrador';
+import { usdAPesos } from '@/lib/dinero';
 
 export class ErrorPrecioFicha extends Error {
   constructor(
@@ -44,15 +45,32 @@ export const TECHO_PRECIO_CENTAVOS = 50_000_000_00;
 
 export interface CambioDePrecio {
   productId: string;
-  /** Lo que se le va a cobrar al cliente en el local, en centavos. */
+  /**
+   * Lo que se le va a cobrar al cliente en el local, **en la moneda elegida**.
+   * En dólares son centavos de dólar: US$ 630 son 63000.
+   */
   mostradorCentavos: number;
+  /**
+   * En qué moneda se pactó el precio de este producto (D62).
+   *
+   * Hasta acá solo se podía escribir en pesos, y un producto en dólares solo
+   * podía nacer así desde WooCommerce. El mostrador compra usados en dólares
+   * todos los días: sin esto, la única forma de cargar un iPhone a US$ 630 era
+   * escribir los pesos del día, que al otro día ya estaban mal —y es
+   * exactamente el error que en agosto costó millones, visto al revés—.
+   */
+  moneda?: 'ARS' | 'USD';
+  /** El dólar del día. Obligatorio para un precio en dólares. */
+  tcCentavos?: number | null;
   recargoTiendaBp: number;
   usuarioId: string;
 }
 
 export interface PrecioCambiado {
   nombre: string;
+  /** En la moneda del precio: centavos de dólar si quedó en dólares. */
   mostradorCentavos: number;
+  moneda: 'ARS' | 'USD';
   tiendaCentavos: number;
   anteriorMostradorCentavos: number;
 }
@@ -64,7 +82,29 @@ export async function cambiarPrecio(
   if (!Number.isInteger(datos.mostradorCentavos) || datos.mostradorCentavos <= 0) {
     throw new ErrorPrecioFicha('Poné el precio que le vas a cobrar al cliente.', 'invalido');
   }
-  if (datos.mostradorCentavos > TECHO_PRECIO_CENTAVOS) {
+
+  const enDolares = datos.moneda === 'USD';
+  const tcCentavos = Number(datos.tcCentavos ?? 0);
+
+  if (enDolares && tcCentavos <= 0) {
+    throw new ErrorPrecioFicha(
+      'No hay cotización cargada y este precio va en dólares. Cargá el dólar antes.',
+      'invalido',
+    );
+  }
+
+  /*
+   * El precio en pesos de un producto en dólares **se calcula, no se tipea**.
+   *
+   * El mostrador ya lo cobra así —la venta hace `precio USD × dólar` en el
+   * momento— y la ficha guarda el de pesos solo para la web, que no entiende
+   * de dólares. Es el mismo cálculo que corre cuando cambia la cotización.
+   */
+  const enPesosCentavos = enDolares
+    ? usdAPesos(datos.mostradorCentavos, tcCentavos)
+    : datos.mostradorCentavos;
+
+  if (enPesosCentavos > TECHO_PRECIO_CENTAVOS) {
     throw new ErrorPrecioFicha(
       'Ese precio es demasiado alto: revisá que no haya un cero de más.',
       'techo',
@@ -91,9 +131,19 @@ export async function cambiarPrecio(
     if (!p) throw new ErrorPrecioFicha('Ese producto ya no está en el catálogo.', 'no_existe');
 
     const soloMostrador = Boolean(p.solo_mostrador);
-    const tiendaCentavos = soloMostrador
-      ? datos.mostradorCentavos
-      : precioDeTienda(datos.mostradorCentavos, datos.recargoTiendaBp);
+
+    /*
+     * El recargo de la tienda no corre sobre un precio en dólares.
+     *
+     * El precio en dólares es el que se pactó, y el de la web sale de
+     * multiplicarlo por el dólar —igual que en el repreciado automático—. Meter
+     * el recargo acá haría que la web publique un número que el repreciado de
+     * las dos horas después pisa con otro.
+     */
+    const tiendaCentavos =
+      soloMostrador || enDolares
+        ? enPesosCentavos
+        : precioDeTienda(enPesosCentavos, datos.recargoTiendaBp);
 
     const anteriorTienda = Number(p.precio_centavos);
     const anteriorLocal =
@@ -111,6 +161,12 @@ export async function cambiarPrecio(
       .update(products)
       .set({
         precioCentavos: tiendaCentavos,
+        // La moneda viaja con el precio: dejar la vieja haría que un producto
+        // pasado a dólares siga cobrándose en pesos, o al revés —y un producto
+        // que vuelve a pesos con el precio en dólares puesto lo repreciaría
+        // sola la próxima corrida de la cotización.
+        moneda: enDolares ? 'USD' : 'ARS',
+        precioUsdCentavos: enDolares ? datos.mostradorCentavos : null,
         precioLocalCentavos: null,
         updatedAt: new Date(),
       })
@@ -139,13 +195,16 @@ export async function cambiarPrecio(
         nombre: p.nombre,
         precioCentavos: tiendaCentavos,
         mostradorCentavos: datos.mostradorCentavos,
-        recargoTiendaBp: soloMostrador ? 0 : datos.recargoTiendaBp,
+        moneda: enDolares ? 'USD' : 'ARS',
+        tcCentavos: enDolares ? tcCentavos : null,
+        recargoTiendaBp: soloMostrador || enDolares ? 0 : datos.recargoTiendaBp,
       },
     });
 
     return {
       nombre: p.nombre,
       mostradorCentavos: datos.mostradorCentavos,
+      moneda: enDolares ? 'USD' : 'ARS',
       tiendaCentavos,
       anteriorMostradorCentavos:
         anteriorLocal ??

@@ -1002,6 +1002,25 @@ Ahora, al lado de cada producto del buscador y del aviso de duplicados, hay un
 precio está bien, y un campo editable al lado de cada fila invita a tocarlo sin
 querer.
 
+**En pesos o en dólares.** Al lado del campo hay dos botones, `$` y `US$`, y
+arranca en la moneda que ya tiene la ficha. Es el agujero que el local encontró
+vendiendo: un usado se compra en dólares, pero una ficha solo podía quedar en
+dólares si venía así de WooCommerce, así que **un producto cargado desde el
+mostrador no tenía forma de ser un producto en dólares**. El iPhone de US$ 630
+quedaba cargado como `$ 630`, y lo único que lo frenaba antes de regalarlo era
+la guarda de precios sospechosos.
+
+Con `US$` puesto se escribe el precio que se pactó y nada más: **el precio en
+pesos lo calcula el dólar del día** —antes de guardar, la pantalla muestra en
+cuánto queda— y se reajusta solo cuando el dólar cambia, por el mismo camino
+que repreciaba los que venían de la tienda. El recargo de la tienda no se le
+suma: el de la web sale de multiplicar por el dólar, igual que en el
+repreciado, y sumárselo acá haría que la próxima corrida lo pise.
+
+Volver a pesos limpia el precio en dólares de la ficha. Si quedara puesto, el
+repreciado automático lo tomaría como un producto en dólares y pisaría el
+precio recién escrito.
+
 Tres cosas que lo hacen correcto y no solo cómodo:
 
 - **Se escribe el precio de mostrador**, que es el que quien atiende tiene en la
@@ -1816,6 +1835,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | La garantía va en blanco, para escribirla a mano | `src/ventas/ticket.test.ts` |
 | Venta completa desde el navegador, con vuelto y ticket | `e2e/venta.spec.ts` |
 | El iPhone cargado en pesos con la cifra del dólar frena la venta | `src/ventas/cordura.test.ts`, `e2e/calidad.spec.ts` |
+| Un precio se escribe en dólares y la ficha queda en dólares | `src/catalogo/precio.test.ts`, `e2e/calidad.spec.ts` |
+| Sin cotización no se guarda un precio en dólares: los pesos saldrían de la nada | `src/catalogo/precio.test.ts` |
+| Volver a pesos limpia el precio en dólares, o el repreciado lo pisaría | `src/catalogo/precio.test.ts` |
+| El recargo de tienda no se le suma a un precio en dólares | `src/catalogo/precio.test.ts` |
 | Un cable de Apple a $13.000 NO se marca como sospechoso | `src/ventas/cordura.test.ts` |
 | Un salto del dólar mayor al 15% pide confirmación | `src/cotizacion/cotizacion.test.ts` |
 | Una cotización más vieja que el umbral se reporta vencida | `src/cotizacion/cotizacion.test.ts` |

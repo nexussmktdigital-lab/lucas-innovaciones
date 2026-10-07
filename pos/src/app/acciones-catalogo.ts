@@ -15,7 +15,8 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
-import { aCentavos, ErrorDinero, formatearARS } from '@/lib/dinero';
+import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import {
   categoriasDelCatalogo,
   crearProducto,
@@ -416,10 +417,17 @@ export async function cambiarPrecioAccion(
     return { error: 'Escribí el precio con números, por ejemplo 45000.' };
   }
 
+  // En qué moneda se pactó. El dólar del día se lee acá, no en el navegador:
+  // el precio en pesos de un producto en dólares lo calcula el servidor.
+  const moneda = datos.get('moneda') === 'USD' ? 'USD' : 'ARS';
+  const cotizacion = moneda === 'USD' ? await cotizacionVigente(db) : null;
+
   try {
     const r = await cambiarPrecio(db, {
       productId: id.data,
       mostradorCentavos,
+      moneda,
+      tcCentavos: cotizacion?.valorCentavos ?? null,
       // Se lee acá y no en el cliente: el recargo es del negocio, y si el
       // navegador lo mandara se podría tocar.
       recargoTiendaBp: await recargoDeTienda(db),
@@ -433,8 +441,14 @@ export async function cambiarPrecioAccion(
     revalidatePath('/vender');
     revalidatePath('/precios');
 
+    const cifra =
+      r.moneda === 'USD' ? formatearUSD(r.mostradorCentavos) : formatearARS(r.mostradorCentavos);
+
     return {
-      ok: `«${r.nombre}» pasa a ${formatearARS(r.mostradorCentavos)} en el mostrador.`,
+      ok:
+        r.moneda === 'USD'
+          ? `«${r.nombre}» pasa a ${cifra}. El precio en pesos lo calcula el dólar del día.`
+          : `«${r.nombre}» pasa a ${cifra} en el mostrador.`,
       resultado: { nombre: r.nombre, mostradorCentavos: r.mostradorCentavos },
     };
   } catch (error) {
