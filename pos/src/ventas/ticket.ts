@@ -1,34 +1,49 @@
 /**
- * Comprobante de venta para impresora termica.
+ * Comprobante de venta, en A4.
  *
- * Se genera como HTML con hoja de impresion y se manda al dialogo del
- * navegador, con la termica puesta como predeterminada. Sin drivers raros, sin
- * bibliotecas: es lo que ya hace el POS actual y funciona en este hardware.
+ * Reemplaza al ticket de impresora térmica. El local vende iPhones de mil
+ * quinientos dólares en cuotas y el cliente se lleva un papel que firma: una
+ * tira de 80 mm no sirve para eso. Sale una sola copia, la del cliente; lo que
+ * pasó queda en el sistema, que es mejor archivo que una hoja en un cajón.
+ *
+ * Se genera como HTML con hoja de impresión y se manda al diálogo del
+ * navegador. Sin drivers raros, sin bibliotecas.
  *
  * **No es una factura.** El negocio no emite comprobante fiscal (D2) y el pie
- * del ticket lo dice, para que nadie lo confunda.
+ * lo dice, para que nadie lo confunda.
+ *
+ * Tres reglas sobre qué sale impreso, que las pidió el local:
+ *
+ *  1. **El precio del sistema, en su moneda.** Un iPhone se pacta en dólares y
+ *     el papel dice dólares (D62). Nada de conversiones: el cliente firma el
+ *     número que acordó, no el que da el dólar de hoy.
+ *  2. **Los medios de pago no se imprimen.** Cómo se compuso el pago —tanto en
+ *     efectivo, tanto transferido— es asunto interno. En el papel va lo que
+ *     entregó y lo que queda debiendo, que es lo que al cliente le importa.
+ *  3. **Quién atendió tampoco.** Está en el sistema, que es donde se consulta.
  */
 import { formatearARS, formatearUSD } from '@/lib/dinero';
-import { formatearFechaHora } from '@/lib/fecha';
-
-export type AnchoDeTicket = 58 | 80;
+import { formatearFecha } from '@/lib/fecha';
 
 export interface LineaDeTicket {
   descripcion: string;
   cantidad: number;
+  /** Siempre en pesos: es lo que suma contra el total de la venta. */
   precioUnitarioCentavos: number;
   descuentoCentavos: number;
   totalCentavos: number;
   monedaOriginal: 'ARS' | 'USD';
+  /** Solo en productos USD: el precio de origen, que es el que se imprime. */
   precioUsdCentavos: number | null;
   sku?: string | null;
 }
 
-export interface PagoDeTicket {
-  medio: string;
+/** Una cuota tal como se pactó, para que el papel diga cuándo vuelve a pagar. */
+export interface CuotaDelComprobante {
+  numero: number;
+  /** `YYYY-MM-DD`. */
+  vencimiento: string;
   montoCentavos: number;
-  marcaTarjeta?: string | null;
-  cuotas?: number | null;
 }
 
 export interface DatosDelNegocio {
@@ -42,18 +57,25 @@ export interface DatosDelNegocio {
 export interface DatosDelTicket {
   numero: string;
   fecha: Date;
-  vendedor: string;
   cliente?: string | null;
+  /** DNI del cliente. Va en el comprobante que se firma. */
+  documento?: string | null;
   lineas: readonly LineaDeTicket[];
   subtotalCentavos: number;
   descuentoCentavos: number;
   totalCentavos: number;
-  pagos: readonly PagoDeTicket[];
-  vueltoCentavos: number;
-  tcAplicadoCentavos: number | null;
+  /** Lo que se llevó fiado **de esta compra**, en pesos. Cero si pagó todo. */
+  fiadoCentavos: number;
+  /**
+   * Las cuotas pactadas, si se pactaron.
+   *
+   * Sin esto el papel decía «queda debiendo» y nada más, y la fecha la discutía
+   * cada uno de memoria. Van en la moneda de la deuda, igual que en el sistema.
+   */
+  cuotas?: readonly CuotaDelComprobante[];
   nota?: string | null;
   /**
-   * El ticket de una venta cobrada sin conexión (D56).
+   * El comprobante de una venta cobrada sin conexión (D56).
    *
    * Todavía no tiene número: el correlativo lo asigna el servidor y el servidor
    * no está. Lo que se cobró sí es definitivo, así que el comprobante sale
@@ -68,7 +90,7 @@ export const NEGOCIO_POR_DEFECTO: DatosDelNegocio = {
   nombre: 'Lucas Innovaciones',
   direccion: 'Caseros 924',
   localidad: 'Villa Santa Rosa, Córdoba',
-  telefono: null,
+  telefono: '3574-456139',
   pie: '¡Gracias por su compra!',
 };
 
@@ -95,84 +117,124 @@ function escapar(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Espacio disponible en caracteres, para que las columnas no se pisen. */
-function anchoEnCaracteres(ancho: AnchoDeTicket): number {
-  return ancho === 58 ? 32 : 48;
+/** `2026-11-06` → `6 de noviembre de 2026`, como lo lee una persona. */
+const MESES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+export function fechaLarga(iso: string): string {
+  const [a, m, d] = iso.split('-');
+  const mes = MESES[Number(m) - 1];
+  if (!a || !mes || !d) return iso;
+  return `${Number(d)} de ${mes} de ${a}`;
+}
+
+/**
+ * ¿El comprobante va en dólares?
+ *
+ * Solo cuando **todo** lo vendido está cotizado en dólares y no hubo ningún
+ * descuento. Un descuento se carga en pesos, y restarlo de un precio en dólares
+ * obligaría a convertir —justo lo que el local pidió que no pase en el papel—.
+ * En ese caso el comprobante sale en pesos, que es la moneda en la que de
+ * verdad se cobró.
+ */
+function montosEnDolares(datos: DatosDelTicket): boolean {
+  const sinDescuentos =
+    datos.descuentoCentavos === 0 && datos.lineas.every((l) => l.descuentoCentavos === 0);
+
+  return (
+    sinDescuentos &&
+    datos.lineas.length > 0 &&
+    datos.lineas.every((l) => l.monedaOriginal === 'USD' && l.precioUsdCentavos !== null)
+  );
 }
 
 export function generarTicket(
   datos: DatosDelTicket,
-  opciones: { ancho?: AnchoDeTicket; negocio?: DatosDelNegocio } = {},
+  opciones: { negocio?: DatosDelNegocio } = {},
 ): string {
-  const ancho = opciones.ancho ?? 80;
   const negocio = opciones.negocio ?? NEGOCIO_POR_DEFECTO;
-  const columnas = anchoEnCaracteres(ancho);
+  const enDolares = montosEnDolares(datos);
+  const cifra = enDolares ? formatearUSD : formatearARS;
 
-  const lineas = datos.lineas
+  /** Lo que se cobra por un renglón, en la moneda que se imprime. */
+  const totalDeLinea = (l: LineaDeTicket) =>
+    enDolares ? (l.precioUsdCentavos ?? 0) * l.cantidad : l.totalCentavos;
+
+  const totalCentavos = enDolares
+    ? datos.lineas.reduce((n, l) => n + totalDeLinea(l), 0)
+    : datos.totalCentavos;
+
+  /*
+   * Lo entregado y el saldo, en la moneda del papel.
+   *
+   * Lo fiado viene en pesos, que es como lo guarda la venta. Cuando el
+   * comprobante va en dólares se saca por diferencia contra el total —no por
+   * conversión—, así que los dos números cierran entre sí sin meter ninguna
+   * cotización en el medio.
+   */
+  const fiadoEnPesos = Math.max(0, Math.min(datos.fiadoCentavos, datos.totalCentavos));
+  const entregadoCentavos = enDolares
+    ? Math.round(totalCentavos * (1 - fiadoEnPesos / (datos.totalCentavos || 1)))
+    : datos.totalCentavos - fiadoEnPesos;
+  const saldoCentavos = totalCentavos - entregadoCentavos;
+
+  const leyenda =
+    saldoCentavos > 0
+      ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifra(saldoCentavos)}`
+      : 'Operación cancelada en su totalidad';
+
+  const detalle = datos.lineas
     .map((l) => {
-      const unitario = formatearARS(l.precioUnitarioCentavos);
-      const enDolares =
-        l.monedaOriginal === 'USD' && l.precioUsdCentavos
-          ? `<div class="usd">${escapar(formatearUSD(l.precioUsdCentavos))} c/u</div>`
-          : '';
-      const descuento =
-        l.descuentoCentavos > 0
-          ? `<div class="usd">Descuento −${escapar(formatearARS(l.descuentoCentavos))}</div>`
-          : '';
+      const unitario = enDolares ? (l.precioUsdCentavos ?? 0) : l.precioUnitarioCentavos;
+      const porUnidad =
+        l.cantidad > 1 ? `${l.cantidad} × ${escapar(cifra(unitario))}` : escapar(l.sku ?? '');
 
       return `
-      <div class="linea">
-        <div class="desc">${escapar(l.descripcion)}</div>
-        <div class="fila">
-          <span>${l.cantidad} × ${escapar(unitario)}</span>
-          <span class="monto">${escapar(formatearARS(l.totalCentavos))}</span>
+      <div class="renglon">
+        <div>
+          <div class="producto">${escapar(l.descripcion)}</div>
+          ${porUnidad ? `<div class="detalle-chico">${porUnidad}</div>` : ''}
         </div>
-        ${enDolares}
-        ${descuento}
+        <div class="importe">${escapar(cifra(totalDeLinea(l)))}</div>
       </div>`;
     })
     .join('');
 
-  const pagos = datos.pagos
-    .map((p) => {
-      const detalle =
-        p.marcaTarjeta || p.cuotas
-          ? ` (${[p.marcaTarjeta, p.cuotas ? `${p.cuotas} cuotas` : null].filter(Boolean).join(', ')})`
-          : '';
-      return `<div class="fila"><span>${escapar(nombreDelMedio(p.medio) + detalle)}</span><span class="monto">${escapar(formatearARS(p.montoCentavos))}</span></div>`;
-    })
-    .join('');
-
-  const vuelto =
-    datos.vueltoCentavos > 0
-      ? `<div class="fila fuerte"><span>Vuelto</span><span class="monto">${escapar(formatearARS(datos.vueltoCentavos))}</span></div>`
+  const cuotas = datos.cuotas ?? [];
+  const bloqueDeCuotas =
+    cuotas.length > 0
+      ? `
+  <section class="cuotas">
+    <div class="cuotas-encabezado">
+      <span class="etiqueta">SALDO EN CUOTAS</span>
+      <span class="detalle-chico">${cuotas.length} ${cuotas.length === 1 ? 'cuota' : 'cuotas'}</span>
+    </div>
+    ${cuotas
+      .map(
+        (c) => `
+    <div class="cuota">
+      <span class="cuota-n">${c.numero}</span>
+      <span class="cuota-fecha">Vence el ${escapar(fechaLarga(c.vencimiento))}</span>
+      <span class="cuota-monto">${escapar(cifra(c.montoCentavos))}</span>
+    </div>`,
+      )
+      .join('')}
+  </section>`
       : '';
 
-  /*
-   * Lo que se llevó fiado, dicho con todas las letras.
-   *
-   * «Cuenta corriente $7.000» entre los medios de pago es correcto y no alcanza:
-   * este es el papel que el cliente guarda y con el que se discute después. Va
-   * el monto de ESTA compra y no el saldo total, que cambia con el tiempo y
-   * volvería mentiroso a un comprobante reimpreso el mes que viene.
-   */
-  const fiadoCentavos = datos.pagos
-    .filter((p) => p.medio === 'cuenta_corriente')
-    .reduce((n, p) => n + p.montoCentavos, 0);
-
-  const fiado =
-    fiadoCentavos > 0
-      ? `<div class="fila fuerte aviso"><span>Queda debiendo de esta compra</span><span class="monto">${escapar(formatearARS(fiadoCentavos))}</span></div>`
-      : '';
-
-  const descuento =
-    datos.descuentoCentavos > 0
-      ? `<div class="fila"><span>Descuento</span><span class="monto">−${escapar(formatearARS(datos.descuentoCentavos))}</span></div>`
-      : '';
-
-  const cotizacion = datos.tcAplicadoCentavos
-    ? `<div class="pie-nota">Cotización aplicada: ${escapar(formatearARS(datos.tcAplicadoCentavos))} por dólar</div>`
-    : '';
+  const anulada = datos.nota === 'VENTA ANULADA';
 
   return `<!doctype html>
 <html lang="es-AR">
@@ -180,121 +242,239 @@ export function generarTicket(
 <meta charset="utf-8">
 <title>Comprobante ${escapar(datos.numero)}</title>
 <style>
-  @page { size: ${ancho}mm auto; margin: 0; }
+  @page { size: A4; margin: 0; }
 
   * { box-sizing: border-box; }
 
   body {
-    width: ${ancho}mm;
+    width: 210mm;
+    min-height: 297mm;
     margin: 0;
-    padding: 3mm;
-    font-family: ui-monospace, 'Courier New', monospace;
-    font-size: ${ancho === 58 ? '10px' : '11.5px'};
-    line-height: 1.35;
-    color: #000;
+    padding: 18mm 20mm 15mm;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: #0a0a0a;
     background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  .centro { text-align: center; }
-  .negocio { font-weight: 700; font-size: ${ancho === 58 ? '13px' : '15px'}; }
-  .chico { font-size: ${ancho === 58 ? '9px' : '10px'}; }
+  /* El acento se imprime en gris: la jerarquía la sostienen el tamaño y el
+     peso de la tipografía, no el color. */
+  .acento { color: #16305B; }
 
-  hr {
-    border: none;
-    border-top: 1px dashed #000;
-    margin: 2mm 0;
+  .membrete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12mm; }
+  .marca { height: 13mm; display: block; }
+  .rubro { font-size: 8pt; color: #6b6b6b; margin-top: 2mm; }
+  .domicilio { text-align: right; font-size: 8pt; color: #6b6b6b; line-height: 1.6; }
+  .domicilio strong { color: #0a0a0a; font-size: 9pt; }
+
+  .regla { height: 1mm; background: #0a0a0a; margin-top: 5mm; }
+  .regla-fina { height: 0.2mm; background: #d9d9d9; margin: 5mm 0 0; }
+
+  .titulo {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-top: 3mm;
+  }
+  .titulo .tipo { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.14em; }
+  .titulo .numero { font-size: 12pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .datos {
+    display: flex; gap: 10mm; margin-top: 6mm;
+  }
+  .datos > div:nth-child(2) { flex: 1; }
+  .etiqueta {
+    display: block;
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; color: #6b6b6b;
+  }
+  .dato { font-size: 11pt; margin-top: 1mm; }
+
+  .encabezado-detalle {
+    display: flex; justify-content: space-between; padding: 4mm 0 2mm;
   }
 
-  .fila { display: flex; justify-content: space-between; gap: 2mm; }
-  .monto { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .fuerte { font-weight: 700; }
-  /* La térmica imprime en blanco y negro: el aviso se marca con un recuadro,
-     no con color. */
-  .aviso { border: 1px solid #000; padding: 1mm; margin-top: 1mm; }
+  .renglon {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm;
+    padding: 2mm 0 3mm;
+  }
+  .producto { font-size: 12pt; font-weight: 600; line-height: 1.3; }
+  .detalle-chico { font-size: 8.5pt; color: #6b6b6b; margin-top: 1mm; }
+  .importe {
+    font-size: 12.5pt; font-weight: 700; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
 
   .total {
-    font-size: ${ancho === 58 ? '14px' : '17px'};
-    font-weight: 700;
-    margin: 1mm 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 10mm;
+    border-top: 0.6mm solid #16305B;
+    background: #f4f4f4;
+    margin-top: 6mm;
+    padding: 5mm 6mm;
+  }
+  .total .cifra {
+    font-size: 24pt; font-weight: 700; line-height: 1; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
 
-  .linea { margin-bottom: 1.5mm; }
-  .desc { word-break: break-word; }
-  .usd { font-size: ${ancho === 58 ? '8px' : '9px'}; padding-left: 2mm; }
+  .cuotas { border: 0.2mm solid #d9d9d9; margin-top: 5mm; padding: 4mm 5mm 4mm; }
+  .cuotas-encabezado { display: flex; align-items: baseline; justify-content: space-between; }
+  .cuotas-encabezado .etiqueta { display: inline; }
+  .cuota {
+    display: flex; align-items: baseline; gap: 5mm;
+    border-top: 0.2mm solid #ededed; padding: 2mm 0;
+    margin-top: 2mm;
+  }
+  .cuota:first-of-type { margin-top: 2mm; }
+  .cuota-n { width: 6mm; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cuota-fecha { flex: 1; font-size: 10pt; }
+  .cuota-monto {
+    font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
 
-  .pie-nota { font-size: ${ancho === 58 ? '8px' : '9px'}; margin-top: 2mm; }
+  .garantia { margin-top: 6mm; }
+  .garantia p { margin: 2mm 0 0; font-size: 9pt; line-height: 1.6; color: #3a3a3a; }
+  /* En blanco a propósito: el plazo cambia según el producto y lo escriben a
+     mano en el mostrador. */
+  .en-blanco {
+    display: inline-block; width: 28mm; border-bottom: 0.3mm solid #0a0a0a;
+    margin: 0 1mm;
+  }
 
-  /* En pantalla se ve como un papel; al imprimir, sin adornos. */
+  .relleno { flex: 1; min-height: 10mm; }
+
+  .firmas { display: flex; gap: 14mm; margin-top: 10mm; }
+  .firmas > div { flex: 1; }
+  .linea-firma { height: 0.3mm; background: #0a0a0a; }
+  .firmas span { display: block; font-size: 8pt; color: #6b6b6b; margin-top: 1.5mm; }
+
+  .pie {
+    display: flex; justify-content: space-between; gap: 8mm;
+    border-top: 0.2mm solid #d9d9d9;
+    margin-top: 6mm; padding-top: 3mm;
+    font-size: 8pt; color: #6b6b6b;
+  }
+
+  .aviso {
+    border: 0.4mm solid #0a0a0a;
+    padding: 3mm 4mm;
+    margin-top: 5mm;
+    font-size: 9pt;
+  }
+  .aviso strong { display: block; letter-spacing: 0.08em; }
+
   @media screen {
-    body {
-      margin: 1rem auto;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-      border-radius: 2px;
-    }
+    body { margin: 1rem auto; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18); }
   }
 </style>
 </head>
 <body>
-  <div class="centro">
-    <div class="negocio">${escapar(negocio.nombre)}</div>
-    <div class="chico">${escapar(negocio.direccion)}</div>
-    <div class="chico">${escapar(negocio.localidad)}</div>
-    ${negocio.telefono ? `<div class="chico">${escapar(negocio.telefono)}</div>` : ''}
-  </div>
+  <header class="membrete">
+    <div>
+      <img class="marca" src="/marca/lucas-innovaciones-negro.png" alt="${escapar(negocio.nombre)}">
+      <div class="rubro">Tecnología y electrónica · desde 2007</div>
+    </div>
+    <div class="domicilio">
+      ${escapar(negocio.direccion)}<br>
+      ${escapar(negocio.localidad)}<br>
+      ${negocio.telefono ? `<strong>${escapar(negocio.telefono)}</strong>` : ''}
+    </div>
+  </header>
 
-  <hr>
+  <div class="regla"></div>
+
+  <div class="titulo">
+    <span class="tipo acento">COMPROBANTE DE VENTA</span>
+    <span class="numero">N.º ${escapar(datos.numero)}</span>
+  </div>
 
   ${
     datos.provisional
-      ? `<div class="aviso centro fuerte">
-    SIN CONEXIÓN<br>
-    <span class="chico">El número de comprobante se asigna cuando vuelve internet.
-    Lo cobrado es definitivo.</span>
+      ? `<div class="aviso">
+    <strong>SIN CONEXIÓN</strong>
+    El número de comprobante se asigna cuando vuelve internet. Lo cobrado es definitivo.
   </div>`
       : ''
   }
 
-  <div class="fila"><span>Comprobante</span><span class="fuerte">${escapar(datos.numero)}</span></div>
-  <div class="fila"><span>Fecha</span><span>${escapar(formatearFechaHora(datos.fecha))}</span></div>
-  <div class="fila"><span>Atendió</span><span>${escapar(datos.vendedor)}</span></div>
-  ${datos.cliente ? `<div class="fila"><span>Cliente</span><span>${escapar(datos.cliente)}</span></div>` : ''}
+  ${
+    anulada
+      ? `<div class="aviso"><strong>VENTA ANULADA</strong>
+    Esta venta se dio de baja en el sistema.</div>`
+      : ''
+  }
 
-  <hr>
-
-  ${lineas}
-
-  <hr>
-
-  <div class="fila"><span>Subtotal</span><span class="monto">${escapar(formatearARS(datos.subtotalCentavos))}</span></div>
-  ${descuento}
-  <div class="fila total"><span>TOTAL</span><span class="monto">${escapar(formatearARS(datos.totalCentavos))}</span></div>
-
-  <hr>
-
-  ${pagos}
-  ${vuelto}
-  ${fiado}
-
-  ${datos.nota ? `<hr><div class="chico">${escapar(datos.nota)}</div>` : ''}
-
-  <hr>
-
-  <div class="centro chico">
-    ${negocio.pie ? `<div>${escapar(negocio.pie)}</div>` : ''}
-    <div class="pie-nota">Comprobante interno. No válido como factura.</div>
-    ${cotizacion}
+  <div class="datos">
+    <div>
+      <span class="etiqueta">FECHA</span>
+      <div class="dato">${escapar(formatearFecha(datos.fecha))}</div>
+    </div>
+    <div>
+      <span class="etiqueta">CLIENTE</span>
+      <div class="dato">${escapar(datos.cliente ?? 'Consumidor final')}</div>
+    </div>
+    <div>
+      <span class="etiqueta">DNI</span>
+      <div class="dato">${escapar(datos.documento ?? '—')}</div>
+    </div>
   </div>
 
-  <div style="height: 6mm"></div>
+  <div class="regla-fina"></div>
+
+  <div class="encabezado-detalle">
+    <span class="etiqueta">DETALLE</span>
+    <span class="etiqueta">IMPORTE</span>
+  </div>
+
+  ${detalle}
+
+  <div class="regla-fina"></div>
+
+  <div class="total">
+    <div>
+      <span class="etiqueta acento">TOTAL</span>
+      <div class="detalle-chico">${escapar(leyenda)}</div>
+    </div>
+    <div class="cifra">${escapar(cifra(totalCentavos))}</div>
+  </div>
+
+  ${bloqueDeCuotas}
+
+  <section class="garantia">
+    <span class="etiqueta">GARANTÍA</span>
+    <p>
+      <span class="en-blanco"></span> desde la fecha de este comprobante, por fallas de
+      funcionamiento. No cubre daño por golpe, humedad ni manipulación de terceros. El reclamo se
+      hace en el local, presentando este comprobante.
+    </p>
+  </section>
+
+  <div class="relleno"></div>
+
+  <div class="firmas">
+    <div>
+      <div class="linea-firma"></div>
+      <span>Firma del cliente</span>
+    </div>
+    <div>
+      <div class="linea-firma"></div>
+      <span>Aclaración del cliente</span>
+    </div>
+  </div>
+
+  <footer class="pie">
+    <span>Documento no válido como factura.</span>
+    <span>Consultas y garantía: ${escapar(negocio.telefono ?? '')}</span>
+  </footer>
+
   <script>
-    // Se imprime solo al abrir y se cierra al terminar: el cajero no tiene que
-    // hacer nada más que retirar el papel.
-    window.addEventListener('load', () => {
-      window.print();
-    });
+    // Se imprime solo al abrir y se cierra al terminar: el mostrador no tiene
+    // que hacer nada más que retirar la hoja.
+    window.addEventListener('load', () => window.print());
     window.addEventListener('afterprint', () => window.close());
   </script>
-  <!-- ancho útil: ${columnas} caracteres -->
 </body>
 </html>`;
 }

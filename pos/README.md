@@ -253,7 +253,7 @@ la excepción no se cuele por olvido.
    vuelto, que solo sale del efectivo entregado.
 5. **Al confirmar**, en una sola transacción: se crea la venta, se descuenta
    stock, se impacta la caja, se audita y se encola el ajuste a WooCommerce.
-   Después se abre el ticket, que se manda a imprimir solo.
+   Después se abre el **comprobante**, que se manda a imprimir solo.
 6. **Si se fía**, hay que elegir un cliente y lo tiene que hacer el dueño. La
    deuda queda en su cuenta corriente, en la misma transacción que la venta.
 7. **Ventas del turno** (`F4`) muestra todo lo que se vendió, permite volver a
@@ -382,6 +382,34 @@ que quede lo mismo que en el mostrador hay que cobrar `precio ÷ (1 − c)`. Con
 una comisión del 6,29%, el recargo es 6,71%, no 6,29%. La pantalla de Precios
 tiene la calculadora: se pone la comisión del panel de Mercado Pago y devuelve
 el recargo exacto.
+
+### El comprobante
+
+Una hoja **A4**, una sola copia, la del cliente. Reemplazó al ticket de
+impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
+el cliente se lleva un papel que firma — una tira de 80 mm no sirve para eso. Lo
+que pasó queda en el sistema, que es mejor archivo que una hoja en un cajón.
+
+Lleva el logo, los datos del local, el número de comprobante, el cliente con su
+DNI, lo vendido con su importe, el total, el plan de cuotas si lo hay, la
+garantía y dos renglones para firmar. **No es una factura** y el pie lo dice
+(D2).
+
+Tres reglas sobre qué sale impreso, las tres pedidas por el local:
+
+- **El precio del sistema, en su moneda.** Un iPhone se pacta en dólares y el
+  papel dice dólares (D62). Nada de conversiones: el cliente firma el número que
+  acordó, no el que da el dólar de hoy. Un carrito mezclado, o cualquier venta
+  con descuento, sale en pesos — restar un descuento cargado en pesos de un
+  precio en dólares exigiría convertir, que es justo lo que no se hace acá.
+- **Los medios de pago no se imprimen.** Cómo se compuso el pago es asunto
+  interno; en el papel va lo que entregó y lo que queda debiendo. Con cuotas, va
+  además cada vencimiento con su monto: sin eso el cliente no sabe cuándo tiene
+  que volver, y la fecha la discute cada uno de memoria.
+- **Quién atendió tampoco.** Está en el sistema, que es donde se consulta.
+
+El plazo de garantía queda **en blanco a propósito**, con una raya para
+escribirlo a mano: cambia según el producto y lo completan en el mostrador.
 
 ---
 
@@ -1606,7 +1634,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | No se puede fiar sin cliente ni vender sin caja abierta | `src/ventas/confirmar.test.ts` |
 | El cierre de caja exige justificar la diferencia | `src/caja/sesion.test.ts` |
 | Drenar la cola dos veces no vuelve a descontar en Woo | `src/woo/cola.test.ts` |
-| El ticket escapa el HTML del catálogo y usa la hora de Buenos Aires | `src/ventas/ticket.test.ts` |
+| El comprobante escapa el HTML del catálogo y usa la fecha de Buenos Aires | `src/ventas/ticket.test.ts` |
+| Una venta en dólares se imprime en dólares, sin ninguna conversión a pesos | `src/ventas/ticket.test.ts` |
+| Un carrito mezclado, o con descuento, se imprime en pesos | `src/ventas/ticket.test.ts` |
+| El comprobante no dice con qué medios se pagó ni quién atendió | `src/ventas/ticket.test.ts` |
+| Con plan, lista cada cuota con su fecha y su monto | `src/ventas/ticket.test.ts` |
+| La garantía va en blanco, para escribirla a mano | `src/ventas/ticket.test.ts` |
 | Venta completa desde el navegador, con vuelto y ticket | `e2e/venta.spec.ts` |
 | El iPhone cargado en pesos con la cifra del dólar frena la venta | `src/ventas/cordura.test.ts`, `e2e/calidad.spec.ts` |
 | Un cable de Apple a $13.000 NO se marca como sospechoso | `src/ventas/cordura.test.ts` |
