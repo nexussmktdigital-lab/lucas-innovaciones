@@ -476,6 +476,19 @@ Tres reglas sobre qué sale impreso, las tres pedidas por el local:
 El plazo de garantía queda **en blanco a propósito**, con una raya para
 escribirlo a mano: cambia según el producto y lo completan en el mostrador.
 
+**Se vuelve a sacar cuando se quiera.** El comprobante no se guarda en ningún
+lado: se arma de la venta cada vez que se pide, así que el de hoy y el de una
+venta de hace dos meses salen del mismo código y dicen lo mismo. Está en la
+fila de la lista y en la ficha —«Ver e imprimir el comprobante»—, abre en una
+ventana aparte y se manda a imprimir sola. Si la venta se anuló, el papel sale
+con «VENTA ANULADA»: nadie puede reimprimir el comprobante de algo que se dio
+de baja y usarlo como si valiera.
+
+Debajo del total va **«Pagado en su totalidad»**, o lo que entregó y el saldo
+que queda. Decía «operación cancelada en su totalidad» —que en contabilidad es
+exactamente eso, pagada— y se cambió: el papel lo lee el cliente, y abajo del
+total «cancelada» se lee como que la compra se dio de baja.
+
 ---
 
 ## Clientes y fiado
@@ -1733,6 +1746,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | La búsqueda ignora el período: mira todo el historial | `src/ventas/anular.test.ts` |
 | Sin término, el buscador no devuelve el historial entero | `src/ventas/anular.test.ts` |
 | Se busca desde la pantalla y se vuelve a hoy de un clic | `e2e/venta.spec.ts` |
+| De una venta vieja sale el mismo comprobante que el día que se vendió | `e2e/venta.spec.ts` |
+| Pagado al contado el papel lo dice sin ambigüedad: «pagado», no «cancelado» | `src/ventas/ticket.test.ts` |
 | Un servidor lento no se anuncia como «sin conexión» cuando no hay copia guardada | `src/offline/sw.test.ts` |
 | Con la red caída de verdad, y sin copia, sí se avisa que no hay conexión | `src/offline/sw.test.ts` |
 | Habiendo copia, se sirve sin esperar al servidor lento, y la tardía se guarda | `src/offline/sw.test.ts` |

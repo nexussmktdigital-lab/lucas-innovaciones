@@ -334,6 +334,56 @@ test('se busca una venta sin saber de qué día fue', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Hoy', exact: true })).toBeVisible();
 });
 
+test('de una venta vieja se saca el mismo comprobante que el día que se vendió', async ({
+  page,
+  context,
+}) => {
+  /*
+   * Es la pregunta del mostrador: «voy a la venta de tal producto y quiero la
+   * boleta». El comprobante no se guarda en ningún lado: se arma de la venta
+   * cada vez que se pide, así que el de hoy y el de hace dos meses salen del
+   * mismo código y dicen lo mismo.
+   */
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  // La ventana del comprobante se manda a imprimir sola; acá se la deja pasar.
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  const total = await precioDelCarrito(page);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  // Se la busca por el producto, como se la buscaría dos meses después.
+  await page.goto('/ventas?q=vidrio+templado');
+  const fila = page.getByRole('listitem').first();
+  const numero = (await fila.innerText()).match(/T\d-\d{6}/)?.[0];
+  expect(numero).toBeTruthy();
+
+  const [comprobante] = await Promise.all([
+    context.waitForEvent('page'),
+    fila.getByRole('link', { name: /Ver e imprimir/ }).click(),
+  ]);
+  await comprobante.waitForLoadState('domcontentloaded');
+
+  // El espacio del «$ » que pone Intl es duro; en el test se compara liso.
+  const papel = (await comprobante.locator('body').innerText()).replace(/\u00a0/g, ' ');
+  expect(papel).toContain('Caseros 924');
+  expect(papel).toContain(numero!);
+  expect(papel).toContain(formatearPesos(total));
+  expect(papel).toContain('Vidrio templado');
+  expect(papel).toContain('Pagado en su totalidad');
+  // Y sigue sin ser una factura, que es lo que el pie tiene que decir (D2).
+  expect(papel).toMatch(/no válido como factura/i);
+});
+
 test('la ficha de la venta cuenta lo que el comprobante no dice', async ({ page }) => {
   /*
    * «Elijo la venta para ver los detalles»: lo que falta cuando el cliente
