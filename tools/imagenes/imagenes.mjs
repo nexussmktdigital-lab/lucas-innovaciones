@@ -192,8 +192,10 @@ async function buscar() {
 
 	for (const p of pendientes) {
 		if (hechos >= limite) break;
-		const q = consulta(p);
-
+		// `consultas` (lista) junta más opciones por producto: nombre oficial,
+		// nombre en castellano, vista frente/dorso. Sin eso, una sola consulta.
+		const qs = Array.isArray(p.consultas) && p.consultas.length ? p.consultas : [consulta(p)];
+		for (const q of qs) {
 		if (!estado.consultas[q]) {
 			let intento = 0;
 			for (;;) {
@@ -241,8 +243,19 @@ async function buscar() {
 			}
 			await dormir(350);
 		}
+		}
 
-		estado.productos[p.id] = { q, opciones: estado.consultas[q] };
+		// Se juntan las opciones de todas las consultas, sin repetir la misma imagen.
+		const vistas = new Set();
+		const opciones = [];
+		for (const q of qs) {
+			for (const op of estado.consultas[q] || []) {
+				if (vistas.has(op.url)) continue;
+				vistas.add(op.url);
+				opciones.push(op);
+			}
+		}
+		estado.productos[p.id] = { q: qs.join(' | '), opciones };
 		hechos++;
 		if (hechos % 10 === 0) guardar('busquedas.json', estado);
 		process.stdout.write(`\rBuscados ${hechos}/${Math.min(pendientes.length, limite)} · llamadas a Serper: ${llamadas}`);
@@ -311,7 +324,8 @@ async function filtrar() {
 
 		ok.sort((x, y) => y.puntaje - x.puntaje);
 		const elegidas = [];
-		for (const [k, o] of ok.slice(0, 3).entries()) {
+		const tope = parseInt(opcion('opciones', '3'), 10) || 3;
+		for (const [k, o] of ok.slice(0, tope).entries()) {
 			const archivo = `${p.id}-${k + 1}.jpg`;
 			await sharp(o.buf, { failOn: 'none' })
 				.flatten({ background: '#ffffff' })
@@ -332,6 +346,7 @@ async function filtrar() {
 }
 
 function revisar() {
+	if (opcion('varias')) return revisarVarias();
 	const productos = leer('productos.json', []);
 	const filtradas = leer('filtradas.json', {});
 	const subidas = leer('subidas.json', {});
@@ -395,6 +410,89 @@ pintar();
 	console.log(`datos/revision.html: ${lista.length} productos para elegir. Abrilo en el navegador.`);
 }
 
+/**
+ * Revisión con varias fotos por producto: se eligen hasta 3 y una es la
+ * principal (la destacada); las otras van a la galería de la ficha.
+ * Exporta { id: { principal, galeria: [..] } } o { id: null } si "Ninguna".
+ */
+function revisarVarias() {
+	const productos = leer('productos.json', []);
+	const filtradas = leer('filtradas.json', {});
+	const subidas = leer('subidas.json', {});
+	const lista = productos.filter((p) => filtradas[p.id] && filtradas[p.id].length && !subidas[p.id]);
+	const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+	const host = (o) => { try { return new URL(o.fuente || o.url).hostname; } catch { return ''; } };
+
+	const filas = lista.map((p) => `
+<section class="p" data-id="${p.id}">
+  <header><b>${esc(p.nombre)}</b><span>${esc(p.color ? 'Color: ' + p.color + ' · ' : '')}${esc(p.marca)} · #${p.id} · ${filtradas[p.id].length} opciones</span></header>
+  <div class="ops">
+    ${filtradas[p.id].map((o) => `<div class="op" data-archivo="${o.archivo}"><button class="estrella" type="button" title="Principal">★</button><span class="orden"></span><img loading="lazy" src="candidatos/${o.archivo}"><small>${o.w}×${o.h}${o.claro ? ' · fondo claro' : ''}${o.oficial ? ' · <b>oficial</b>' : ''}<br>${esc(host(o))}</small></div>`).join('')}
+    <div class="op ninguna" data-archivo="">Ninguna</div>
+  </div>
+</section>`).join('');
+
+	const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fotos por color</title>
+<style>
+:root{--n:#0A0A0A;--v:#00E64D;--b:#E5E5E5;--g:#6B6B6B}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:#F4F4F4;color:var(--n)}
+.top{position:sticky;top:0;z-index:2;background:var(--n);color:#fff;padding:12px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.top button{background:var(--v);border:0;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.ayuda{font-size:14px;color:var(--g);line-height:1.5}
+.p{background:#fff;border:1px solid var(--b);border-radius:16px;padding:14px;margin-bottom:12px}
+.p.hecho header b::after{content:"  ✓";color:#00A838}
+.p header{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.p header span{font-size:12px;color:var(--g)}
+.ops{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.op{position:relative;border:2px solid var(--b);border-radius:12px;background:#fff;padding:6px;cursor:pointer;text-align:center}
+.op img{width:100%;aspect-ratio:1;object-fit:contain;background:#F8F8F8;border-radius:8px}
+.op small{display:block;font-size:11px;color:var(--g);margin-top:4px}
+.op.sel{border-color:var(--v);background:#F5FFF7}
+.op.principal{border-color:var(--n);box-shadow:0 0 0 2px var(--v)}
+.estrella{position:absolute;top:10px;left:10px;width:32px;height:32px;border-radius:50%;border:1px solid var(--b);background:#fff;color:#BBB;font-size:18px;cursor:pointer;display:none}
+.op.sel .estrella{display:block}
+.op.principal .estrella{background:var(--n);color:var(--v);border-color:var(--n)}
+.orden{position:absolute;top:10px;right:10px;background:var(--v);color:var(--n);font-weight:700;font-size:12px;border-radius:999px;padding:2px 8px;display:none}
+.op.sel .orden{display:block}
+.ninguna{display:flex;align-items:center;justify-content:center;font-weight:600;min-height:80px}
+.ninguna.sel{border-color:#D63131;background:#FCE8E8}
+@media(max-width:700px){.ops{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style></head><body>
+<div class="top"><b>Fotos por color: ${lista.length} equipos</b><span id="cuenta"></span><button id="exp">Exportar aprobadas.json</button></div>
+<main>
+<p class="ayuda">Tocá hasta <b>3 fotos</b> por equipo (otro toque la saca). La primera que elegís queda como <b>principal ★</b> (la foto destacada); para cambiarla, tocá la estrella de otra elegida. Las demás van a la galería de la ficha. Preferí las marcadas <b>oficial</b>. Lo elegido queda guardado en este navegador. Al terminar: "Exportar aprobadas.json".</p>
+${filas}
+</main>
+<script>
+var K='li-fotos-color', sel={};
+try{sel=JSON.parse(localStorage.getItem(K)||'{}')}catch(e){}
+function pintar(){var n=0;document.querySelectorAll('.p').forEach(function(s){var id=s.dataset.id,v=sel[id];
+var hecho=v===null||(v&&v.principal);s.classList.toggle('hecho',!!hecho);if(hecho)n++;
+var elegidas=v?[v.principal].concat(v.galeria||[]).filter(Boolean):[];
+s.querySelectorAll('.op').forEach(function(b){var a=b.dataset.archivo;
+if(!a){b.classList.toggle('sel',v===null);return}
+var i=elegidas.indexOf(a);b.classList.toggle('sel',i>=0);b.classList.toggle('principal',v&&v.principal===a);
+var o=b.querySelector('.orden');if(o)o.textContent=v&&v.principal===a?'Principal':(i>=0?'Galería':'')})});
+document.getElementById('cuenta').textContent=n+' de '+document.querySelectorAll('.p').length+' listos';try{localStorage.setItem(K,JSON.stringify(sel))}catch(e){}}
+document.addEventListener('click',function(e){var op=e.target.closest('.op');if(!op)return;var id=op.closest('.p').dataset.id,a=op.dataset.archivo;
+if(!a){sel[id]=sel[id]===null?undefined:null;pintar();return}
+var v=sel[id]||{principal:null,galeria:[]};if(v===null)v={principal:null,galeria:[]};
+var todas=[v.principal].concat(v.galeria).filter(Boolean);
+if(e.target.closest('.estrella')){if(todas.indexOf(a)>=0){v.galeria=todas.filter(function(x){return x!==a});v.principal=a}}
+else if(todas.indexOf(a)>=0){todas=todas.filter(function(x){return x!==a});v.principal=todas[0]||null;v.galeria=todas.slice(1)}
+else if(todas.length<3){if(!v.principal)v.principal=a;else v.galeria.push(a)}
+else{alert('Máximo 3 fotos por equipo. Sacá una antes de elegir otra.')}
+sel[id]=(v.principal?v:undefined);pintar()});
+document.getElementById('exp').addEventListener('click',function(){var out={};Object.keys(sel).forEach(function(k){if(sel[k]===null||(sel[k]&&sel[k].principal))out[k]=sel[k]});
+var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,1)],{type:'application/json'}));a.download='aprobadas.json';a.click()});
+pintar();
+</script></body></html>`;
+	fs.writeFileSync(ruta('revision.html'), html);
+	console.log(`datos/revision.html: ${lista.length} equipos para elegir (hasta 3 fotos y una principal).`);
+}
+
 async function subir() {
 	requerir('WC_URL', 'WP_USER', 'WP_APP_PASSWORD');
 	const sharp = (await import('sharp')).default;
@@ -417,7 +515,14 @@ async function subir() {
 		.slice(0, limite);
 
 	let n = 0;
-	for (const [id, archivo] of cola) {
+	for (const [id, eleccion] of cola) {
+		// Varias fotos: { principal, galeria }. Se suben todas y se asignan juntas.
+		if (typeof eleccion === 'object') {
+			if (await subirVarias(id, eleccion, productos[id], subidas, base, auth, sharp)) n++;
+			await dormir(500);
+			continue;
+		}
+		const archivo = eleccion;
 		const p = productos[id] || { nombre: `producto-${id}` };
 		const nombre = p.nombre.replace(/\s*\(\d{4,6}\)\s*$/, '').trim();
 		const slug = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
@@ -476,6 +581,64 @@ async function subir() {
 		await dormir(500);
 	}
 	console.log(`Subidas en esta corrida: ${n}. Total: ${Object.keys(subidas).length} -> datos/subidas.json`);
+}
+
+/**
+ * Sube la principal y la galería de un producto y las asigna en un solo PUT a
+ * la REST de WooCommerce (`images`: la primera es la destacada, el resto la
+ * galería). Si algo falla, borra de Medios lo que subió en este intento.
+ */
+async function subirVarias(id, eleccion, p, subidas, base, auth, sharp) {
+	requerir('WC_CONSUMER_KEY', 'WC_CONSUMER_SECRET');
+	const authWc = 'Basic ' + Buffer.from(`${process.env.WC_CONSUMER_KEY}:${process.env.WC_CONSUMER_SECRET}`).toString('base64');
+	const nombre = (p ? p.nombre : `producto-${id}`).replace(/\s*\(\d{4,6}\)\s*$/, '').trim();
+	const slug = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70);
+	const archivos = [eleccion.principal, ...(eleccion.galeria || [])].filter(Boolean).slice(0, 3);
+	const subidosAhora = [];
+	try {
+		for (const [i, archivo] of archivos.entries()) {
+			const webp = await sharp(path.join(CANDIDATOS, archivo), { failOn: 'none' })
+				.flatten({ background: '#ffffff' })
+				.resize(1200, 1200, { fit: 'contain', background: '#ffffff' })
+				.webp({ quality: 82 })
+				.toBuffer();
+			const m = await fetch(`${base}/wp-json/wp/v2/media`, {
+				method: 'POST',
+				headers: { Authorization: auth, 'Content-Type': 'image/webp', 'Content-Disposition': `attachment; filename="${slug || 'producto'}${i ? '-' + (i + 1) : ''}.webp"` },
+				body: webp,
+			});
+			if (!m.ok) throw new Error(`media ${m.status}`);
+			const media = await m.json();
+			subidosAhora.push(media.id);
+			await fetch(`${base}/wp-json/wp/v2/media/${media.id}`, {
+				method: 'POST',
+				headers: { Authorization: auth, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ alt_text: nombre, title: nombre }),
+			});
+		}
+		const u = await fetch(`${base}/wp-json/wc/v3/products/${id}`, {
+			method: 'PUT',
+			headers: { Authorization: authWc, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ images: subidosAhora.map((mid) => ({ id: mid })) }),
+		});
+		if (!u.ok) throw new Error(`producto ${u.status}`);
+		const prod = await u.json();
+		if (!prod.images || prod.images[0]?.id !== subidosAhora[0]) throw new Error('las imágenes no quedaron asignadas');
+		subidas[id] = { media: subidosAhora, archivos, fecha: new Date().toISOString() };
+		guardar('subidas.json', subidas);
+		console.log(`✓ #${id} ${nombre} (${subidosAhora.length} fotos)`);
+		return true;
+	} catch (e) {
+		console.error(`✗ #${id} ${nombre}: ${e.message}`);
+		for (const mid of subidosAhora) {
+			try {
+				await fetch(`${base}/wp-json/wp/v2/media/${mid}?force=true`, { method: 'DELETE', headers: { Authorization: auth } });
+			} catch {
+				console.error(`  (no se pudo borrar la imagen ${mid}: revisala en Medios)`);
+			}
+		}
+		return false;
+	}
 }
 
 /* ------------------------------------------------------------------ */
