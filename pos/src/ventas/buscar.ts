@@ -13,7 +13,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
-import { normalizar } from '@/lib/texto';
+import { normalizar, palabrasDeBusqueda } from '@/lib/texto';
 import { precioDeMostrador } from '@/precios/mostrador';
 
 /** Cuántos resultados se muestran. Más que esto no entra en pantalla ni sirve. */
@@ -84,7 +84,6 @@ export async function buscarProductos(
   if (limpio.length === 0 && !opciones.todos) return [];
 
   const limite = opciones.limite ?? TOPE_RESULTADOS;
-  const patron = `%${limpio}%`;
   // El stock de una variación con `gestiona_stock` propio es el suyo; el resto
   // —vidrios y fundas, que en Woo heredan del padre— cuentan contra el producto.
   const gestionaStock = sql`(CASE WHEN v.id IS NOT NULL AND v.gestiona_stock THEN true ELSE p.gestiona_stock END)`;
@@ -94,16 +93,51 @@ export async function buscarProductos(
     ? sql``
     : sql`AND (NOT ${gestionaStock} OR ${disponible} > 0)`;
 
-  const filtroTexto = opciones.todos
-    ? sql``
-    : sql`AND (
+  /**
+   * Dónde puede aparecer **una** palabra: nombre, SKU o marca, del producto o
+   * de la variación. Es el OR de siempre, ahora por palabra en vez de por
+   * término entero.
+   */
+  const contiene = (palabra: string) => {
+    const patron = `%${palabra}%`;
+    return sql`(
         ${SIN_ACENTOS(sql`p.nombre`)} LIKE ${patron}
         OR ${SIN_ACENTOS(sql`COALESCE(v.nombre, '')`)} LIKE ${patron}
         OR lower(COALESCE(p.sku, '')) LIKE ${patron}
         OR lower(COALESCE(v.sku, '')) LIKE ${patron}
         OR ${SIN_ACENTOS(sql`COALESCE(p.marca, '')`)} LIKE ${patron}
-        OR lower(COALESCE(p.codigo_barras, '')) = ${limpio}
+      )`;
+  };
+
+  /*
+   * **Todas las palabras, en cualquier orden y en cualquier campo.**
+   *
+   * Antes el término viajaba entero como una sola cadena: «cargador mega» se
+   * buscaba como `%cargador mega%`, así que exigía que las dos palabras
+   * estuvieran pegadas y en ese orden. «Cargador Fox Box MEGA 20W» no aparecía
+   * —entre una y otra hay «Fox Box»—, y el mostrador tenía que acertar el
+   * nombre exacto del proveedor para encontrar algo que tiene en la mano.
+   *
+   * El que atiende no se acuerda del nombre completo: se acuerda de dos o tres
+   * palabras sueltas. Y con una sola —«foxbox»— salen los cargadores, los
+   * cables y los auriculares de la marca, una lista que hay que recorrer con
+   * gente esperando. Partir en palabras arregla las dos cosas de una: cada
+   * palabra que se agrega **achica** la lista en vez de vaciarla.
+   *
+   * Una palabra puede caer en un campo y otra en otro: «cargador foxbox»
+   * encuentra el que tiene «Cargador» en el nombre y «FoxBox» en la marca.
+   */
+  const palabras = palabrasDeBusqueda(termino);
+
+  const filtroTexto = opciones.todos
+    ? sql``
+    : sql`AND (
+        lower(COALESCE(p.codigo_barras, '')) = ${limpio}
         OR lower(COALESCE(v.codigo_barras, '')) = ${limpio}
+        OR (${sql.join(
+          palabras.map(contiene),
+          sql` AND `,
+        )})
       )`;
 
   const crudas = filasDe<{

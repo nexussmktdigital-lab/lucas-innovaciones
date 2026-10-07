@@ -230,6 +230,20 @@ la excepción no se cuele por olvido.
    buscador va contra el espejo local, no contra WooCommerce: la red no está en
    el camino. `Enter` agrega el primero, que con el lector de código de barras es
    siempre el correcto. `F2` vuelve al buscador desde donde sea.
+
+   **Se escriben palabras sueltas, en cualquier orden.** «cargador mega»,
+   «mega cargador» y «cargador foxbox» encuentran todas al *Cargador Fox Box
+   MEGA 30w*: el buscador pide que estén **todas** las palabras, cada una en
+   cualquier parte del nombre, el SKU o la marca. Una puede caer en un campo y
+   otra en otro.
+
+   Antes el término viajaba entero —`%cargador mega%`— y exigía que las palabras
+   estuvieran pegadas y en ese orden, así que había que acertar el nombre
+   completo del proveedor. El mostrador no se acuerda del nombre completo: se
+   acuerda de dos o tres palabras. Y con una sola —la marca— salían los
+   cargadores, los cables y los auriculares juntos, una lista para recorrer con
+   gente esperando. Ahora **cada palabra que se agrega achica la lista en vez de
+   vaciarla**, que es como busca cualquiera.
 3. **El carrito** permite cambiar cantidades y, en servicios, escribir el precio:
    cada reparación se cotiza en el momento. Lo que sí está controlado es cuánto
    puede alejarse del precio de referencia —por debajo de la mitad frena y lo
@@ -1714,6 +1728,9 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un pedido histórico ilegible se descarta y el informe no cierra | `src/woo/historico.test.ts` |
 | El histórico importado aparece en el reporte mes a mes | `src/woo/historico.test.ts` |
 | Sin conexión, el buscador devuelve lo mismo y en el mismo orden que el servidor | `src/offline/catalogo.test.ts` |
+| Dos palabras sueltas encuentran el producto, en cualquier orden y aunque estén separadas | `src/offline/catalogo.test.ts` |
+| Cada palabra que se agrega achica la lista en vez de vaciarla | `src/offline/catalogo.test.ts` |
+| Una palabra puede estar en el nombre y la otra en la marca | `src/offline/catalogo.test.ts` |
 | Una variación se encuentra por el SKU del producto padre, también sin conexión | `src/offline/catalogo.test.ts` |
 | El catálogo guardado avisa cuando tiene más horas que el refresco del dólar | `src/offline/catalogo.test.ts` |
 | Una venta cobrada sin conexión entra con la fecha del cobro, no la de la carga | `src/ventas/diferida.test.ts` |
