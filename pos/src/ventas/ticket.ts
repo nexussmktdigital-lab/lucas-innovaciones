@@ -190,10 +190,19 @@ export function generarTicket(
     : datos.totalCentavos - fiadoEnPesos;
   const saldoCentavos = totalCentavos - entregadoCentavos;
 
+  /*
+   * «Pagado» y no «cancelado».
+   *
+   * En la jerga contable cancelar una operación es pagarla entera, pero el
+   * papel lo lee el cliente, no un contador: debajo del total, «operación
+   * cancelada en su totalidad» se lee como que la compra se dio de baja. Y el
+   * POS usa esa misma palabra para lo otro —una venta anulada—, así que la
+   * ambigüedad ni siquiera es solo del idioma.
+   */
   const leyenda =
     saldoCentavos > 0
       ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifra(saldoCentavos)}`
-      : 'Operación cancelada en su totalidad';
+      : 'Pagado en su totalidad';
 
   const detalle = datos.lineas
     .map((l) => {

@@ -432,9 +432,38 @@ describe('buscarVentas', () => {
   });
 
   it('encuentra por el número del comprobante que el cliente trae en la mano', async () => {
+    /*
+     * El caso del reclamo: viene con el papel y dice «T1-000017». Tiene que
+     * entrar como está impreso —en mayúsculas y con el guion—, y también de las
+     * tres formas en que alguien lo copia a mano.
+     */
     const venta = await venderCargador();
-    const lista = await buscarVentas(db, venta.numero);
-    expect(lista.map((v) => v.numero)).toEqual([venta.numero]);
+    const soloNumero = venta.numero.split('-')[1]!;
+
+    for (const tipeado of [
+      venta.numero,
+      venta.numero.toLowerCase(),
+      ` ${venta.numero} `,
+      soloNumero,
+    ]) {
+      const lista = await buscarVentas(db, tipeado);
+      expect(lista.map((v) => v.numero), `tipeando «${tipeado}»`).toEqual([venta.numero]);
+    }
+  });
+
+  it('el número de una venta no encuentra las demás', async () => {
+    // Si «T1-000001» trajera también la 10 y la 100, buscar por comprobante no
+    // serviría para nada: es el dato más preciso que tiene el cliente.
+    const primera = await venderCargador();
+    await venderCargador();
+
+    expect((await buscarVentas(db, primera.numero)).map((v) => v.numero)).toEqual([
+      primera.numero,
+    ]);
+    // Y los dígitos con sus ceros también alcanzan: son los que lo distinguen.
+    expect(
+      (await buscarVentas(db, primera.numero.split('-')[1]!)).map((v) => v.numero),
+    ).toEqual([primera.numero]);
   });
 
   it('y por el teléfono o el documento, que es lo que se tiene de un cliente', async () => {

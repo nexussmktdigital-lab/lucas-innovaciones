@@ -83,8 +83,14 @@ describe('el comprobante', () => {
     expect(t).toContain('$ 10.000,00');
   });
 
-  it('pagado al contado, lo dice', () => {
-    expect(generarTicket(BASE)).toContain('Operación cancelada en su totalidad');
+  it('pagado al contado, lo dice sin ambigüedad', () => {
+    /*
+     * Decía «operación cancelada en su totalidad», que en contabilidad es
+     * pagada y para el cliente que lo lee debajo del total es dada de baja.
+     */
+    const t = generarTicket(BASE);
+    expect(t).toContain('Pagado en su totalidad');
+    expect(t).not.toMatch(/cancelad/i);
   });
 
   it('deja la garantía en blanco para escribirla a mano', () => {

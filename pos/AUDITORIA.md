@@ -2218,3 +2218,36 @@ Después, al revés: se rompió la consulta a propósito —sacarle el filtro de
 venta, sacarle el de los planes anulados, hacer que el turno figure siempre
 abierto, dejar que el vuelto salga de una transferencia— y cada rotura tiene un
 test que la encuentra. Un guardián que no se probó roto es un comentario.
+
+## El comprobante decía «operación cancelada» cuando estaba pagado
+
+Apareció verificando otra cosa: fui a probar que el comprobante de una venta
+vieja se puede volver a sacar —se puede, y ahora hay un test que lo prueba
+abriendo el papel de verdad y leyéndolo— y en el texto impreso, justo debajo del
+total, estaba esto:
+
+```
+TOTAL
+Operación cancelada en su totalidad
+$ 5.000,00
+```
+
+En la jerga contable es correcto: cancelar una operación es pagarla entera. Pero
+el papel no lo lee un contador, lo lee el cliente, y arriba de la línea donde
+firma. Peor todavía: el POS usa esa misma palabra para lo contrario —una venta
+**anulada** sale con «VENTA ANULADA»—, así que la ambigüedad no es solo del
+idioma, es del sistema consigo mismo. Ahora dice **«Pagado en su totalidad»**.
+
+Lo que me deja es dónde estaba escondido. El comprobante tiene seis tests sobre
+ese bloque y uno de ellos **afirmaba la frase vieja**: `toContain('Operación
+cancelada en su totalidad')`. Estaba en verde, y lo que verificaba era que el
+papel siguiera diciendo exactamente lo que no tenía que decir. Un test fija lo
+que encuentra, correcto o no; el día que se escribió, nadie leyó esa frase con
+los ojos del cliente que la va a leer.
+
+No hay manera de que un test encuentre esto. Se encuentra leyendo el papel
+impreso de punta a punta, en voz alta si hace falta, como lo va a leer alguien
+que no sabe nada del sistema. Es la segunda vez en este proyecto que el problema
+no es un número equivocado sino **una frase que informa mal** —la primera fue el
+cartel de «sin conexión» cuando había conexión—, y las dos veces costó más que
+cualquier bug de los que sí tienen test.
