@@ -136,6 +136,35 @@
 		}
 	});
 
+	/*
+	 * Checkout: errores fantasma del formulario de envío.
+	 *
+	 * Con «Retiro en local» el formulario de envío no se muestra, pero al cargar
+	 * la página llega a armarse un instante, marca la provincia vacía y se
+	 * desarma: el error queda registrado y «Realizar el pedido» no hace nada,
+	 * sin ningún mensaje. Mientras se retira en el local y ese formulario no
+	 * está a la vista, sus errores no corresponden y se limpian.
+	 */
+	window.addEventListener('load', function () {
+		if (!window.wp || !window.wp.data || !document.querySelector('.wp-block-woocommerce-checkout')) return;
+		var limpiarEnvio = function () {
+			try {
+				var checkout = window.wp.data.select('wc/store/checkout');
+				var validacion = window.wp.data.select('wc/store/validation');
+				if (!checkout || !validacion || !checkout.prefersCollection || !checkout.prefersCollection()) return;
+				if (document.querySelector('#shipping-address_1, #shipping-state')) return;
+				var claves = Object.keys(validacion.getValidationErrors() || {}).filter(function (k) {
+					return k.indexOf('shipping_') === 0;
+				});
+				if (claves.length) window.wp.data.dispatch('wc/store/validation').clearValidationErrors(claves);
+			} catch (e) {
+				// Si cambia la API de WooCommerce, el checkout sigue como venía.
+			}
+		};
+		window.wp.data.subscribe(limpiarEnvio);
+		limpiarEnvio(); // El error pudo quedar registrado antes de este momento.
+	});
+
 	/* Fila de categorías de la cabecera: flechas solo si no entra. */
 	var fila = document.querySelector('[data-li-catnav]');
 	if (fila) {
