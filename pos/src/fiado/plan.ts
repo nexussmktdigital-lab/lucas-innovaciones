@@ -83,6 +83,26 @@ export function validarCadencia(c: Cadencia): Cadencia {
 /** Tope de cuotas. Más que esto no es fiado de mostrador, es otra cosa. */
 export const CUOTAS_MAXIMAS = 24;
 
+/**
+ * El recargo por financiar, revisado.
+ *
+ * No puede pasar de lo que se financia: duplicar la deuda por pagarla en
+ * cuotas no es un recargo, es un error de tipeo —escribir 5000 donde iba 50—.
+ * La guarda no es moral, es contra el dedo: el que lo escribe tiene el cliente
+ * enfrente y el teclado numérico de una tablet.
+ */
+export function validarRecargo(recargoCentavos: number, montoCentavos: number): number {
+  if (!Number.isInteger(recargoCentavos) || recargoCentavos < 0) {
+    throw new ErrorPlan('El recargo por financiar no puede ser negativo.');
+  }
+  if (recargoCentavos > montoCentavos) {
+    throw new ErrorPlan(
+      'El recargo no puede ser mayor que lo que se financia. Revisá el número: ¿sobra un cero?',
+    );
+  }
+  return recargoCentavos;
+}
+
 /** A cuántos días de vencer una cuota ya conviene avisar. */
 export const DIAS_PARA_AVISAR = 3;
 
@@ -361,12 +381,30 @@ export async function crearPlan(
     cadencia: Cadencia;
     /** La moneda del plan y de sus cuotas. La fija la venta. */
     moneda?: 'ARS' | 'USD';
+    /**
+     * Lo que se cobra por financiar, en la moneda del plan.
+     *
+     * Lo escribe el mostrador a mano: un monto, no un porcentaje, porque el
+     * local lo negocia con el cliente enfrente. Cero es el fiado de siempre.
+     *
+     * **No es parte de la venta.** El teléfono vale lo que vale; esto es el
+     * precio de pagarlo en el tiempo, y por eso vive en el plan. Así el
+     * comprobante del cliente muestra el precio del teléfono —que es el total
+     * de la venta, no un recorte— y el margen del producto no queda inflado
+     * con un ingreso que no vino de vender teléfonos.
+     */
+    recargoCentavos?: number;
     desdeISO: string;
     descripcion?: string | null;
   },
 ): Promise<{ planId: string; cuotas: CuotaPlanificada[] }> {
   const cadencia = validarCadencia(datos.cadencia);
-  const cuotas = cuotasDelPlan(datos.montoCentavos, datos.cantidad, cadencia, datos.desdeISO);
+  const recargoCentavos = validarRecargo(datos.recargoCentavos ?? 0, datos.montoCentavos);
+  const totalAPagarCentavos = datos.montoCentavos + recargoCentavos;
+
+  // Las cuotas reparten el TOTAL, no lo financiado: el cliente paga el recargo
+  // adentro de las cuotas y no en una cuota trece.
+  const cuotas = cuotasDelPlan(totalAPagarCentavos, datos.cantidad, cadencia, datos.desdeISO);
 
   const [plan] = await tx
     .insert(creditPlans)
@@ -375,10 +413,9 @@ export async function crearPlan(
       saleId: datos.saleId,
       descripcion: datos.descripcion ?? null,
       montoFinanciadoCentavos: datos.montoCentavos,
-      // Sin recargo ni anticipo: el POS no cobra interés por fiar (D38). El día
-      // que lo cobre, las columnas ya están.
+      recargoCentavos,
       cantidadCuotas: datos.cantidad,
-      totalAPagarCentavos: datos.montoCentavos,
+      totalAPagarCentavos,
       frecuencia: cadencia.frecuencia,
       frecuenciaDias: cadencia.dias,
       moneda: datos.moneda ?? 'ARS',

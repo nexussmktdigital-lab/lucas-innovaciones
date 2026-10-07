@@ -585,6 +585,33 @@ lo que nació en el sistema. Se ofrece solo mientras el cliente no tenga
 movimientos: sumar dos veces la misma deuda es el error que hay que evitar, y el
 dominio también lo rechaza.
 
+### El recargo por financiar
+
+Pagar en cuotas puede costar más que pagar de contado. El mostrador escribe
+**un monto a mano** —no un porcentaje: el local lo negocia con el cliente
+enfrente— y la pantalla muestra en el acto en cuánto queda cada cuota.
+
+**El recargo no es parte de la venta.** El teléfono vale lo que vale; esto es el
+precio de pagarlo en el tiempo, y por eso vive en el plan:
+
+| | Con un iPhone de US$ 500 y US$ 50 de recargo |
+|---|---|
+| La venta | **US$ 500**. El producto, su stock, su margen. |
+| La deuda del cliente | **US$ 550**. Es lo que va a pagar. |
+| Las cuotas | reparten los **US$ 550**, no los 500. |
+| El comprobante del cliente | **US$ 500**, el precio del teléfono. |
+| El acuerdo de pago | el desglose: saldo del producto, recargo, y las cuotas. |
+
+Puesto así, el comprobante del cliente no es un recorte de nada: muestra el
+total de la venta, que son los US$ 500. Y el margen de los teléfonos no queda
+inflado con una ganancia que no vino de vender teléfonos.
+
+**El tope:** el recargo no puede pasar lo que se financia. No es una regla
+moral, es contra el dedo —escribir 5000 donde iba 50 en el teclado de una
+tablet—, y el mensaje lo dice así: «¿sobra un cero?».
+
+Si la venta se anula, se van las dos cosas juntas: la deuda y el recargo.
+
 ### Fiar en cuotas
 
 El fiado de $5.000 del vecino no necesita fechas: debe una cifra, paga cuando
@@ -1766,6 +1793,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un carrito mezclado, o con descuento, se imprime en pesos | `src/ventas/ticket.test.ts` |
 | El comprobante no dice con qué medios se pagó ni quién atendió | `src/ventas/ticket.test.ts` |
 | Con plan, el acuerdo lista cada cuota con su fecha y su monto | `src/ventas/ticket.test.ts` |
+| El recargo suma a la deuda y a las cuotas, no al total de la venta | `src/fiado/plan.db.test.ts` |
+| Las cuotas reparten el total a pagar, no lo financiado | `src/fiado/plan.db.test.ts` |
+| Un recargo mayor que lo financiado se rechaza: es un cero de más | `src/fiado/plan.db.test.ts` |
+| Anular le saca al cliente la deuda **y** el recargo | `src/fiado/plan.db.test.ts` |
+| El acuerdo desglosa saldo del producto y recargo; el comprobante no lo nombra | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
 | El comprobante del cliente no lleva cuotas, ni frecuencia, ni saldo | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
 | Con saldo, el comprobante NUNCA dice «pagado en su totalidad» | `src/ventas/ticket.test.ts` |
 | El acuerdo dice que es la copia del local, y no lleva la garantía | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |

@@ -88,10 +88,21 @@ test('un iPhone fiado en cuotas se pacta en dólares', async ({ page }) => {
   await expect(aviso).toContainText('en dólares, como se vendió');
 
   // Y las cuotas que se pactan en el momento, también en dólares: es el número
-  // que va al comprobante que el cliente firma.
+  // que va al acuerdo que el cliente firma.
   await cobro.getByRole('button', { name: 'Cada mes' }).click();
   await cobro.getByRole('button', { name: '3', exact: true }).click();
   await expect(cobro.getByText(/3 cuotas de US\$/)).toBeVisible();
+
+  /*
+   * El recargo por financiar: un monto escrito a mano, en dólares, que suma a
+   * la deuda y no al precio del teléfono. La pantalla tiene que decir las dos
+   * cosas antes de confirmar: cuánto va a deber y que el papel del cliente no
+   * lo muestra.
+   */
+  await cobro.getByLabel('Recargo por financiar (US$)').fill('150');
+  await expect(cobro.getByText(/Debe US\$\s?670,05 en vez de US\$\s?520,05/)).toBeVisible();
+  await expect(cobro.getByText(/El comprobante del cliente no muestra esto/)).toBeVisible();
+  await expect(cobro.getByText(/3 cuotas de US\$\s?223,35/)).toBeVisible();
 
   await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
   await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
@@ -142,6 +153,13 @@ test('la boleta que firma el cliente dice dólares y nada más que dólares', as
   expect(papel).not.toContain('Vence el');
   expect(papel).not.toContain('saldo');
   expect(papel).not.toContain('Pagado en su totalidad');
+
+  // Ni el recargo ni el total financiado: el teléfono vale US$ 1.500 y eso es
+  // lo que dice el papel. Es exactamente lo que pidió el local.
+  expect(papel).not.toContain('Recargo');
+  expect(papel).not.toContain('670,05');
+  // El precio del teléfono, que es el total de la venta.
+  expect(papel).toContain('US$ 520,00');
 });
 
 test('el acuerdo de pago lleva las cuotas y queda en el local', async ({ page, context }) => {
@@ -165,6 +183,13 @@ test('el acuerdo de pago lleva las cuotas y queda en el local', async ({ page, c
   expect(papel).toContain('Copia para el local');
   expect(papel).toContain('SALDO EN CUOTAS');
   expect(papel).toContain('3 cuotas');
+
+  // Acá sí va el recargo, desglosado: el que firma US$ 1.650 por un teléfono
+  // de US$ 1.500 tiene que ver de dónde salen los otros 150.
+  expect(papel).toContain('Saldo del producto');
+  expect(papel).toContain('Recargo por financiar');
+  expect(papel).toContain('US$ 150,00');
+  expect(papel).toContain('queda un saldo de US$ 670,05');
   // Es el papel de la deuda, no el de la garantía.
   expect(papel).not.toContain('GARANTÍA');
 

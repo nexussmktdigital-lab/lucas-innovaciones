@@ -224,6 +224,14 @@ export default async function PaginaDetalleDeVenta({
           <h2 className="bg-(--color-papel) px-4 py-2.5 text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
             Cómo lo paga {venta.monedaDelPlan === 'USD' ? '· en dólares' : ''}
           </h2>
+          {/* El recargo no está en el total de la venta —el producto vale lo
+              que vale— así que si no se dice acá no se ve en ninguna parte. */}
+          {venta.recargoDelPlanCentavos > 0 ? (
+            <p className="border-t border-(--color-borde) px-4 py-2 text-sm">
+              Incluye <strong>{cifraDelPlan(venta.recargoDelPlanCentavos)}</strong> de recargo por
+              financiar. El comprobante del cliente no lo muestra: va en el acuerdo de pago.
+            </p>
+          ) : null}
           <ul>
             {venta.cuotas.map((c) => {
               const falta = Math.max(0, c.montoCentavos - c.pagadoCentavos);

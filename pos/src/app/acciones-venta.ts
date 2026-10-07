@@ -16,7 +16,7 @@ import { puede, type Rol } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { formatearARS } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
-import { CUOTAS_MAXIMAS, DIAS_MAXIMOS } from '@/fiado/plan';
+import { CUOTAS_MAXIMAS, DIAS_MAXIMOS, ErrorPlan } from '@/fiado/plan';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
 import { calcularTotales } from '@/ventas/carrito';
 import type { Sospecha } from '@/ventas/cordura';
@@ -80,6 +80,13 @@ const esquemaVenta = z.object({
       /** Solo con `dias`. El dominio lo valida de nuevo; acá se ataja lo grosero. */
       dias: z.number().int().min(1).max(DIAS_MAXIMOS).nullish(),
       cuotas: z.number().int().min(1).max(CUOTAS_MAXIMAS),
+      /**
+       * Lo que se cobra por financiar, en la moneda de la deuda.
+       *
+       * El tope de verdad lo pone el dominio —no puede pasar lo financiado—,
+       * acá solo se ataja lo que ni siquiera es un monto.
+       */
+      recargoCentavos: z.number().int().min(0).optional(),
     })
     .nullish(),
 });
@@ -219,6 +226,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
           ? {
               cadencia: { frecuencia: validado.data.plan.frecuencia, dias: validado.data.plan.dias ?? null },
               cuotas: validado.data.plan.cuotas,
+              recargoCentavos: validado.data.plan.recargoCentavos ?? 0,
             }
           : null,
     });
@@ -251,6 +259,12 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
     // qué hacer, así que se pasa tal cual en vez de tragarlo.
     if (error instanceof ErrorFiado) {
       return { ok: false, error: error.message, motivo: error.motivo };
+    }
+    // Lo mismo con el plan de cuotas: un recargo imposible o veinticinco cuotas
+    // tienen un mensaje que dice qué corregir. Tragarlo dejaría al mostrador
+    // con «no se pudo confirmar la venta» y nada para hacer.
+    if (error instanceof ErrorPlan) {
+      return { ok: false, error: error.message, motivo: 'datos_invalidos' };
     }
     console.error('[venta] Falló la confirmación:', error);
     return {
@@ -401,6 +415,7 @@ export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<R
           ? {
               cadencia: { frecuencia: d.plan.frecuencia, dias: d.plan.dias ?? null },
               cuotas: d.plan.cuotas,
+              recargoCentavos: d.plan.recargoCentavos ?? 0,
             }
           : null,
       diferida: {
