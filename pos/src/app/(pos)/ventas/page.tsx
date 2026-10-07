@@ -4,7 +4,7 @@ import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
-import { ventasEnPeriodo } from '@/ventas/anular';
+import { buscarVentas, TOPE_BUSQUEDA, ventasEnPeriodo } from '@/ventas/anular';
 import {
   ErrorPeriodo,
   leerNombreDePeriodo,
@@ -52,14 +52,15 @@ const COLUMNAS =
 export default async function PaginaVentas({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; desde?: string; hasta?: string }>;
+  searchParams: Promise<{ periodo?: string; desde?: string; hasta?: string; q?: string }>;
 }) {
   const sesion = await auth();
   const puedeAnular = sesion?.user ? puede(sesion.user.rol, 'venta.anular') : false;
   const terminal = config().POS_TERMINAL;
   const caja = await sesionAbierta(db, terminal);
 
-  const { periodo: pedido, desde, hasta } = await searchParams;
+  const { periodo: pedido, desde, hasta, q } = await searchParams;
+  const termino = (q ?? '').trim();
 
   /*
    * El período, igual que en Reportes y con el mismo código.
@@ -85,11 +86,21 @@ export default async function PaginaVentas({
     elegido = nombre;
   }
 
-  const ventas = await ventasEnPeriodo(db, periodo.desde, periodo.hasta);
+  /*
+   * Buscando, el período no corre: se busca en todo el historial.
+   *
+   * Quien busca «la venta del iPhone» no sabe de qué día es —si lo supiera ya
+   * la habría encontrado con los períodos— así que acotar la búsqueda al
+   * período sería buscar justo donde ya se miró.
+   */
+  const ventas = termino
+    ? await buscarVentas(db, termino)
+    : await ventasEnPeriodo(db, periodo.desde, periodo.hasta);
 
   // Con un período de un día alcanza la hora; con varios hace falta la fecha,
-  // o dos ventas de días distintos se leen como si fueran del mismo.
-  const unSoloDia = periodo.desdeISO === periodo.hastaISO;
+  // o dos ventas de días distintos se leen como si fueran del mismo. Buscando,
+  // siempre la fecha: los resultados son de cualquier día.
+  const unSoloDia = !termino && periodo.desdeISO === periodo.hastaISO;
   const vigentes = ventas.filter((v) => v.estado === 'completed');
   const facturado = vigentes.reduce((suma, v) => suma + v.totalCentavos, 0);
   const comprobantes = await armarComprobantes(
@@ -111,13 +122,18 @@ export default async function PaginaVentas({
         <div>
           <h1 className="font-titulo text-2xl font-bold tracking-tight">Ventas</h1>
           <p className="text-sm text-(--color-tinta-suave)">
-            {periodo.etiqueta} · Terminal {terminal}
+            {termino ? `Buscando «${termino}» en todo el historial` : periodo.etiqueta} · Terminal{' '}
+            {terminal}
             {caja ? ` · turno abierto desde ${formatearFechaHora(caja.abiertaEn)}` : ' · caja cerrada'}
           </p>
         </div>
       </div>
 
-      <Selector elegido={elegido} periodo={periodo} error={error} />
+      <Buscador termino={termino} />
+
+      {/* Buscando no se muestran los períodos: la búsqueda los ignora a
+          propósito y dejarlos marcados diría que filtran cuando no filtran. */}
+      {termino ? null : <Selector elegido={elegido} periodo={periodo} error={error} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Dato titulo="Ventas" valor={vigentes.length.toLocaleString('es-AR')} />
@@ -126,7 +142,9 @@ export default async function PaginaVentas({
 
       {ventas.length === 0 ? (
         <p className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-6 text-center text-sm text-(--color-tinta-suave)">
-          No hay ventas en ese período.
+          {termino
+            ? `No hay ninguna venta que diga «${termino}». Probá con menos palabras: el nombre del cliente, el modelo, o el número del comprobante.`
+            : 'No hay ventas en ese período.'}
         </p>
       ) : (
         <div className="overflow-hidden rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel)">
@@ -309,6 +327,13 @@ export default async function PaginaVentas({
         </div>
       )}
 
+      {termino && ventas.length === TOPE_BUSQUEDA ? (
+        <p className="text-sm text-(--color-tinta-suave)">
+          Se muestran las {TOPE_BUSQUEDA} más nuevas. Si la que buscás no está, agregá una palabra
+          más: con dos o tres la lista se achica sola.
+        </p>
+      ) : null}
+
       <p className="text-sm text-(--color-tinta-suave)">
         Anular repone el stock y saca la plata de la caja del turno, con el asiento contrario en
         cada libro. La venta no se borra: queda marcada como anulada, con el motivo. Una venta de
@@ -316,6 +341,44 @@ export default async function PaginaVentas({
         <strong>devuelve</strong>, y eso sale del cajón de hoy.
       </p>
     </div>
+  );
+}
+
+/**
+ * Buscar una venta sin saber el día.
+ *
+ * Es un `GET` con `name="q"`: el resultado queda en la URL, así que se puede
+ * recargar, mandar el enlace o dejarlo abierto en una pestaña mientras se
+ * atiende, que es lo que pasa en el mostrador.
+ */
+function Buscador({ termino }: { termino: string }) {
+  return (
+    <form action="/ventas" aria-label="Buscar una venta" className="flex flex-wrap gap-2">
+      <input
+        id="q"
+        name="q"
+        type="search"
+        defaultValue={termino}
+        // Lo que se recuerda de una venta vieja, en el orden en que se recuerda.
+        placeholder="Buscar por cliente, producto o número de comprobante"
+        aria-label="Buscar una venta"
+        className="min-h-11 min-w-0 flex-1 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-3"
+      />
+      <button
+        type="submit"
+        className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 font-bold text-(--color-marca-texto)"
+      >
+        Buscar
+      </button>
+      {termino ? (
+        <Link
+          href="/ventas"
+          className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) px-4 leading-[44px] font-medium"
+        >
+          Volver a hoy
+        </Link>
+      ) : null}
+    </form>
   );
 }
 

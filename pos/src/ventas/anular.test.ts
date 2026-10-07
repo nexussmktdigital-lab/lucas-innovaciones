@@ -12,6 +12,7 @@ import {
   auditLog,
   cashMovements,
   cashSessions,
+  customers,
   monetaryAccounts,
   productVariants,
   products,
@@ -21,7 +22,13 @@ import {
   users,
 } from '@/db/schema';
 import { confirmarVenta } from './confirmar';
-import { anularVenta, ErrorAnulacion, ventasDelTurno, ventasEnPeriodo } from './anular';
+import {
+  anularVenta,
+  buscarVentas,
+  ErrorAnulacion,
+  ventasDelTurno,
+  ventasEnPeriodo,
+} from './anular';
 
 let db: TestDb;
 let duenioId: string;
@@ -354,5 +361,141 @@ describe('ventasEnPeriodo', () => {
     );
 
     expect(lista.map((v) => v.numero)).toEqual([nueva.numero, vieja.numero]);
+  });
+});
+
+describe('buscarVentas', () => {
+  /*
+   * El otro camino a una venta vieja: no por cuándo fue —que es lo que casi
+   * nunca se sabe— sino por lo que se recuerda de ella.
+   */
+  let gabyId: string;
+
+  beforeEach(async () => {
+    const [g] = await db
+      .insert(customers)
+      .values({ nombre: 'Gaby Núñez', dni: '31456789', telefono: '3574456139' })
+      .returning();
+    gabyId = g!.id;
+
+    await db
+      .insert(products)
+      .values({ nombre: 'Cargador Fox Box MEGA 20W', precioCentavos: 1_200_000, stock: 10 });
+  });
+
+  async function venderCargador(clienteId?: string) {
+    const [cargador] = await db
+      .select()
+      .from(products)
+      .where(eq(products.nombre, 'Cargador Fox Box MEGA 20W'));
+
+    return confirmarVenta(db, {
+      lineas: [{ productId: cargador!.id, cantidad: 1 }],
+      pagos: [{ medio: 'efectivo', montoCentavos: 1_200_000, monetaryAccountId: cajaId }],
+      clienteId: clienteId ?? null,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `busq-${Math.random()}`,
+    });
+  }
+
+  it('encuentra por lo que se vendió', async () => {
+    const venta = await venderCargador();
+    const lista = await buscarVentas(db, 'cargador');
+    expect(lista.map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('dos palabras sueltas, en cualquier orden y aunque no estén pegadas', async () => {
+    /*
+     * Es el pedido del mostrador, el mismo que el del buscador de productos:
+     * «cargador mega» tiene que encontrar «Cargador Fox Box MEGA 20W», donde
+     * entre una palabra y la otra hay dos más.
+     */
+    const venta = await venderCargador();
+
+    expect((await buscarVentas(db, 'cargador mega')).map((v) => v.numero)).toEqual([venta.numero]);
+    expect((await buscarVentas(db, 'mega cargador')).map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('una palabra en el cliente y la otra en lo vendido', async () => {
+    const venta = await venderCargador(gabyId);
+    await venderVidrio(1);
+
+    const lista = await buscarVentas(db, 'gaby cargador');
+    expect(lista.map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('los acentos no se interponen: «nunez» encuentra a Núñez', async () => {
+    const venta = await venderCargador(gabyId);
+    expect((await buscarVentas(db, 'nunez')).map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('encuentra por el número del comprobante que el cliente trae en la mano', async () => {
+    const venta = await venderCargador();
+    const lista = await buscarVentas(db, venta.numero);
+    expect(lista.map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('y por el teléfono o el documento, que es lo que se tiene de un cliente', async () => {
+    const venta = await venderCargador(gabyId);
+
+    expect((await buscarVentas(db, '456139')).map((v) => v.numero)).toEqual([venta.numero]);
+    expect((await buscarVentas(db, '31456789')).map((v) => v.numero)).toEqual([venta.numero]);
+  });
+
+  it('cada palabra que se agrega achica la lista, no la agranda', async () => {
+    /*
+     * Si las palabras se unieran con OR, agregar una traería MÁS resultados y
+     * el buscador sería inútil justo cuando hace falta afinar.
+     */
+    await venderCargador();
+    await venderVidrio(1);
+
+    expect(await buscarVentas(db, 'cargador bicicleta')).toEqual([]);
+    expect((await buscarVentas(db, 'cargador')).length).toBe(1);
+  });
+
+  it('busca en todo el historial, no en el período que se esté mirando', async () => {
+    // Una venta de hace cuarenta días: el punto de buscar es no saber cuándo fue.
+    const vieja = await confirmarVenta(db, {
+      lineas: [{ productId: vidrioId, cantidad: 1 }],
+      pagos: [{ medio: 'efectivo', montoCentavos: 500_000, monetaryAccountId: cajaId }],
+      clienteId: gabyId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `vieja-busq-${Math.random()}`,
+      diferida: {
+        capturadaEn: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000),
+        preciosCobradosCentavos: [500_000],
+      },
+    });
+
+    expect((await buscarVentas(db, 'gaby')).map((v) => v.numero)).toEqual([vieja.numero]);
+  });
+
+  it('sin término no devuelve el historial entero', async () => {
+    await venderCargador();
+    expect(await buscarVentas(db, '   ')).toEqual([]);
+  });
+
+  it('las anuladas también se encuentran: por algo se las busca', async () => {
+    const venta = await venderCargador();
+    await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Prueba' });
+
+    const lista = await buscarVentas(db, 'cargador');
+    expect(lista).toHaveLength(1);
+    expect(lista[0]!.estado).toBe('cancelled');
+  });
+
+  it('no trae más que el tope, y trae las más nuevas', async () => {
+    await venderCargador();
+    await venderCargador();
+    const ultima = await venderCargador();
+
+    const lista = await buscarVentas(db, 'cargador', 2);
+    expect(lista).toHaveLength(2);
+    expect(lista[0]!.numero).toBe(ultima.numero);
   });
 });
