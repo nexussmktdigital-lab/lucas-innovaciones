@@ -112,10 +112,15 @@ export type ResultadoDeVenta =
  *  - **Una ficha mal cargada** no la eligió nadie. Es el error de los 9 iPhones
  *    de agosto: la cifra en dólares leída como pesos. Ahí cobrar igual no es
  *    una decisión de mostrador sino tapar un problema de catálogo, y lo que
- *    corresponde es arreglar la ficha. Sigue siendo del dueño.
+ *    corresponde es arreglar la ficha. Era del dueño; ahora el vendedor también
+ *    puede, porque frenarlo del todo dejaba el carrito entero sin cobrar con el
+ *    cliente enfrente. Sigue siendo un clic aparte y sigue quedando anotado con
+ *    nombre y apellido en la bitácora.
  *
- * Con las dos cosas mezcladas —lo estaban, bajo un `motivo` de texto libre—
- * abrirle una al vendedor abría la otra sin que nadie lo decidiera.
+ * La distinción se mantiene en el código aunque hoy las dos den lo mismo: son
+ * dos problemas distintos y el día que una se quiera volver a reservar, se
+ * reserva sola. Con las dos mezcladas —lo estaban, bajo un `motivo` de texto
+ * libre— abrirle una al vendedor abría la otra sin que nadie lo decidiera.
  */
 function puedeSeguir(rol: Rol, sospechas: readonly Sospecha[] | undefined): boolean {
   if (!sospechas || sospechas.length === 0) return false;

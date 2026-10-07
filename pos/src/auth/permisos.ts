@@ -56,17 +56,26 @@ export type Permiso = (typeof PERMISOS)[number];
  *    sistema: crear cuentas y cambiar contraseñas, la del dueño incluida. Hoy
  *    no lo usa ninguna pantalla; queda reservado para que, el día que exista,
  *    no aparezca abierto sin que nadie lo haya decidido.
- *  - `venta.forzar_ficha_dudosa` es cobrar igual un producto cuya ficha está
- *    mal cargada: el iPhone con la cifra en dólares leída como pesos. No es
- *    una decisión de venta —nadie eligió ese precio— sino tapar un problema de
- *    catálogo, y lo que corresponde es arreglar la ficha. Escribir un precio a
- *    mano, que sí es del mostrador, no pasa por acá.
+ *
+ * **`venta.forzar_ficha_dudosa` salió de esta lista.** Era del dueño: cobrar
+ * igual un producto con la ficha mal cargada —el iPhone con la cifra en
+ * dólares leída como pesos— no es una decisión de venta sino tapar un problema
+ * de catálogo. El razonamiento sigue siendo cierto y la decisión se tomó
+ * igual, porque en el mostrador costaba más de lo que ahorraba: el vendedor
+ * quedaba sin poder cobrar NADA de ese carrito, con el cliente enfrente, y el
+ * dueño no siempre está para destrabarlo. Una venta que no se puede cobrar
+ * también cuesta plata.
+ *
+ * Lo que queda en su lugar no es nada: la guarda sigue saltando, sigue diciendo
+ * qué tiene mal la ficha, y cobrar igual es un clic aparte que queda **anotado
+ * en la bitácora con el usuario que lo apretó** (`preciosSospechososConfirmados`
+ * en `venta.confirmar`). Lo que cambia es quién puede apretarlo, no si queda
+ * registro. Volver atrás es agregar la línea de nuevo acá.
  */
 const SOLO_DUENIO: readonly Permiso[] = [
   'reporte.ventas',
   'reporte.rentabilidad',
   'usuario.administrar',
-  'venta.forzar_ficha_dudosa',
 ];
 
 export function puede(rol: Rol, permiso: Permiso): boolean {
