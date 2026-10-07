@@ -483,8 +483,14 @@ Con saldo, debajo del total del comprobante **no va nada**: ni el saldo ni
 «pagado en su totalidad», que sería mentira y es el peor error posible en un
 papel firmado —el cliente lo levanta para decir que ya pagó—.
 
-Al cobrar una venta en cuotas, la pantalla de venta avisa que falta el acuerdo y
-lo ofrece ahí mismo, con el cliente todavía enfrente. Después también está en la
+**El acuerdo sale con cualquier venta fiada, haya cuotas o no.** Con un plan
+lista las cuotas con sus fechas; sin plan —el fiado «cuando pueda», que es el
+más común— dice el saldo y que no se pactaron fechas. Salía solo con cuotas y
+ese era un agujero: el fiado de siempre quedaba sin ningún papel firmado,
+porque el del cliente no habla de la deuda a propósito.
+
+Al cobrar fiado, la pantalla de venta avisa que falta el acuerdo y lo ofrece ahí
+mismo, con el cliente todavía enfrente. Después también está en la
 ficha de la venta. Sin conexión el acuerdo se arma en la tablet, igual que el
 comprobante: el cliente se va con el teléfono igual, y el papel que respalda el
 saldo no puede esperar a que vuelva internet.
@@ -1798,6 +1804,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un recargo mayor que lo financiado se rechaza: es un cero de más | `src/fiado/plan.db.test.ts` |
 | Anular le saca al cliente la deuda **y** el recargo | `src/fiado/plan.db.test.ts` |
 | El acuerdo desglosa saldo del producto y recargo; el comprobante no lo nombra | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| El fiado «cuando pueda» también tiene acuerdo: dice el saldo y que no hay fechas | `src/ventas/ticket.test.ts`, `e2e/fiado.spec.ts` |
+| Una venta pagada entera no genera acuerdo: no hay nada que reconocer | `src/ventas/ticket.test.ts` |
 | El comprobante del cliente no lleva cuotas, ni frecuencia, ni saldo | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
 | Con saldo, el comprobante NUNCA dice «pagado en su totalidad» | `src/ventas/ticket.test.ts` |
 | El acuerdo dice que es la copia del local, y no lleva la garantía | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |

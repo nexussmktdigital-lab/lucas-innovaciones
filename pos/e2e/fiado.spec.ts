@@ -81,9 +81,15 @@ test('el mismo teléfono no se puede cargar dos veces', async ({ page }) => {
   await expect(page.getByText(new RegExp(`ya es de «${CLIENTE}»`))).toBeVisible();
 });
 
-test('fiar deja la deuda registrada y no mueve plata', async ({ page }) => {
+test('fiar deja la deuda registrada y no mueve plata', async ({ page, context }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
+
+  // El comprobante se manda a imprimir solo; acá se lo deja pasar.
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
   await page.goto('/vender');
 
   await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
@@ -104,6 +110,27 @@ test('fiar deja la deuda registrada y no mueve plata', async ({ page }) => {
 
   await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
   await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  /*
+   * Fiado «cuando pueda», sin cuotas: el papel del cliente no habla de la
+   * deuda —a propósito— así que el acuerdo es lo único firmado que queda. Si
+   * no sale acá, el cliente se va con el teléfono sin firmar nada.
+   */
+  await expect(page.getByText(/falta el acuerdo de pago/)).toBeVisible();
+
+  const [acuerdo] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('link', { name: 'Imprimir el acuerdo de pago' }).click(),
+  ]);
+  await acuerdo.waitForLoadState('domcontentloaded');
+  const papel = (await acuerdo.locator('body').innerText()).replace(/\u00a0/g, ' ');
+
+  expect(papel).toContain('ACUERDO DE PAGO');
+  expect(papel).toContain('sin fechas pactadas');
+  expect(papel).toContain('Queda debiendo');
+  expect(papel).toContain('$ 5.000,00');
+  expect(papel).toContain('No se pactaron fechas de pago');
+  expect(papel).toContain('Firma del cliente');
 
   await page.goto('/fiado');
   const fila = page.getByRole('listitem').filter({ hasText: CLIENTE });
