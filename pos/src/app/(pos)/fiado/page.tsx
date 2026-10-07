@@ -181,7 +181,11 @@ export default async function PaginaFiado() {
                 </Link>
                 <span className="text-xs text-(--color-tinta-suave)">venta {d.numero}</span>
                 <span className="tabular ml-auto font-semibold">
-                  {formatearARS(d.montoCentavos)}
+                  {/* En la moneda en que se vendió: si fue un iPhone en
+                      dólares, lo que hay que devolverle son dólares (D62). */}
+                  {d.moneda === 'USD'
+                    ? formatearUSD(d.montoCentavos)
+                    : formatearARS(d.montoCentavos)}
                 </span>
               </li>
             ))}

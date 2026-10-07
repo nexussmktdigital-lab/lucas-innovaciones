@@ -126,15 +126,49 @@ test('la boleta que firma el cliente dice dólares y nada más que dólares', as
 
   expect(papel).toContain(CLIENTE);
   expect(papel).toContain('iPhone 13');
-  expect(papel).toContain('SALDO EN CUOTAS');
-  expect(papel).toContain('3 cuotas');
+  expect(papel).toContain('GARANTÍA');
 
   // Todas las cifras del papel son dólares: sacando los «US$», no queda ningún
   // importe en pesos para confundir.
   expect(papel).toMatch(/US\$/);
   expect(papel.replace(/US\$/g, 'USD')).not.toContain('$');
 
-  // Y el saldo es exactamente lo que suman las cuotas: es lo que firma.
+  /*
+   * Y no dice nada de la deuda. Es el papel del teléfono: si el cliente vuelve
+   * por garantía discute un teléfono, no un plan de pagos. Tampoco dice que
+   * está pagado, que sería lo peor: lo levantaría para decir que ya pagó.
+   */
+  expect(papel).not.toContain('SALDO EN CUOTAS');
+  expect(papel).not.toContain('Vence el');
+  expect(papel).not.toContain('saldo');
+  expect(papel).not.toContain('Pagado en su totalidad');
+});
+
+test('el acuerdo de pago lleva las cuotas y queda en el local', async ({ page, context }) => {
+  // El segundo papel de la misma venta: el que respalda el saldo.
+  await entrarComoDuenio(page);
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto(`/ventas?q=${encodeURIComponent(CLIENTE)}`);
+  await page.getByRole('listitem').first().getByRole('link', { name: 'Ver la venta' }).click();
+
+  const [acuerdo] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('link', { name: 'Imprimir el acuerdo de pago' }).click(),
+  ]);
+  await acuerdo.waitForLoadState('domcontentloaded');
+  const papel = (await acuerdo.locator('body').innerText()).replace(/\u00a0/g, ' ');
+
+  expect(papel).toContain('ACUERDO DE PAGO');
+  expect(papel).toContain('Copia para el local');
+  expect(papel).toContain('SALDO EN CUOTAS');
+  expect(papel).toContain('3 cuotas');
+  // Es el papel de la deuda, no el de la garantía.
+  expect(papel).not.toContain('GARANTÍA');
+
+  // El saldo es exactamente lo que suman las cuotas: es lo que se firma.
   const enCentavos = (entero: string, decimales: string) =>
     Number(entero.replace(/\./g, '')) * 100 + Number(decimales);
 

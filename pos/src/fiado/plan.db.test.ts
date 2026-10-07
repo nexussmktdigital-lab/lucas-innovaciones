@@ -18,6 +18,7 @@ import {
   exchangeRates,
   installments,
   monetaryAccounts,
+  pendingRefunds,
   products,
   users,
 } from '@/db/schema';
@@ -37,6 +38,7 @@ import { usdAPesos } from '@/lib/dinero';
 let db: TestDb;
 let duenioId: string;
 let cajaId: string;
+let dolaresId: string;
 let sesionId: string;
 let productoId: string;
 let clienteId: string;
@@ -53,11 +55,15 @@ beforeEach(async () => {
   const [u] = await db.insert(users).values({ nombre: 'Lucas', rol: 'owner' }).returning();
   duenioId = u!.id;
 
-  const [c] = await db
+  const cuentas = await db
     .insert(monetaryAccounts)
-    .values({ nombre: 'Caja en efectivo', tipo: 'efectivo' })
+    .values([
+      { nombre: 'Caja en efectivo', tipo: 'efectivo' },
+      { nombre: 'Caja en dólares', tipo: 'dolares' },
+    ])
     .returning();
-  cajaId = c!.id;
+  cajaId = cuentas[0]!.id;
+  dolaresId = cuentas[1]!.id;
 
   const [s] = await db
     .insert(cashSessions)
@@ -390,6 +396,66 @@ describe('el semáforo es uno por moneda (D62)', () => {
 
     expect((await estadosDeClientes(db, [clienteId], HOY, 'ARS')).get(clienteId)).toBeUndefined();
     expect((await estadosDeClientes(db, [clienteId], HOY, 'USD')).get(clienteId)).toBeDefined();
+  });
+
+  it('anular una venta fiada en dólares le saca la deuda EN DÓLARES', async () => {
+    /*
+     * El caso del mostrador: el usado que entregó falla, se anula esa venta y
+     * se hace otra por el teléfono nuevo. Si la anulación no le saca la deuda,
+     * el cliente queda debiendo un teléfono que devolvió.
+     */
+    const venta = await fiarIphoneEnDolares(3);
+
+    const antes = (await cuentaDe(db, clienteId))!;
+    // Los US$ 1.500 del iPhone, con el centavo de redondeo de ida y vuelta.
+    expect(antes.saldoUsdCentavos).toBeGreaterThan(1_499_00);
+
+    await anularVenta(db, {
+      ventaId: venta.id,
+      usuarioId: duenioId,
+      motivo: 'El usado que entregó vino fallado',
+    });
+
+    const despues = (await cuentaDe(db, clienteId))!;
+    expect(despues.saldoUsdCentavos).toBe(0);
+    // Y no le tocó la deuda en pesos, que es otra: son dos deudas (D62).
+    expect(despues.saldoCentavos).toBe(antes.saldoCentavos);
+  });
+
+  it('si ya había pagado una cuota, lo que hay que devolverle son dólares', async () => {
+    /*
+     * El cliente pagó US$ 500 de su plan y después se anula la venta. Esa plata
+     * quedó en la caja sin venta detrás y hay que devolvérsela: son US$ 500, no
+     * quinientos pesos ni los pesos que valían aquel día.
+     */
+    const venta = await fiarIphoneEnDolares(3);
+
+    await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 500_00,
+      monedaDeuda: 'USD',
+      medio: 'dolares',
+      monetaryAccountId: dolaresId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: `cobro-usd-${Math.random()}`,
+    });
+
+    const r = await anularVenta(db, {
+      ventaId: venta.id,
+      usuarioId: duenioId,
+      motivo: 'El usado que entregó vino fallado',
+    });
+
+    expect(r.monedaDeLaDeuda).toBe('USD');
+
+    // La deuda queda en cero y lo pagado pasa a devolución pendiente, en dólares.
+    expect((await cuentaDe(db, clienteId))!.saldoUsdCentavos).toBe(0);
+    expect(r.aDevolverCentavos).toBe(500_00);
+
+    const [pendiente] = await db.select().from(pendingRefunds);
+    expect(pendiente!.montoCentavos).toBe(500_00);
+    expect(pendiente!.moneda).toBe('USD');
   });
 });
 

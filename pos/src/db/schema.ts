@@ -763,6 +763,14 @@ export const pendingRefunds = pgTable(
       .notNull()
       .references(() => sales.id),
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /**
+     * En que moneda hay que devolverle. La fija la venta que se anulo (D62).
+     *
+     * Si la venta era en dolares, `montoCentavos` son centavos de dolar y lo
+     * que hay que devolverle son dolares. Guardarlo sin moneda obligaria a
+     * elegir una cotizacion —la de hoy o la de aquel dia— y las dos estan mal.
+     */
+    moneda: monedaEnum().notNull().default('ARS'),
     motivo: text(),
     creadoPorId: uuid()
       .notNull()

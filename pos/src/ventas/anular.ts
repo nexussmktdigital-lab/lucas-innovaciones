@@ -27,12 +27,15 @@ import {
   monetaryAccounts,
   productVariants,
   products,
+  saleItems,
   salePayments,
   sales,
   stockMovements,
   syncQueue,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { pesosAUsdExacto } from '@/lib/dinero';
+import { ventaEnDolares } from '@/ventas/carrito';
 import { anularPlanesDeVenta } from '@/fiado/plan';
 import { anotarDevolucion } from '@/fiado/devoluciones';
 import { SIN_ACENTOS } from '@/ventas/buscar';
@@ -64,6 +67,14 @@ export interface VentaAnulada {
   unidadesRepuestas: number;
   /** Cuánta deuda de cuenta corriente se le sacó al cliente. */
   deudaBorradaCentavos: number;
+  /**
+   * En qué moneda están `deudaBorradaCentavos` y `aDevolverCentavos`.
+   *
+   * Lo que se vendió en dólares se debía en dólares (D62), así que anularlo
+   * saca dólares. Sin este dato la pantalla imprimiría «$ 1.500» donde dice
+   * US$ 1.500.
+   */
+  monedaDeLaDeuda: 'ARS' | 'USD';
   /**
    * Plata del cliente que quedó en la caja sin venta detrás.
    *
@@ -97,9 +108,12 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
       total_centavos: string | number;
       cash_session_id: string | null;
       cliente_id: string | null;
+      /** La cotización congelada al vender, si algo se vendió en dólares. */
+      tc_aplicado_centavos: string | number | null;
     }>(
       await tx.execute(sql`
-        SELECT id, numero, estado, total_centavos, cash_session_id, cliente_id
+        SELECT id, numero, estado, total_centavos, cash_session_id, cliente_id,
+               tc_aplicado_centavos
           FROM sales WHERE id = ${datos.ventaId} FOR UPDATE
       `),
     );
@@ -274,6 +288,27 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
         and(eq(salePayments.saleId, datos.ventaId), eq(salePayments.medio, 'cuenta_corriente')),
       );
 
+    /*
+     * En qué moneda quedó esta deuda, con la misma regla que la venta (D62).
+     *
+     * Hay que recomponerlo, no asumirlo: `fiado.montoCentavos` está en pesos
+     * —es como se cobra— y la deuda que se anotó al vender puede estar en
+     * dólares. Descontarle pesos a una deuda en dólares dejaba al cliente
+     * debiendo el teléfono que acababa de devolver, y de paso le borraba una
+     * deuda en pesos que no tenía nada que ver.
+     *
+     * La cotización es la que quedó congelada en la venta, así que la cuenta
+     * da exactamente lo mismo que dio al anotarla.
+     */
+    const renglones = await tx
+      .select({ monedaOriginal: saleItems.monedaOriginal })
+      .from(saleItems)
+      .where(eq(saleItems.saleId, datos.ventaId));
+
+    const tcAplicado = Number(venta.tc_aplicado_centavos ?? 0);
+    const deudaEnDolares = ventaEnDolares(renglones) && tcAplicado > 0;
+    const monedaDeLaDeuda = deudaEnDolares ? 'USD' : 'ARS';
+
     let deudaBorradaCentavos = 0;
     let aDevolverCentavos = 0;
 
@@ -283,22 +318,28 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
       // tienen su imputación apuntando a ellas (D29).
       await anularPlanesDeVenta(tx, datos.ventaId);
 
+      const deudaDeLaVenta = deudaEnDolares
+        ? pesosAUsdExacto(fiado.montoCentavos, tcAplicado)
+        : fiado.montoCentavos;
+
       deudaBorradaCentavos = await descontarDeuda(tx, {
         customerId: venta.cliente_id,
-        montoCentavos: fiado.montoCentavos,
+        montoCentavos: deudaDeLaVenta,
+        moneda: monedaDeLaDeuda,
         usuarioId: datos.usuarioId,
         motivo: `Anulación de la venta ${venta.numero}: ${motivo}`,
       });
 
       // Lo que no se pudo descontar es lo que el cliente ya había pagado de
       // esta venta. Esa plata está en la caja y él no se llevó nada.
-      aDevolverCentavos = fiado.montoCentavos - deudaBorradaCentavos;
+      aDevolverCentavos = deudaDeLaVenta - deudaBorradaCentavos;
 
       if (aDevolverCentavos > 0) {
         await anotarDevolucion(tx, {
           customerId: venta.cliente_id,
           saleId: datos.ventaId,
           montoCentavos: aDevolverCentavos,
+          moneda: monedaDeLaDeuda,
           motivo: `Ya había pagado esta parte de la venta ${venta.numero}, que se anuló: ${motivo}`,
           usuarioId: datos.usuarioId,
         });
@@ -332,6 +373,7 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
         unidadesRepuestas,
         deudaBorradaCentavos,
         aDevolverCentavos,
+        monedaDeLaDeuda,
       },
     });
 
@@ -342,6 +384,7 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
       revertidoCentavos,
       unidadesRepuestas,
       deudaBorradaCentavos,
+      monedaDeLaDeuda,
       aDevolverCentavos,
       clienteId: venta.cliente_id ?? null,
     };
@@ -356,23 +399,39 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
  */
 async function descontarDeuda(
   tx: BaseDatos,
-  datos: { customerId: string; montoCentavos: number; usuarioId: string; motivo: string },
+  datos: {
+    customerId: string;
+    montoCentavos: number;
+    /** De cuál de las dos deudas. Nunca se suman ni se convierten (D62). */
+    moneda: 'ARS' | 'USD';
+    usuarioId: string;
+    motivo: string;
+  },
 ): Promise<number> {
-  const [cuenta] = filasDe<{ id: string; saldo_centavos: string | number }>(
+  const [cuenta] = filasDe<{
+    id: string;
+    saldo_centavos: string | number;
+    saldo_usd_centavos: string | number;
+  }>(
     await tx.execute(sql`
-      SELECT id, saldo_centavos FROM credit_accounts
+      SELECT id, saldo_centavos, saldo_usd_centavos FROM credit_accounts
        WHERE customer_id = ${datos.customerId} FOR UPDATE
     `),
   );
   if (!cuenta) return 0;
 
-  const saldoAnterior = Number(cuenta.saldo_centavos);
+  const enDolares = datos.moneda === 'USD';
+  const saldoAnterior = Number(enDolares ? cuenta.saldo_usd_centavos : cuenta.saldo_centavos);
   const descontado = Math.min(datos.montoCentavos, saldoAnterior);
   if (descontado <= 0) return 0;
 
   await tx
     .update(creditAccounts)
-    .set({ saldoCentavos: saldoAnterior - descontado, updatedAt: new Date() })
+    .set(
+      enDolares
+        ? { saldoUsdCentavos: saldoAnterior - descontado, updatedAt: new Date() }
+        : { saldoCentavos: saldoAnterior - descontado, updatedAt: new Date() },
+    )
     .where(eq(creditAccounts.id, String(cuenta.id)));
 
   await tx.insert(auditLog).values({
@@ -380,8 +439,12 @@ async function descontarDeuda(
     accion: 'fiado.anular',
     entidad: 'credit_accounts',
     entidadId: String(cuenta.id),
-    valorAnterior: { saldoCentavos: saldoAnterior },
-    valorNuevo: { saldoCentavos: saldoAnterior - descontado, motivo: datos.motivo },
+    valorAnterior: { saldoCentavos: saldoAnterior, moneda: datos.moneda },
+    valorNuevo: {
+      saldoCentavos: saldoAnterior - descontado,
+      moneda: datos.moneda,
+      motivo: datos.motivo,
+    },
   });
 
   return descontado;

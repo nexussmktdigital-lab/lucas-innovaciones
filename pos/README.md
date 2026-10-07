@@ -459,7 +459,37 @@ del cliente: quien compró tres veces tiene tres planes, y un plan anulado no
 aparece. Desde la ficha se reimprime el comprobante y se anula o se devuelve,
 con la misma regla del turno de la lista.
 
-### El comprobante
+### El comprobante y el acuerdo de pago
+
+Son **dos papeles de la misma venta**, no dos ventas. Cada uno hace un trabajo
+distinto y por eso ninguno puede hacer los dos:
+
+| | Qué dice | Quién se lo queda |
+|---|---|---|
+| **Comprobante** | El producto, su precio y la garantía. **Nada de la deuda**: ni cuotas, ni frecuencia, ni saldo. | El cliente |
+| **Acuerdo de pago** | El plan: cada cuota con su fecha y su monto, y el saldo. | El local, firmado |
+
+**Por qué el papel del cliente no habla de la deuda.** Lo pidió el local y el
+motivo es bueno: si el cliente vuelve por garantía tiene que discutir *un
+teléfono*, no un plan de pagos. Un papel que dice «US$ 550 en 3 cuotas» invita a
+reclamar por un teléfono de US$ 550 cuando el teléfono vale US$ 500.
+
+**Y por qué existe el segundo.** Si el cliente no firma nada donde esté el
+saldo, lo único que lo respalda es la libreta del POS. El acuerdo se imprime,
+se firma y queda archivado: el cliente se lleva su comprobante de US$ 500 y el
+local tiene con qué sostener el saldo si algún día se discute.
+
+Con saldo, debajo del total del comprobante **no va nada**: ni el saldo ni
+«pagado en su totalidad», que sería mentira y es el peor error posible en un
+papel firmado —el cliente lo levanta para decir que ya pagó—.
+
+Al cobrar una venta en cuotas, la pantalla de venta avisa que falta el acuerdo y
+lo ofrece ahí mismo, con el cliente todavía enfrente. Después también está en la
+ficha de la venta. Sin conexión el acuerdo se arma en la tablet, igual que el
+comprobante: el cliente se va con el teléfono igual, y el papel que respalda el
+saldo no puede esperar a que vuelva internet.
+
+#### Cómo sale impreso
 
 Una hoja **A4**, una sola copia, la del cliente. Reemplazó al ticket de
 impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
@@ -1735,7 +1765,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una venta en dólares se imprime en dólares, sin ninguna conversión a pesos | `src/ventas/ticket.test.ts` |
 | Un carrito mezclado, o con descuento, se imprime en pesos | `src/ventas/ticket.test.ts` |
 | El comprobante no dice con qué medios se pagó ni quién atendió | `src/ventas/ticket.test.ts` |
-| Con plan, lista cada cuota con su fecha y su monto | `src/ventas/ticket.test.ts` |
+| Con plan, el acuerdo lista cada cuota con su fecha y su monto | `src/ventas/ticket.test.ts` |
+| El comprobante del cliente no lleva cuotas, ni frecuencia, ni saldo | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| Con saldo, el comprobante NUNCA dice «pagado en su totalidad» | `src/ventas/ticket.test.ts` |
+| El acuerdo dice que es la copia del local, y no lleva la garantía | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
 | Las cuotas van en la moneda de la deuda, aunque el papel salga en pesos | `src/ventas/ticket.test.ts` |
 | El saldo impreso es exactamente la suma de las cuotas | `src/ventas/ticket.test.ts` |
 | La boleta del iPhone fiado en dólares no lleva ni una cifra en pesos | `e2e/fiado-dolares.spec.ts` |
@@ -1783,6 +1816,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | No se puede cobrar más de lo que se debe, ni a quien no debe | `src/fiado/cuenta.test.ts` |
 | Reintentar el mismo cobro no cobra dos veces | `src/fiado/cuenta.test.ts` |
 | Anular una venta fiada le saca la deuda al cliente | `src/fiado/cuenta.test.ts` |
+| Anular una venta fiada **en dólares** le saca la deuda en dólares, no en pesos | `src/fiado/plan.db.test.ts` |
+| Lo que ya había pagado de esa venta queda a devolver en la moneda en que pagó | `src/fiado/plan.db.test.ts` |
 | Un iPhone fiado deja la deuda en dólares, y el dólar que se mueve no la mueve | `src/fiado/cuenta.test.ts` |
 | Un carrito mezclado NO se fía en dólares: queda en pesos, entero | `src/fiado/cuenta.test.ts` |
 | Las dos deudas conviven en la misma cuenta y no se suman | `src/fiado/cuenta.test.ts` |
