@@ -298,6 +298,42 @@ test('el historial muestra otros días y deja reimprimir el comprobante', async 
   await expect(fila.getByRole('link', { name: /Ver e imprimir/ })).toBeVisible();
 });
 
+test('se busca una venta sin saber de qué día fue', async ({ page }) => {
+  /*
+   * Los períodos sirven cuando se sabe cuándo fue, y casi nunca se sabe. Lo que
+   * se recuerda es qué se llevó o quién lo compró.
+   */
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/ventas');
+
+  // Dos palabras al revés y separadas en el nombre real: tiene que encontrarla
+  // igual, que es lo que pidió el mostrador.
+  const buscador = page.getByRole('searchbox', { name: 'Buscar una venta' });
+  await buscador.fill('templado vidrio');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+
+  await expect(page.getByText(/Buscando «templado vidrio» en todo el historial/)).toBeVisible();
+  await expect(page.getByRole('listitem').first()).toContainText('Vidrio templado');
+
+  // Una palabra de más achica la lista hasta vaciarla, no la agranda.
+  await page.getByRole('searchbox', { name: 'Buscar una venta' }).fill('vidrio bicicleta');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await expect(page.getByText(/No hay ninguna venta que diga/)).toBeVisible();
+
+  // Y se vuelve a lo de hoy de un clic.
+  await page.getByRole('link', { name: 'Volver a hoy' }).click();
+  await expect(page.getByRole('link', { name: 'Hoy', exact: true })).toBeVisible();
+});
+
 test('la ficha de la venta cuenta lo que el comprobante no dice', async ({ page }) => {
   /*
    * «Elijo la venta para ver los detalles»: lo que falta cuando el cliente

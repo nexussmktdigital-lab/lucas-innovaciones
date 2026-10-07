@@ -53,8 +53,13 @@ export interface ResultadoBusqueda {
   exacto: boolean;
 }
 
-/** Quita acentos dentro de PostgreSQL, sin depender de la extensión unaccent. */
-const SIN_ACENTOS = (columna: unknown) =>
+/**
+ * Quita acentos dentro de PostgreSQL, sin depender de la extensión unaccent.
+ *
+ * Lo usa también el buscador de ventas: que «Nuñez» y «Núñez» encuentren lo
+ * mismo no puede depender de cuál de los dos buscadores se esté mirando.
+ */
+export const SIN_ACENTOS = (columna: unknown) =>
   sql`translate(lower(${columna}), 'áàäâéèëêíìïîóòöôúùüûñç', 'aaaaeeeeiiiioooouuuunc')`;
 
 /**

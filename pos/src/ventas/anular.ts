@@ -35,6 +35,8 @@ import {
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import { anularPlanesDeVenta } from '@/fiado/plan';
 import { anotarDevolucion } from '@/fiado/devoluciones';
+import { SIN_ACENTOS } from '@/ventas/buscar';
+import { palabrasDeBusqueda } from '@/lib/texto';
 
 export class ErrorAnulacion extends Error {
   constructor(
@@ -451,12 +453,60 @@ export async function ventasEnPeriodo(
   );
 }
 
+/** Más que esto no se mira en pantalla: se escribe otra palabra y listo. */
+export const TOPE_BUSQUEDA = 100;
+
 /**
- * La consulta que comparten las dos.
+ * Buscar una venta en **todo** el historial, sin saber el día.
  *
- * Una sola, y no dos parecidas, porque la pantalla de Ventas las muestra igual:
- * dos consultas que devuelven lo mismo se despegan en la primera columna que se
- * le agregue a una.
+ * Es la otra mitad de «la venta del iPhone de la semana pasada»: los períodos
+ * sirven cuando se sabe cuándo fue, y casi nunca se sabe. Lo que sí se recuerda
+ * es el nombre del cliente, qué se llevó, o el número del comprobante que trae
+ * en la mano.
+ *
+ * Por eso **no filtra por período**: buscar dentro de «hoy» sería buscar donde
+ * ya se miró. Acota por cantidad, que es lo que no se puede leer, y no por
+ * fecha, que es justo lo que no se sabe.
+ *
+ * Parte el término en palabras **con el mismo código que el buscador de
+ * productos**: todas las palabras, en cualquier orden y en cualquier campo. Así
+ * «gaby funda» encuentra la venta donde una palabra cae en el cliente y la otra
+ * en lo vendido, y agregar una palabra achica la lista en vez de vaciarla, que
+ * fue el pedido del mostrador.
+ */
+export async function buscarVentas(
+  db: BaseDatos,
+  termino: string,
+  limite = TOPE_BUSQUEDA,
+): Promise<VentaDelTurno[]> {
+  const palabras = palabrasDeBusqueda(termino);
+  if (palabras.length === 0) return [];
+
+  /** Dónde puede caer **una** palabra. */
+  const contiene = (palabra: string) => {
+    const patron = `%${palabra}%`;
+    return sql`(
+        lower(s.numero) LIKE ${patron}
+        OR ${SIN_ACENTOS(sql`COALESCE(c.nombre, '')`)} LIKE ${patron}
+        OR lower(COALESCE(c.dni, '')) LIKE ${patron}
+        OR lower(COALESCE(c.telefono, '')) LIKE ${patron}
+        OR EXISTS (
+             SELECT 1 FROM sale_items i
+              WHERE i.sale_id = s.id
+                AND ${SIN_ACENTOS(sql`i.descripcion`)} LIKE ${patron}
+           )
+      )`;
+  };
+
+  return consultarVentas(db, sql.join(palabras.map(contiene), sql` AND `), limite);
+}
+
+/**
+ * La consulta que comparten las tres.
+ *
+ * Una sola, y no tres parecidas, porque la pantalla de Ventas las muestra
+ * igual: dos consultas que devuelven lo mismo se despegan en la primera columna
+ * que se le agregue a una.
  */
 async function consultarVentas(
   db: BaseDatos,

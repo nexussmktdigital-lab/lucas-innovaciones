@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, buscar una venta de cualquier día y abrir su ficha —qué se vendió, cómo se pagó, en qué cuotas quedó—, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
+**Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, buscar una venta por cliente, producto o número de comprobante y abrir su ficha —qué se vendió, cómo se pagó, en qué cuotas quedó—, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
 
 El sistema pasó **nueve auditorías**, anotadas en [AUDITORIA.md](AUDITORIA.md): las fases 3.5 a 3.7 salieron de la primera, y las dos últimas son el control previo a producción — los diecinueve invariantes de plata dando sobre la base de verdad, y una medición con el catálogo completo (803 productos: el buscador tarda 6 ms y los reportes 3).
 
@@ -401,6 +401,26 @@ de un turno ya cerrado no: la plata volvió a aquel cajón y revertir contra una
 caja cerrada dejaría dos arqueos mal (D29). Para esas, la fila ofrece
 **devolver**, que sale del cajón de hoy y el arqueo lo explica. El servidor lo
 rechaza igual; no ofrecer el botón evita el clic que falla.
+
+### Buscar una venta sin saber el día
+
+Arriba de los períodos hay un **buscador**: cliente, producto, número de
+comprobante, DNI o teléfono. Los períodos sirven cuando se sabe cuándo fue, y
+casi nunca se sabe; lo que se recuerda es «el cargador que le vendí a Gaby».
+
+**Buscando, el período no corre**: busca en todo el historial. Acotar la
+búsqueda al período sería buscar justo donde ya se miró.
+
+Parte el término en palabras con **el mismo código que el buscador de
+productos**: todas las palabras, en cualquier orden y en cualquier campo. Así
+«templado vidrio» encuentra «Vidrio templado 9D», «gaby cargador» encuentra la
+venta donde una palabra cae en el cliente y la otra en lo vendido, y cada
+palabra que se agrega **achica** la lista en vez de vaciarla. Los acentos no se
+interponen: «nunez» encuentra a Núñez.
+
+Se muestran las 100 más nuevas; si la que se busca no está, se agrega una
+palabra. El término queda en la URL (`/ventas?q=…`), así que el resultado se
+puede recargar o dejar abierto en una pestaña mientras se atiende.
 
 ### La ficha de una venta
 
@@ -1706,6 +1726,13 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | La ficha sabe si el turno sigue abierto: de eso depende anular o devolver | `src/ventas/detalle.test.ts` |
 | El vuelto nunca sale de una transferencia, solo del efectivo entregado | `src/ventas/detalle.test.ts` |
 | Desde la lista se abre la venta y se ve con qué pagó | `e2e/venta.spec.ts` |
+| Se busca una venta por cliente, producto, número, DNI o teléfono | `src/ventas/anular.test.ts` |
+| Dos palabras sueltas, en cualquier orden y aunque no estén pegadas | `src/ventas/anular.test.ts` |
+| Cada palabra que se agrega achica la lista, no la agranda | `src/ventas/anular.test.ts` |
+| «nunez» encuentra a Núñez | `src/ventas/anular.test.ts` |
+| La búsqueda ignora el período: mira todo el historial | `src/ventas/anular.test.ts` |
+| Sin término, el buscador no devuelve el historial entero | `src/ventas/anular.test.ts` |
+| Se busca desde la pantalla y se vuelve a hoy de un clic | `e2e/venta.spec.ts` |
 | Un servidor lento no se anuncia como «sin conexión» cuando no hay copia guardada | `src/offline/sw.test.ts` |
 | Con la red caída de verdad, y sin copia, sí se avisa que no hay conexión | `src/offline/sw.test.ts` |
 | Habiendo copia, se sirve sin esperar al servidor lento, y la tardía se guarda | `src/offline/sw.test.ts` |
