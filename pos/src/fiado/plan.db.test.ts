@@ -475,3 +475,86 @@ describe('varios clientes de una sola consulta', () => {
     expect(estados.get(otro!.id)).toBeUndefined();
   });
 });
+
+describe('el recargo por financiar', () => {
+  /*
+   * El teléfono vale lo que vale; esto es el precio de pagarlo en el tiempo.
+   * Por eso suma a la DEUDA y a las cuotas, y no al total de la venta: el
+   * comprobante que se lleva el cliente muestra el precio del teléfono y no es
+   * un recorte, es el total de la venta.
+   */
+  async function fiarConRecargo(recargoCentavos: number, cuotas = 3) {
+    return confirmarVenta(db, {
+      lineas: [{ productId: productoId, cantidad: 10 }],
+      pagos: [{ medio: 'cuenta_corriente', montoCentavos: 600_000_00 }],
+      clienteId,
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `recargo-${Math.random()}`,
+      plan: { cadencia: cadencia('mensual'), cuotas, recargoCentavos },
+    });
+  }
+
+  it('la venta sigue valiendo lo que vale el producto', async () => {
+    const venta = await fiarConRecargo(60_000_00);
+    expect(venta.totalCentavos).toBe(600_000_00);
+  });
+
+  it('pero el cliente debe lo financiado más el recargo', async () => {
+    await fiarConRecargo(60_000_00);
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(660_000_00);
+  });
+
+  it('y las cuotas reparten el total a pagar, no lo financiado', async () => {
+    await fiarConRecargo(60_000_00, 3);
+
+    const cuentaId = (await cuentaDe(db, clienteId))!.id;
+    const cuotas = await cuotasDeCuenta(db, cuentaId, 'ARS');
+
+    expect(cuotas).toHaveLength(3);
+    expect(cuotas.reduce((n, c) => n + c.montoCentavos, 0)).toBe(660_000_00);
+    expect(cuotas[0]!.montoCentavos).toBe(220_000_00);
+  });
+
+  it('el plan guarda las tres cifras por separado, que son tres hechos', async () => {
+    const venta = await fiarConRecargo(60_000_00);
+
+    const [plan] = await db.select().from(creditPlans).where(eq(creditPlans.saleId, venta.id));
+
+    expect(plan!.montoFinanciadoCentavos).toBe(600_000_00);
+    expect(plan!.recargoCentavos).toBe(60_000_00);
+    expect(plan!.totalAPagarCentavos).toBe(660_000_00);
+  });
+
+  it('sin recargo, todo sigue como estaba', async () => {
+    await fiarEnCuotas(3);
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(600_000_00);
+  });
+
+  it('un recargo mayor que lo financiado se rechaza: es un cero de más', async () => {
+    await expect(fiarConRecargo(600_000_01)).rejects.toThrow(/mayor que lo que se financia/);
+    // Y la venta no entró: o entra entera o no entra.
+    expect(await cuentaDe(db, clienteId)).toBeNull();
+  });
+
+  it('anular le saca la deuda Y el recargo', async () => {
+    /*
+     * El caso del mostrador: el usado que entregó vino fallado. Si la
+     * anulación solo mirara los pagos de la venta, le dejaría al cliente los
+     * $60.000 del recargo de un teléfono que devolvió, y además inventaría una
+     * devolución pendiente por esa diferencia.
+     */
+    const venta = await fiarConRecargo(60_000_00);
+
+    const r = await anularVenta(db, {
+      ventaId: venta.id,
+      usuarioId: duenioId,
+      motivo: 'El usado que entregó vino fallado',
+    });
+
+    expect(r.deudaBorradaCentavos).toBe(660_000_00);
+    expect(r.aDevolverCentavos).toBe(0);
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(0);
+  });
+});

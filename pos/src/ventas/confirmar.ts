@@ -48,7 +48,7 @@ import {
   type VarianteVendible,
 } from './carrito';
 import { anotarDeuda } from '@/fiado/cuenta';
-import { crearPlan, type Cadencia } from '@/fiado/plan';
+import { crearPlan, validarRecargo, type Cadencia } from '@/fiado/plan';
 import { pesosAUsdExacto } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import { recargoDeTienda } from '@/precios/config';
@@ -143,7 +143,18 @@ export interface SolicitudDeVenta {
    * el fiado de toda la vida y sigue siendo lo correcto para los $5.000 del
    * vecino. El plan es para la compra grande.
    */
-  plan?: { cadencia: Cadencia; cuotas: number } | null;
+  plan?: {
+    cadencia: Cadencia;
+    cuotas: number;
+    /**
+     * Lo que se cobra por financiar, en la moneda de la deuda.
+     *
+     * Un monto escrito a mano en el mostrador, no un porcentaje. Suma a la
+     * deuda y a las cuotas, **no al total de la venta**: el teléfono vale lo
+     * que vale y esto es el precio de pagarlo en el tiempo.
+     */
+    recargoCentavos?: number;
+  } | null;
   ip?: string | null;
 }
 
@@ -676,9 +687,23 @@ export async function confirmarVenta(
 
       // Lo fiado viene en pesos, que es como se cobra. En dólares, la deuda son
       // los dólares que esos pesos valen al cambio de esta venta, sin redondear.
-      const deudaCentavos = enDolares
+      const financiadoCentavos = enDolares
         ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
         : fiadoCentavos;
+
+      /*
+       * El recargo por financiar, si se pactó uno.
+       *
+       * Viene en la moneda de la deuda —lo escribe el mostrador mirando la
+       * misma cifra que le dice al cliente— y suma a lo que el cliente debe,
+       * no al total de la venta. Sin plan no hay recargo: lo que se cobra es
+       * pagar en cuotas, y sin cuotas no hay qué cobrar.
+       */
+      const recargoCentavos = solicitud.plan
+        ? validarRecargo(solicitud.plan.recargoCentavos ?? 0, financiadoCentavos)
+        : 0;
+
+      const deudaCentavos = financiadoCentavos + recargoCentavos;
 
       const deuda = await anotarDeuda(tx, {
         customerId: solicitud.clienteId,
@@ -701,7 +726,8 @@ export async function confirmarVenta(
         await crearPlan(tx, {
           creditAccountId: deuda.cuentaId,
           saleId: ventaId,
-          montoCentavos: deudaCentavos,
+          montoCentavos: financiadoCentavos,
+          recargoCentavos,
           cantidad: solicitud.plan.cuotas,
           cadencia: solicitud.plan.cadencia,
           moneda: enDolares ? 'USD' : 'ARS',

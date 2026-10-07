@@ -342,11 +342,16 @@ export default function PantallaVenta({
      * misma función pura que usa el servidor al confirmar. Sin esto, el papel
      * que el cliente firma sin conexión no diría cuándo tiene que volver.
      */
+    // El recargo por financiar viene en la moneda de la deuda y entra en las
+    // cuotas, igual que lo hace el servidor al confirmar.
+    const totalAPagarCentavos =
+      deudaCentavos + Math.min(datos.plan?.recargoCentavos ?? 0, deudaCentavos);
+
     const cuotas = (() => {
-      if (!datos.plan || deudaCentavos <= 0) return [];
+      if (!datos.plan || totalAPagarCentavos <= 0) return [];
       try {
         return cuotasDelPlan(
-          deudaCentavos,
+          totalAPagarCentavos,
           datos.plan.cuotas,
           { frecuencia: datos.plan.frecuencia, dias: datos.plan.dias ?? null },
           fechaLocalISO(capturadaEn),
@@ -378,6 +383,7 @@ export default function PantallaVenta({
       fiadoCentavos,
       cuotas,
       monedaDeLaDeuda: (deudaEnDolares ? 'USD' : 'ARS') as 'USD' | 'ARS',
+      recargoCentavos: totalAPagarCentavos - deudaCentavos,
       provisional: true,
     };
 

@@ -112,6 +112,7 @@ export async function GET(
       vencimiento: installments.vencimiento,
       montoCentavos: installments.montoCentavos,
       moneda: creditPlans.moneda,
+      recargoCentavos: creditPlans.recargoCentavos,
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
@@ -143,6 +144,7 @@ export async function GET(
       montoCentavos: c.montoCentavos,
     })),
     monedaDeLaDeuda,
+    recargoCentavos: cuotas[0]?.recargoCentavos ?? 0,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
   }, { copia });
 

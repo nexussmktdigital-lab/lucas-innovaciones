@@ -51,6 +51,13 @@ const IPHONE: DatosDelTicket = {
 /** Los montos llevan espacio duro; se normaliza para poder buscarlos. */
 const txt = (s: string) => s.replace(/\u00a0/g, ' ');
 
+/** El papel como se lee, sin etiquetas: para mirar qué dice al lado de qué. */
+const leido = (s: string) =>
+  txt(s)
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 describe('el comprobante', () => {
   it('sale en A4, en una sola hoja', () => {
     expect(generarTicket(BASE)).toContain('size: A4');
@@ -313,6 +320,73 @@ describe('el acuerdo de pago, que queda en el local', () => {
     expect(t).toContain('US$ 733,85');
     expect(t).toContain('queda un saldo de US$ 1.467,70');
     expect(t).toContain('El saldo quedó pactado en dólares');
+  });
+
+  it('con recargo por financiar, desglosa de dónde sale el saldo', () => {
+    /*
+     * El que firma un saldo de US$ 550 por un teléfono de US$ 500 tiene que ver
+     * de dónde salen los otros 50. En el comprobante del cliente no aparece
+     * nada de esto: ese papel lleva el precio del teléfono.
+     */
+    const t = acuerdo({
+      ...IPHONE,
+      fiadoCentavos: 235_650_000,
+      monedaDeLaDeuda: 'USD',
+      recargoCentavos: 150_00,
+      cuotas: [
+        { numero: 1, vencimiento: '2026-11-06', montoCentavos: 550_00 },
+        { numero: 2, vencimiento: '2026-12-06', montoCentavos: 550_00 },
+        { numero: 3, vencimiento: '2027-01-06', montoCentavos: 550_00 },
+      ],
+    });
+
+    // Pegado a su cifra, no suelto en la hoja: US$ 1.500 también es el precio
+    // del teléfono y aparece arriba, así que buscarlo solo no prueba nada.
+    const papel = leido(generarTicket(
+      {
+        ...IPHONE,
+        fiadoCentavos: 235_650_000,
+        monedaDeLaDeuda: 'USD',
+        recargoCentavos: 150_00,
+        cuotas: [
+          { numero: 1, vencimiento: '2026-11-06', montoCentavos: 550_00 },
+          { numero: 2, vencimiento: '2026-12-06', montoCentavos: 550_00 },
+          { numero: 3, vencimiento: '2027-01-06', montoCentavos: 550_00 },
+        ],
+      },
+      { copia: 'acuerdo' },
+    ));
+
+    expect(papel).toContain('Saldo del producto US$ 1.500,00');
+    expect(papel).toContain('Recargo por financiar US$ 150,00');
+    expect(t).toContain('queda un saldo de US$ 1.650,00');
+  });
+
+  it('sin recargo no hay desglose: no hay nada que explicar', () => {
+    const t = acuerdo({
+      ...BASE,
+      fiadoCentavos: 1_000_000,
+      cuotas: [{ numero: 1, vencimiento: '2026-11-06', montoCentavos: 1_000_000 }],
+    });
+    expect(t).not.toContain('Recargo por financiar');
+  });
+
+  it('el recargo no se cuela en el comprobante del cliente', () => {
+    const t = txt(
+      generarTicket({
+        ...IPHONE,
+        fiadoCentavos: 235_650_000,
+        monedaDeLaDeuda: 'USD',
+        recargoCentavos: 150_00,
+        cuotas: [{ numero: 1, vencimiento: '2026-11-06', montoCentavos: 1_650_00 }],
+      }),
+    );
+
+    expect(t).not.toContain('Recargo');
+    expect(t).not.toContain('US$ 150,00');
+    expect(t).not.toContain('1.650,00');
+    // Lo que sí lleva: el precio del teléfono.
+    expect(t).toContain('US$ 1.500,00');
   });
 
   it('una venta en pesos con plan sigue teniendo sus cuotas en pesos', () => {

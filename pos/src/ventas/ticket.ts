@@ -83,6 +83,15 @@ export interface DatosDelTicket {
    * este dato, las cuotas de US$ 262,50 salían impresas como «$ 262,50».
    */
   monedaDeLaDeuda?: 'ARS' | 'USD';
+  /**
+   * Lo que se cobró por financiar, en la moneda de la deuda.
+   *
+   * Va **solo en el acuerdo de pago**, desglosado: el que firma un saldo de
+   * US$ 550 por un teléfono de US$ 500 tiene que ver de dónde salen los otros
+   * 50. En el comprobante del cliente no aparece, porque ese papel no habla de
+   * la deuda.
+   */
+  recargoCentavos?: number;
   nota?: string | null;
   /**
    * El comprobante de una venta cobrada sin conexión (D56).
@@ -288,6 +297,30 @@ export function generarTicket(
     })
     .join('');
 
+  /*
+   * El desglose del saldo, cuando se cobró algo por financiar.
+   *
+   * Sin esto el acuerdo diría «US$ 550» sobre un teléfono de US$ 500 y el
+   * cliente firmaría un número que no cierra con nada de lo que vio.
+   */
+  const recargoCentavos = datos.recargoCentavos ?? 0;
+  // Va dentro del bloque de cuotas, que ya es solo del acuerdo: en la copia
+  // del cliente no se arma ninguno de los dos.
+  const bloqueDeRecargo =
+    recargoCentavos > 0
+      ? `
+    <div class="cuota">
+      <span class="cuota-n"></span>
+      <span class="cuota-fecha">Saldo del producto</span>
+      <span class="cuota-monto">${escapar(cifraDeLaDeuda(Math.max(0, saldoCentavos - recargoCentavos)))}</span>
+    </div>
+    <div class="cuota">
+      <span class="cuota-n"></span>
+      <span class="cuota-fecha">Recargo por financiar</span>
+      <span class="cuota-monto">${escapar(cifraDeLaDeuda(recargoCentavos))}</span>
+    </div>`
+      : '';
+
   const bloqueDeCuotas =
     esAcuerdo && cuotas.length > 0
       ? `
@@ -296,6 +329,7 @@ export function generarTicket(
       <span class="etiqueta">SALDO EN CUOTAS</span>
       <span class="detalle-chico">${cuotas.length} ${cuotas.length === 1 ? 'cuota' : 'cuotas'}</span>
     </div>
+    ${bloqueDeRecargo}
     ${cuotas
       .map(
         (c) => `

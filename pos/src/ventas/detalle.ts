@@ -92,6 +92,8 @@ export interface DetalleDeVenta {
   pagos: PagoDeVenta[];
   /** La moneda del plan de cuotas, si hay plan. */
   monedaDelPlan: 'ARS' | 'USD' | null;
+  /** Lo que se cobró por financiar, en la moneda del plan. Cero es lo normal. */
+  recargoDelPlanCentavos: number;
   cuotas: CuotaDeVenta[];
   devoluciones: DevolucionDeVenta[];
 }
@@ -178,6 +180,7 @@ export async function detalleDeVenta(
       montoCentavos: installments.montoCentavos,
       pagadoCentavos: installments.pagadoCentavos,
       moneda: creditPlans.moneda,
+      recargoCentavos: creditPlans.recargoCentavos,
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
@@ -224,6 +227,7 @@ export async function detalleDeVenta(
     renglones,
     pagos,
     monedaDelPlan: filasDeCuotas[0]?.moneda ?? null,
+    recargoDelPlanCentavos: filasDeCuotas[0]?.recargoCentavos ?? 0,
     cuotas: filasDeCuotas.map((c) => ({
       numero: c.numero,
       vencimiento: aFechaISO(c.vencimiento),

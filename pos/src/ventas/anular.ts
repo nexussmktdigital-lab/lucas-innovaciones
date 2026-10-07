@@ -24,6 +24,7 @@ import {
   cashMovements,
   cashSessions,
   creditAccounts,
+  creditPlans,
   monetaryAccounts,
   productVariants,
   products,
@@ -318,9 +319,24 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
       // tienen su imputación apuntando a ellas (D29).
       await anularPlanesDeVenta(tx, datos.ventaId);
 
-      const deudaDeLaVenta = deudaEnDolares
-        ? pesosAUsdExacto(fiado.montoCentavos, tcAplicado)
-        : fiado.montoCentavos;
+      /*
+       * Lo que se le anotó al vender: lo fiado más el recargo por financiar.
+       *
+       * El recargo no está en los pagos de la venta —no es parte de ella, es
+       * el precio de pagarla en el tiempo— así que sale del plan. Sin esto, la
+       * anulación le dejaría al cliente los US$ 50 del recargo de un teléfono
+       * que devolvió, y además inventaría una devolución pendiente por esa
+       * diferencia.
+       */
+      const [plan] = await tx
+        .select({ recargoCentavos: creditPlans.recargoCentavos })
+        .from(creditPlans)
+        .where(eq(creditPlans.saleId, datos.ventaId))
+        .limit(1);
+
+      const deudaDeLaVenta =
+        (deudaEnDolares ? pesosAUsdExacto(fiado.montoCentavos, tcAplicado) : fiado.montoCentavos) +
+        (plan?.recargoCentavos ?? 0);
 
       deudaBorradaCentavos = await descontarDeuda(tx, {
         customerId: venta.cliente_id,

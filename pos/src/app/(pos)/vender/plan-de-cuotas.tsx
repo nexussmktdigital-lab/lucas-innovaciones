@@ -24,6 +24,14 @@ import {
 
 export interface PlanElegido extends Cadencia {
   cuotas: number;
+  /**
+   * Lo que se cobra por financiar, en la moneda de la deuda.
+   *
+   * Un monto escrito a mano, no un porcentaje: el local lo negocia con el
+   * cliente enfrente y no sigue una tabla. Cero es el fiado de siempre, que es
+   * como viene.
+   */
+  recargoCentavos: number;
 }
 
 /** Cuotas que se ofrecen con un toque. Cualquier otra se escribe. */
@@ -50,14 +58,25 @@ export default function PlanDeCuotas({
   const hoy = fechaLocalISO();
   const cifra = moneda === 'USD' ? formatearUSD : formatearARS;
 
+  /*
+   * El recargo, acotado acá y de nuevo en el servidor.
+   *
+   * Lo que se ve en pantalla tiene que ser lo que se guarda: el mostrador le
+   * dice al cliente «tres cuotas de US$ 183,33» y eso es lo que va al acuerdo
+   * que firma. Por eso la vista previa reparte el TOTAL —financiado más
+   * recargo—, con la misma función que usa el servidor al confirmar.
+   */
+  const recargoCentavos = Math.min(Math.max(0, plan?.recargoCentavos ?? 0), montoCentavos);
+  const totalAPagarCentavos = montoCentavos + recargoCentavos;
+
   const cuotas = useMemo(() => {
     if (!plan) return [];
     try {
-      return cuotasDelPlan(montoCentavos, plan.cuotas, plan, hoy);
+      return cuotasDelPlan(totalAPagarCentavos, plan.cuotas, plan, hoy);
     } catch {
       return [];
     }
-  }, [montoCentavos, plan, hoy]);
+  }, [totalAPagarCentavos, plan, hoy]);
 
   const primera = cuotas[0];
   const ultima = cuotas[cuotas.length - 1];
@@ -78,7 +97,12 @@ export default function PlanDeCuotas({
             key={f.valor}
             activa={plan?.frecuencia === f.valor}
             onClick={() =>
-              onCambiar({ frecuencia: f.valor, dias: null, cuotas: plan?.cuotas ?? 3 })
+              onCambiar({
+                frecuencia: f.valor,
+                dias: null,
+                cuotas: plan?.cuotas ?? 3,
+                recargoCentavos: plan?.recargoCentavos ?? 0,
+              })
             }
             etiqueta={f.etiqueta}
           />
@@ -89,7 +113,12 @@ export default function PlanDeCuotas({
         <Opcion
           activa={plan?.frecuencia === 'dias'}
           onClick={() =>
-            onCambiar({ frecuencia: 'dias', dias: plan?.dias ?? 3, cuotas: plan?.cuotas ?? 3 })
+            onCambiar({
+              frecuencia: 'dias',
+              dias: plan?.dias ?? 3,
+              cuotas: plan?.cuotas ?? 3,
+              recargoCentavos: plan?.recargoCentavos ?? 0,
+            })
           }
           etiqueta="Cada N días"
         />
@@ -150,6 +179,45 @@ export default function PlanDeCuotas({
               />
             </label>
           </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label htmlFor="recargo" className="text-xs text-(--color-tinta-suave)">
+              Recargo por financiar ({moneda === 'USD' ? 'US$' : '$'})
+            </label>
+            <input
+              id="recargo"
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              value={recargoCentavos === 0 ? '' : recargoCentavos / 100}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                onCambiar({
+                  ...plan,
+                  recargoCentavos: Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0,
+                });
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder="0"
+              className="tabular min-h-10 w-28 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right"
+            />
+            <span className="text-xs text-(--color-tinta-suave)">
+              {recargoCentavos > 0
+                ? `Debe ${cifra(totalAPagarCentavos)} en vez de ${cifra(montoCentavos)}.`
+                : 'Opcional. En blanco, paga lo mismo que de contado.'}
+            </span>
+          </div>
+
+          {/* Lo que el cliente NO va a ver en su comprobante: ese papel lleva
+              el precio del producto y nada de la deuda. El recargo y las
+              cuotas van en el acuerdo de pago, que se firma y queda acá. */}
+          {recargoCentavos > 0 ? (
+            <p className="mt-1 text-xs text-(--color-tinta-suave)">
+              El comprobante del cliente no muestra esto: sale con el precio del producto. El
+              recargo y las cuotas van en el acuerdo de pago.
+            </p>
+          ) : null}
 
           {primera && ultima ? (
             <p className="mt-2 text-sm">
