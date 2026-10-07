@@ -2251,3 +2251,47 @@ que no sabe nada del sistema. Es la segunda vez en este proyecto que el problema
 no es un número equivocado sino **una frase que informa mal** —la primera fue el
 cartel de «sin conexión» cuando había conexión—, y las dos veces costó más que
 cualquier bug de los que sí tienen test.
+
+## Las cuotas en dólares salían impresas como pesos
+
+El pedido era simple: vender el iPhone en dólares, fiarlo, y que el papel que el
+cliente firma diga el monto y las cuotas **en dólares**. Verificándolo apareció
+que el comprobante tenía dos monedas y una sola decisión.
+
+El sistema decide en qué moneda queda la deuda con una regla: el carrito entero
+en dólares se debe en dólares (D62). El comprobante decidía en qué moneda
+imprimir con otra: todo en dólares **y sin descuentos**, porque restar un
+descuento cargado en pesos de un precio en dólares obligaría a convertir, que es
+justo lo que el papel no hace. Las dos reglas son correctas y responden
+preguntas distintas. El problema es que las cuotas se imprimían con la segunda.
+
+Entonces, en una venta en dólares con cualquier descuento: la deuda quedaba en
+dólares, el plan guardaba cuotas de **US$ 262,50**, y el papel las imprimía como
+**«$ 262,50»**. Seiscientas treinta veces menos, en el renglón que el cliente
+firma y se lleva. Nadie lo habría notado hasta el primer vencimiento, con el
+papel de un lado del mostrador y el sistema del otro.
+
+Dos cosas lo dejaron pasar:
+
+1. **La misma pregunta contestada en dos lugares.** `ticket.ts` no sabía la
+   moneda de la deuda, así que usaba la del papel, que es lo más parecido que
+   tenía a mano. Ahora la recibe, y quien la calcula es una sola función
+   —`ventaEnDolares`, en el carrito— que comparten la confirmación de la venta y
+   el comprobante. El comentario de la interfaz ya decía «van en la moneda de la
+   deuda»: la intención estaba escrita, la implementación no la cumplía.
+2. **El fixture de los tests nunca mezclaba.** Había un test de cuotas en
+   dólares y un test de descuento en pesos, los dos en verde, y el error vivía
+   exactamente en la intersección que ningún test visitaba. Es la misma forma
+   del agujero de las cuotas de la ficha: **lo correcto y lo que da lo mismo se
+   distinguen solo cuando el caso tiene las dos cosas a la vez.**
+
+De paso apareció lo mismo en el modo sin conexión: el papel repartía las cuotas
+sobre los pesos fiados y el servidor, al subir la venta, armaba el plan en
+dólares. Dos números distintos para la misma deuda, que es la única cosa que el
+modo sin conexión tiene prohibida (D56). Ahora la tablet convierte con la misma
+función que el servidor antes de repartir.
+
+Y una mejora que no era un error pero lo parecía: el saldo impreso se sacaba por
+diferencia contra el total, así que podía quedar a un centavo de la suma de las
+cuotas. Ahora el saldo **es** la suma de las cuotas. Un centavo de diferencia en
+un papel firmado no es un redondeo: es una discusión.

@@ -97,6 +97,57 @@ test('un iPhone fiado en cuotas se pacta en dólares', async ({ page }) => {
   await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
 });
 
+test('la boleta que firma el cliente dice dólares y nada más que dólares', async ({
+  page,
+  context,
+}) => {
+  /*
+   * Lo que el cliente se lleva del mostrador. Se pactó un iPhone en dólares y
+   * cuotas en dólares: el papel tiene que decir eso, sin una cifra en pesos que
+   * invite a discutir cuál de las dos vale dentro de tres meses.
+   */
+  await entrarComoDuenio(page);
+
+  // El comprobante se manda a imprimir solo; acá se lo deja pasar.
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto(`/ventas?q=${encodeURIComponent(CLIENTE)}`);
+  const fila = page.getByRole('listitem').first();
+  await expect(fila).toContainText('iPhone 13');
+
+  const [comprobante] = await Promise.all([
+    context.waitForEvent('page'),
+    fila.getByRole('link', { name: /Ver e imprimir/ }).click(),
+  ]);
+  await comprobante.waitForLoadState('domcontentloaded');
+  const papel = (await comprobante.locator('body').innerText()).replace(/\u00a0/g, ' ');
+
+  expect(papel).toContain(CLIENTE);
+  expect(papel).toContain('iPhone 13');
+  expect(papel).toContain('SALDO EN CUOTAS');
+  expect(papel).toContain('3 cuotas');
+
+  // Todas las cifras del papel son dólares: sacando los «US$», no queda ningún
+  // importe en pesos para confundir.
+  expect(papel).toMatch(/US\$/);
+  expect(papel.replace(/US\$/g, 'USD')).not.toContain('$');
+
+  // Y el saldo es exactamente lo que suman las cuotas: es lo que firma.
+  const enCentavos = (entero: string, decimales: string) =>
+    Number(entero.replace(/\./g, '')) * 100 + Number(decimales);
+
+  const saldo = /queda un saldo de US\$ ([\d.]+),(\d{2})/.exec(papel);
+  expect(saldo).not.toBeNull();
+
+  const cuotas = [...papel.matchAll(/Vence el [^$]+US\$ ([\d.]+),(\d{2})/g)];
+  expect(cuotas).toHaveLength(3);
+
+  const suma = cuotas.reduce((n, c) => n + enCentavos(c[1]!, c[2]!), 0);
+  expect(suma).toBe(enCentavos(saldo![1]!, saldo![2]!));
+});
+
 test('la deuda en dólares se ve en Fiado, aunque no deba un peso', async ({ page }) => {
   await entrarComoDuenio(page);
   await page.goto('/fiado');

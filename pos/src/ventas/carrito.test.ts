@@ -7,6 +7,7 @@ import {
   problemasDelCobro,
   resolverDescuento,
   stockDisponible,
+  ventaEnDolares,
   type LineaCarrito,
   type ProductoVendible,
   type VarianteVendible,
@@ -410,5 +411,27 @@ describe('stockDisponible con variación', () => {
 
   it('sin variación, el del producto', () => {
     expect(stockDisponible(p)).toBe(35);
+  });
+});
+
+describe('ventaEnDolares', () => {
+  /*
+   * Decide en qué moneda queda la deuda (D62). Vive en el carrito porque la
+   * tienen que responder igual la confirmación de la venta y el comprobante:
+   * dos versiones de esta regla se separan en la primera corrida del dólar.
+   */
+  const usd = { monedaOriginal: 'USD' as const };
+  const ars = { monedaOriginal: 'ARS' as const };
+
+  it('el carrito entero en dólares se debe en dólares', () => {
+    expect(ventaEnDolares([usd, usd])).toBe(true);
+  });
+
+  it('uno mezclado queda en pesos: la funda no sigue al dólar', () => {
+    expect(ventaEnDolares([usd, ars])).toBe(false);
+  });
+
+  it('un carrito vacío no es una venta en dólares', () => {
+    expect(ventaEnDolares([])).toBe(false);
   });
 });

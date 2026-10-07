@@ -73,6 +73,16 @@ export interface DatosDelTicket {
    * cada uno de memoria. Van en la moneda de la deuda, igual que en el sistema.
    */
   cuotas?: readonly CuotaDelComprobante[];
+  /**
+   * En qué moneda quedó la deuda. La fija la venta, no el papel (D62).
+   *
+   * Va aparte de la moneda en la que se imprime el comprobante porque **no son
+   * la misma pregunta**: una venta en dólares con descuento se imprime en pesos
+   * —restar un descuento cargado en pesos de un precio en dólares exigiría
+   * convertir— y sin embargo se debe en dólares, que es lo que acordaron. Sin
+   * este dato, las cuotas de US$ 262,50 salían impresas como «$ 262,50».
+   */
+  monedaDeLaDeuda?: 'ARS' | 'USD';
   nota?: string | null;
   /**
    * El comprobante de una venta cobrada sin conexión (D56).
@@ -188,7 +198,33 @@ export function generarTicket(
   const entregadoCentavos = enDolares
     ? Math.round(totalCentavos * (1 - fiadoEnPesos / (datos.totalCentavos || 1)))
     : datos.totalCentavos - fiadoEnPesos;
-  const saldoCentavos = totalCentavos - entregadoCentavos;
+
+  /*
+   * El saldo va en la moneda de la DEUDA, que puede no ser la del papel.
+   *
+   * Y cuando hay cuotas, el saldo **son** las cuotas: su suma, no una cuenta
+   * aparte que podría quedar a un centavo. El cliente firma un papel donde el
+   * saldo y la suma de lo que va a pagar son el mismo número.
+   */
+  const cuotas = datos.cuotas ?? [];
+  const monedaDeLaDeuda = datos.monedaDeLaDeuda ?? (enDolares ? 'USD' : 'ARS');
+  const cifraDeLaDeuda = monedaDeLaDeuda === 'USD' ? formatearUSD : formatearARS;
+
+  /*
+   * Sin cuotas no hay cifra exacta de la deuda en su moneda —el papel no
+   * convierte—, así que el saldo sale en la moneda del papel y, si la deuda es
+   * en otra, el papel lo aclara en una línea. Con cuotas no hace falta
+   * aclarar nada: están impresas con su signo.
+   */
+  const saldoCentavos =
+    cuotas.length > 0
+      ? cuotas.reduce((n, c) => n + c.montoCentavos, 0)
+      : totalCentavos - entregadoCentavos;
+  const cifraDelSaldo = cuotas.length > 0 ? cifraDeLaDeuda : cifra;
+  const avisoDeMoneda =
+    saldoCentavos > 0 && monedaDeLaDeuda === 'USD' && !enDolares
+      ? 'El saldo quedó pactado en dólares.'
+      : null;
 
   /*
    * «Pagado» y no «cancelado».
@@ -201,7 +237,8 @@ export function generarTicket(
    */
   const leyenda =
     saldoCentavos > 0
-      ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifra(saldoCentavos)}`
+      ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifraDelSaldo(saldoCentavos)}` +
+        (avisoDeMoneda ? ` · ${avisoDeMoneda}` : '')
       : 'Pagado en su totalidad';
 
   const detalle = datos.lineas
@@ -221,7 +258,6 @@ export function generarTicket(
     })
     .join('');
 
-  const cuotas = datos.cuotas ?? [];
   const bloqueDeCuotas =
     cuotas.length > 0
       ? `
@@ -236,7 +272,7 @@ export function generarTicket(
     <div class="cuota">
       <span class="cuota-n">${c.numero}</span>
       <span class="cuota-fecha">Vence el ${escapar(fechaLarga(c.vencimiento))}</span>
-      <span class="cuota-monto">${escapar(cifra(c.montoCentavos))}</span>
+      <span class="cuota-monto">${escapar(cifraDeLaDeuda(c.montoCentavos))}</span>
     </div>`,
       )
       .join('')}
