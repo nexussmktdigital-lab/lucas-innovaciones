@@ -2154,3 +2154,38 @@ abrir. Un mensaje de error equivocado cuesta más que la falla que describe.
 Y el método que lo encontró en un minuto vale anotarlo: **abrirlo en incógnito**.
 Sin service worker registrado se ve el error de verdad en lugar de la pantalla de
 respaldo, y eso parte el problema en dos —servidor o caché— antes de tocar nada.
+
+## El buscador pedía el nombre exacto del proveedor
+
+Lo trajo el mostrador, no un test: «si pongo *cargador mega* no me sale, porque
+se llama *cargador Foxbox Mega*; lo tengo que poner en el orden exacto».
+
+El término viajaba entero a la consulta, como una sola cadena: `%cargador mega%`
+sobre el nombre. «Cargador Fox Box MEGA 20W» no la contiene —entre una palabra y
+la otra hay «Fox Box»—, así que no aparecía nada. Para encontrar un producto que
+tenía en la mano, el vendedor tenía que acertar cómo lo había escrito el
+proveedor.
+
+Y la otra mitad del problema era la misma causa vista al revés: con **una** sola
+palabra —la marca— salían los cargadores, los cables y los auriculares juntos, y
+había que recorrer la lista con gente esperando. Agregar una segunda palabra para
+achicar la lista no funcionaba: la vaciaba.
+
+Es una línea de código, y estuvo ahí desde la fase 2. Ningún test la encontró
+porque todos los términos de prueba eran de una palabra, o de dos que estaban
+pegadas en el nombre —«vidrio templado», «templado 9d»—. Un catálogo de prueba
+con nombres cortos y prolijos no se parece al catálogo real, donde los nombres
+los escribe el proveedor y llevan la marca en el medio.
+
+Lo que me deja es cuánto más barato habría sido escuchar esto antes. No es una
+falla que se vea en un test ni en una auditoría de invariantes: se ve en los diez
+segundos que el vendedor pierde cada vez, veinte veces por día, y que nunca
+reportó porque ya había aprendido a convivir con eso —primero la marca, después
+recorrer la lista—. Las fallas que la gente aprende a esquivar no aparecen en
+ningún tablero.
+
+De paso apareció una diferencia vieja entre los dos buscadores: el de la tablet
+tenía el código de barras entre los campos de texto, así que **cinco dígitos
+sueltos encontraban el producto sin internet y no con internet**. El servidor lo
+compara entero y nunca por pedazos. Ahora los dos hacen lo mismo, y el test de
+paridad lo cubre con un término nuevo.

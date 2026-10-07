@@ -65,6 +65,18 @@ beforeEach(async () => {
         precioCentavos: 300_000,
         stock: 7,
       },
+      // El caso que trajo el mostrador: lo que uno recuerda —«cargador» y
+      // «mega»— está separado por el nombre del proveedor.
+      {
+        wooId: 5,
+        nombre: 'Cargador Fox Box MEGA 30w C/ cable Lightning',
+        sku: 'CAR-FOX-FOX-2',
+        marca: 'FoxBox',
+        precioCentavos: 1_100_000,
+        // En cero, igual que el otro Fox Box: así el test del filtro de stock
+        // sigue probando lo suyo.
+        stock: 0,
+      },
     ])
     .returning();
 
@@ -97,7 +109,7 @@ describe('la instantanea', () => {
      * la reemplaza por ella. Es lo correcto —lo que se vende es la variación,
      * no el padre— y lo mismo que se ve con conexión.
      */
-    expect(i.productos.length).toBe(4);
+    expect(i.productos.length).toBe(5);
     expect(i.productos.some((p) => p.nombre === 'Funda antigolpe — Negra')).toBe(true);
     expect(i.productos.some((p) => p.nombre === 'Funda antigolpe')).toBe(false);
     // El cargador está sin stock y viene igual: se puede necesitar buscarlo.
@@ -127,7 +139,24 @@ describe('la instantanea', () => {
 });
 
 describe('buscar sin conexion da lo mismo que con conexion', () => {
-  const terminos = ['vidrio', 'vidrio templado', 'fox', 'funda', '531', 'negra', 'templado 9d'];
+  const terminos = [
+    'vidrio',
+    'vidrio templado',
+    'fox',
+    'funda',
+    '531',
+    'negra',
+    'templado 9d',
+    // Palabras sueltas, en cualquier orden, repartidas entre nombre y marca.
+    'cargador mega',
+    'mega cargador',
+    'cargador foxbox',
+    'lightning 30w cargador',
+    'funda negra',
+    'vidrio generico',
+    // Un pedazo de código de barras no encuentra nada, por los dos caminos.
+    '77900',
+  ];
 
   it.each(terminos)('«%s» devuelve el mismo orden por los dos caminos', async (termino) => {
     const conServidor = await buscarProductos(db, termino, { incluirSinStock: true });
@@ -135,6 +164,43 @@ describe('buscar sin conexion da lo mismo que con conexion', () => {
     const sinConexion = buscarEnCache(productos, termino, { incluirSinStock: true });
 
     expect(sinConexion.map((p) => p.nombre)).toEqual(conServidor.map((p) => p.nombre));
+  });
+
+  it('encuentra con dos palabras sueltas, en cualquier orden', async () => {
+    /*
+     * El pedido del mostrador, tal cual llegó: «si pongo cargador mega no me
+     * sale, porque se llama cargador Foxbox Mega; lo tengo que poner en el
+     * orden exacto». Con el término entero como una sola cadena, «cargador
+     * mega» pedía que las dos palabras estuvieran pegadas.
+     */
+    const { productos } = await instantanea();
+
+    for (const termino of ['cargador mega', 'mega cargador', 'mega 30w lightning']) {
+      const r = buscarEnCache(productos, termino, { incluirSinStock: true });
+      expect(r.map((p) => p.nombre)).toEqual(['Cargador Fox Box MEGA 30w C/ cable Lightning']);
+    }
+  });
+
+  it('cada palabra que se agrega achica la lista, no la vacía', async () => {
+    /*
+     * La otra mitad del pedido: con una sola palabra —la marca— salen los
+     * cargadores, los cables y los auriculares, y hay que recorrer la lista con
+     * gente esperando.
+     */
+    const { productos } = await instantanea();
+    const soloLaMarca = buscarEnCache(productos, 'fox', { incluirSinStock: true });
+    const conDosPalabras = buscarEnCache(productos, 'fox mega', { incluirSinStock: true });
+
+    expect(soloLaMarca.length).toBeGreaterThan(conDosPalabras.length);
+    expect(conDosPalabras).toHaveLength(1);
+  });
+
+  it('una palabra puede estar en el nombre y la otra en la marca', async () => {
+    const { productos } = await instantanea();
+    const r = buscarEnCache(productos, 'cargador foxbox', { incluirSinStock: true });
+
+    // «Cargador» está en el nombre; «FoxBox», solo en la marca.
+    expect(r.map((p) => p.nombre)).toEqual(['Cargador Fox Box MEGA 30w C/ cable Lightning']);
   });
 
   it('el codigo de barras exacto gana, que es lo que dispara el lector', async () => {

@@ -11,7 +11,7 @@
  * servidor: primero la coincidencia exacta de código o SKU, después las de
  * texto, y entre esas la del nombre más corto.
  */
-import { normalizar } from '@/lib/texto';
+import { normalizar, palabrasDeBusqueda } from '@/lib/texto';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
 
 /**
@@ -58,11 +58,15 @@ export function estaVieja(instantanea: Instantanea, ahora: Date = new Date()): b
  * del servidor corre contra el SKU del producto **y** el de la variación, así
  * que tipear el del padre encuentra la variación. Sin él acá, el mismo término
  * encontraría la funda con internet y no sin él.
+ *
+ * El código de barras **no** va: el servidor lo compara entero y nunca por
+ * pedazos (`= $1`, no `LIKE`). Acá estaba entre los campos buscables, así que
+ * tipear los primeros cinco dígitos de un código encontraba el producto sin
+ * internet y no lo encontraba con internet. Lo exacto lo resuelve `esExacto`,
+ * que es el camino del lector.
  */
 function camposBuscables(p: ProductoEnCache): string {
-  return normalizar(
-    [p.nombre, p.sku ?? '', p.skuProducto ?? '', p.marca ?? '', p.codigoBarras ?? ''].join(' '),
-  );
+  return normalizar([p.nombre, p.sku ?? '', p.skuProducto ?? '', p.marca ?? ''].join(' '));
 }
 
 function esExacto(p: ProductoEnCache, termino: string): boolean {
@@ -94,9 +98,16 @@ export function buscarEnCache(
 
   const limite = opciones.limite ?? 20;
 
+  // Todas las palabras, en cualquier orden y en cualquier campo, igual que el
+  // servidor: las dos búsquedas parten el término con la misma función, que es
+  // lo que garantiza que encuentren lo mismo con y sin internet (D56).
+  const palabras = palabrasDeBusqueda(termino);
+
   const encontrados = productos.filter((p) => {
     if (!opciones.incluirSinStock && p.gestionaStock && disponibleDe(p) <= 0) return false;
-    return esExacto(p, limpio) || camposBuscables(p).includes(limpio);
+    if (esExacto(p, limpio)) return true;
+    const campos = camposBuscables(p);
+    return palabras.every((palabra) => campos.includes(palabra));
   });
 
   return encontrados
