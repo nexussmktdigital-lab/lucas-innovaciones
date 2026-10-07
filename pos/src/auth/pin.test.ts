@@ -72,11 +72,15 @@ describe('permisos', () => {
     expect(puede('seller', 'usuario.administrar')).toBe(false);
   });
 
-  it('ni cobra igual una ficha mal cargada: eso se arregla, no se fuerza', () => {
-    // Escribir un precio sí es suyo; forzar el iPhone con la cifra en dólares
-    // leída como pesos, no. Son dos cosas distintas y por eso son dos permisos.
+  it('cobra igual una ficha mal cargada, que antes lo dejaba sin vender', () => {
+    /*
+     * Era del dueño y se abrió: con la ficha mal cargada el vendedor no podía
+     * cobrar NADA de ese carrito, con el cliente enfrente y el dueño sin estar.
+     * Sigue siendo un clic aparte, sobre un cartel que explica qué tiene mal la
+     * ficha, y sigue quedando anotado quién lo apretó.
+     */
     expect(puede('seller', 'venta.editar_precio')).toBe(true);
-    expect(puede('seller', 'venta.forzar_ficha_dudosa')).toBe(false);
+    expect(puede('seller', 'venta.forzar_ficha_dudosa')).toBe(true);
     expect(puede('owner', 'venta.forzar_ficha_dudosa')).toBe(true);
   });
 

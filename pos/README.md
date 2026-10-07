@@ -209,11 +209,16 @@ Lo que sí protege sigue estando, y no es un permiso:
     no protegía nada, porque el descuento no pasa por esta guarda y habría
     empujado a rebajar por el campo que se ve menos.
   - **Una ficha mal cargada** —el iPhone con la cifra en dólares leída como
-    pesos— sigue siendo del dueño: ahí nadie eligió ese precio, y lo que
-    corresponde no es cobrar igual sino arreglar la ficha.
+    pesos— era del dueño, porque ahí nadie eligió ese precio y lo que
+    corresponde no es cobrar igual sino arreglar la ficha. **Se abrió al
+    mostrador**: frenar del todo dejaba al vendedor sin poder cobrar nada de
+    ese carrito, con el cliente enfrente y el dueño sin estar. El cartel sigue
+    saltando y explicando qué tiene mal la ficha; cobrar igual es un clic
+    aparte.
 
   El filtro está en el dominio, no en la pantalla, y la bitácora guarda cuál de
-  los dos se confirmó.
+  los dos se confirmó y quién lo confirmó. Volver a reservarlo al dueño es
+  agregar una línea en `src/auth/permisos.ts`.
 - **Cada venta, cada anulación y cada precio escrito quedan con su autor.**
 
 La lista de `src/auth/permisos.ts` es la de las **excepciones**, no la de lo
@@ -279,8 +284,8 @@ que es otra cosa.
 unidades; el precio lo reconstruye el servidor leyendo el catálogo o la
 variación. Un navegador manipulado no puede cambiar un precio: el precio escrito
 solo se acepta en productos editables **y** de parte de quien tenga el permiso,
-saltear la guarda de precios sospechosos solo se lo permite al dueño, y una
-variación que no sea de ese producto se rechaza. Nada de eso lo decide la
+saltear la guarda de precios sospechosos pide un clic aparte que queda con el
+nombre de quien lo dio, y una variación que no sea de ese producto se rechaza. Nada de eso lo decide la
 pantalla.
 
 **El precio en pesos de un producto en dólares se calcula, no se tipea.** Es la
@@ -1827,7 +1832,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Dos entradas seguidas del mismo producto suman las dos | `src/catalogo/stock.test.ts` |
 | Reactivar dos veces no escribe dos veces en la bitácora | `src/catalogo/stock.test.ts` |
 | El catálogo se busca, y lo que no está lleva derecho a cargarlo | `e2e/alta.spec.ts` |
-| El vendedor escribe precios, pero no fuerza una ficha mal cargada | `src/auth/pin.test.ts`, `e2e/calidad.spec.ts` |
+| El vendedor escribe precios y, sobre el cartel, también puede cobrar una ficha mal cargada | `src/auth/pin.test.ts`, `e2e/calidad.spec.ts` |
+| Cobrar a sabiendas queda en la bitácora, y dice cuál de las dos sospechas se confirmó | `src/ventas/confirmar.test.ts` |
 | Confirmar «escritas» no fuerza una sospecha de catálogo, ni desde el navegador | `src/ventas/confirmar.test.ts` |
 | El log de auditoría no se puede modificar ni borrar | `src/db/esquema.test.ts` |
 | Cancelar no borra: `DELETE` bloqueado en ventas, stock y caja | `src/db/esquema.test.ts` |

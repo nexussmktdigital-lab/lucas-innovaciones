@@ -96,15 +96,16 @@ export default function Cobro({
   const [plan, setPlan] = useState<PlanElegido | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Precio sospechoso: el dueño tiene que decidir a sabiendas. */
+  /** Precio sospechoso: quien está cobrando decide a sabiendas. */
   const [aConfirmar, setAConfirmar] = useState<string | null>(null);
   /**
-   * Lo mismo, pero visto por el vendedor, que no lo puede saltear.
+   * Lo mismo, pero cuando el servidor dice que no se puede cobrar igual.
    *
-   * Antes acá se mostraba el error y nada más: el botón seguía habilitado y
-   * cada clic volvía a fallar igual, con un cliente esperando del otro lado.
-   * Ahora se dice qué hacer y el botón queda trabado hasta que el carrito
-   * cambie, que es lo único que puede destrabarlo.
+   * Hoy no pasa con un precio sospechoso: el mostrador puede seguir de largo y
+   * queda anotado quién lo hizo. Queda como salida para cualquier negativa del
+   * servidor que no ofrezca confirmación: antes acá se mostraba el error y
+   * nada más, el botón seguía habilitado y cada clic volvía a fallar igual,
+   * con un cliente esperando del otro lado.
    */
   const [trabado, setTrabado] = useState<string | null>(null);
   const clave = useRef(nuevaClave());
@@ -549,8 +550,7 @@ export default function Cobro({
             <p className="mt-1 text-sm">{trabado}</p>
             <p className="mt-2 text-sm">
               <strong>Qué hacer:</strong> sacá ese producto del carrito y cobrá el resto. Para
-              venderlo, el precio lo tiene que corregir el dueño en el catálogo —o confirmarlo él
-              desde su usuario.
+              venderlo, el precio hay que corregirlo en el catálogo.
             </p>
             <button
               type="button"
