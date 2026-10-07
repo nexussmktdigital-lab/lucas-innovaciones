@@ -24,7 +24,8 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
-const DATOS = path.join(AQUI, 'datos');
+// LI_DATOS permite una tanda aparte (p. ej. las fotos por color) sin mezclar el estado.
+const DATOS = process.env.LI_DATOS ? path.resolve(process.env.LI_DATOS) : path.join(AQUI, 'datos');
 const CANDIDATOS = path.join(DATOS, 'candidatos');
 fs.mkdirSync(CANDIDATOS, { recursive: true });
 
@@ -117,6 +118,8 @@ function esOficial(url, marca) {
  * genérico (la foto es la misma para todos los usados de ese modelo).
  */
 function consulta(p) {
+	// Una consulta armada a mano (p. ej. con el color oficial) manda sobre la automática.
+	if (p.consulta) return p.consulta;
 	const iphone = p.nombre.match(/^\s*iphone\s+(\d+\w?|se|x[rs]?)(\s+(pro max|pro|plus|mini|max|e))?/i);
 	if (iphone) return `Apple iPhone ${iphone[1]}${iphone[2] ? ' ' + iphone[3] : ''}`.replace(/\s+/g, ' ').trim();
 
