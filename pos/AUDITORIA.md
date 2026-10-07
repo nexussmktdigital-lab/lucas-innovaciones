@@ -2189,3 +2189,32 @@ tenía el código de barras entre los campos de texto, así que **cinco dígitos
 sueltos encontraban el producto sin internet y no con internet**. El servidor lo
 compara entero y nunca por pedazos. Ahora los dos hacen lo mismo, y el test de
 paridad lo cubre con un término nuevo.
+
+## La trampa de leer las cuotas por el cliente y no por la venta
+
+No es un error que llegó a producción: lo frenó un test antes de que existiera
+la pantalla, y vale anotarlo porque es **el mismo error que ya se cometió una
+vez** —el semáforo de Fiado sumando pesos con dólares— y la causa es idéntica.
+
+La ficha de una venta tiene que mostrar en qué cuotas quedó esa compra. El dato
+está a dos saltos: la venta tiene cliente, el cliente tiene cuenta, la cuenta
+tiene cuotas. Ese camino es el natural, está escrito en media docena de
+consultas del sistema, y es el equivocado: quien compró tres veces tiene tres
+planes sobre la misma cuenta, así que cada una de las tres fichas mostraría las
+nueve cuotas. Las tres pantallas se leerían perfectas y las tres mentirían.
+
+El camino correcto es el corto: el plan apunta a la venta. Una línea de
+diferencia.
+
+Lo que hizo que se viera fue escribir el test con **dos** ventas fiadas del
+mismo cliente y no con una. Con una sola venta las dos consultas devuelven
+exactamente lo mismo, para siempre; el test pasa, la pantalla miente el día que
+alguien compra dos veces, y no hay manera de que el test avise nunca. Pasa igual
+con un solo producto en el carrito, un solo pago, un solo turno: **el fixture de
+a uno no distingue entre «lo correcto» y «lo que da lo mismo cuando hay uno»**.
+Es la forma de agujero que más veces apareció en este proyecto.
+
+Después, al revés: se rompió la consulta a propósito —sacarle el filtro de la
+venta, sacarle el de los planes anulados, hacer que el turno figure siempre
+abierto, dejar que el vuelto salga de una transferencia— y cada rotura tiene un
+test que la encuentra. Un guardián que no se probó roto es un comentario.

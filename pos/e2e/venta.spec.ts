@@ -298,6 +298,43 @@ test('el historial muestra otros días y deja reimprimir el comprobante', async 
   await expect(fila.getByRole('link', { name: /Ver e imprimir/ })).toBeVisible();
 });
 
+test('la ficha de la venta cuenta lo que el comprobante no dice', async ({ page }) => {
+  /*
+   * «Elijo la venta para ver los detalles»: lo que falta cuando el cliente
+   * vuelve es lo de adentro —con qué pagó, cuánto se le dio de vuelto—, que el
+   * comprobante no imprime a propósito.
+   */
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  // Paga con un billete de $50.000: tiene que quedar vuelto.
+  await cobro.getByLabel('Monto en Efectivo').first().fill('50000');
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/ventas');
+  await page.getByRole('listitem').first().getByRole('link', { name: 'Ver la venta' }).click();
+
+  await expect(page.getByRole('heading', { name: /^Venta / })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Qué se vendió' })).toBeVisible();
+  await expect(page.getByText(/Vidrio templado/).first()).toBeVisible();
+
+  // Acá sí van los medios de pago, y el vuelto deducido de ellos.
+  const pagos = page.getByRole('heading', { name: 'Cómo se pagó' }).locator('..');
+  await expect(pagos).toContainText('Efectivo');
+  await expect(pagos).toContainText('$ 50.000,00');
+  await expect(pagos).toContainText('Vuelto');
+
+  // Y desde la ficha se reimprime o se anula, que es la venta del turno abierto.
+  await expect(page.getByRole('link', { name: /Ver e imprimir/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Anular' })).toBeVisible();
+});
+
 test('el dueño anula una venta del turno y todo vuelve atrás', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
