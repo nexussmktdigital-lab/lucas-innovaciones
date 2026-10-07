@@ -209,6 +209,78 @@ describe('la venta fiada', () => {
     expect(t).toContain('queda un saldo de US$ 750,00');
   });
 
+  it('el saldo es exactamente la suma de las cuotas, no una cuenta aparte', () => {
+    /*
+     * El cliente firma un papel donde «queda un saldo de X» y las cuotas que
+     * va a pagar tienen que dar el mismo número. Sacarlo por diferencia contra
+     * el total los dejaba a un centavo de distancia cuando el reparto no era
+     * exacto, y un centavo en un papel firmado es una discusión.
+     */
+    const t = txt(
+      generarTicket({
+        ...IPHONE,
+        fiadoCentavos: 235_650_000,
+        monedaDeLaDeuda: 'USD',
+        // US$ 1.500 en tres: 500,00 + 500,00 + 500,00.
+        cuotas: [
+          { numero: 1, vencimiento: '2026-11-06', montoCentavos: 50_000 },
+          { numero: 2, vencimiento: '2026-12-06', montoCentavos: 50_000 },
+          { numero: 3, vencimiento: '2027-01-06', montoCentavos: 50_000 },
+        ],
+      }),
+    );
+
+    expect(t).toContain('queda un saldo de US$ 1.500,00');
+  });
+
+  it('las cuotas van en la moneda de la DEUDA, no en la del papel', () => {
+    /*
+     * El caso que esto vino a arreglar. Un iPhone en dólares con descuento se
+     * imprime en pesos —restar un descuento cargado en pesos de un precio en
+     * dólares exigiría convertir— pero la deuda sigue siendo en dólares,
+     * porque así se vendió. Las cuotas de US$ 262,50 salían impresas como
+     * «$ 262,50»: seiscientas treinta veces menos, en el papel que se firma.
+     */
+    const t = txt(
+      generarTicket({
+        ...IPHONE,
+        descuentoCentavos: 5_000_000,
+        totalCentavos: 230_650_000,
+        fiadoCentavos: 230_650_000,
+        monedaDeLaDeuda: 'USD',
+        cuotas: [
+          { numero: 1, vencimiento: '2026-11-06', montoCentavos: 73_385 },
+          { numero: 2, vencimiento: '2026-12-06', montoCentavos: 73_385 },
+        ],
+      }),
+    );
+
+    // El cuerpo en pesos, que es como se cobró con el descuento adentro.
+    expect(t).toContain('$ 2.306.500,00');
+    // Y la deuda en dólares, que es lo que se pactó.
+    expect(t).toContain('US$ 733,85');
+    expect(t).toContain('queda un saldo de US$ 1.467,70');
+    expect(t).toContain('El saldo quedó pactado en dólares');
+  });
+
+  it('una venta en pesos con plan sigue teniendo sus cuotas en pesos', () => {
+    const t = txt(
+      generarTicket({
+        ...BASE,
+        fiadoCentavos: 1_000_000,
+        monedaDeLaDeuda: 'ARS',
+        cuotas: [
+          { numero: 1, vencimiento: '2026-11-06', montoCentavos: 500_000 },
+          { numero: 2, vencimiento: '2026-12-06', montoCentavos: 500_000 },
+        ],
+      }),
+    );
+
+    expect(t).toContain('$ 5.000,00');
+    expect(t).not.toContain('US$');
+    expect(t).not.toContain('pactado en dólares');
+  });
+
   it('lista las cuotas con su fecha y su monto', () => {
     const t = txt(
       generarTicket({

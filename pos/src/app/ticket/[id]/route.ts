@@ -17,6 +17,7 @@ import {
 } from '@/db/schema';
 import { aFechaISO } from '@/fiado/plan';
 import { generarTicket } from '@/ventas/ticket';
+import { ventaEnDolares } from '@/ventas/carrito';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -94,11 +95,21 @@ export async function GET(
       numero: installments.numero,
       vencimiento: installments.vencimiento,
       montoCentavos: installments.montoCentavos,
+      moneda: creditPlans.moneda,
     })
     .from(installments)
     .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
     .where(and(eq(creditPlans.saleId, id), isNull(creditPlans.anuladoEn)))
     .orderBy(asc(installments.numero));
+
+  /*
+   * En qué moneda quedó la deuda (D62).
+   *
+   * La fuente es el plan, que es donde el sistema la guarda. Sin plan —el
+   * fiado «cuando pueda», sin fechas— la responde la misma función que usa la
+   * confirmación de la venta, así que el papel y el sistema no pueden diferir.
+   */
+  const monedaDeLaDeuda = cuotas[0]?.moneda ?? (ventaEnDolares(lineas) ? 'USD' : 'ARS');
 
   const html = generarTicket({
     numero: venta.numero,
@@ -115,6 +126,7 @@ export async function GET(
       vencimiento: aFechaISO(c.vencimiento),
       montoCentavos: c.montoCentavos,
     })),
+    monedaDeLaDeuda,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
   });
 

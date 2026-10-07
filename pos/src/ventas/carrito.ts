@@ -213,6 +213,31 @@ export function netoDeLinea(l: LineaCarrito): number {
   return Math.max(0, brutoDeLinea(l) - l.descuentoCentavos);
 }
 
+/**
+ * ¿Esta venta se debe en dólares? (D62)
+ *
+ * El carrito tiene que estar **entero** en dólares. Uno mezclado —un iPhone y
+ * una funda— queda en pesos: inventar una deuda en dólares sobre un carrito que
+ * tiene cosas en pesos haría que la funda también siga al dólar, que nadie
+ * pactó.
+ *
+ * El descuento **no** cuenta acá, aunque se cargue en pesos: lo que decide la
+ * moneda de la deuda es qué se vendió. Que el comprobante salga impreso en
+ * pesos cuando hubo descuento —porque restar pesos de un precio en dólares
+ * exigiría convertir— es otra decisión, y son dos cosas distintas: una venta
+ * con descuento se imprime en pesos y la deuda sigue siendo en dólares.
+ *
+ * Vive acá, y no adentro de la confirmación, porque el comprobante tiene que
+ * responder exactamente lo mismo. Dos implementaciones de esta pregunta se
+ * separan en la primera corrida del dólar, y ahí el papel y el sistema dejan de
+ * hablar de la misma deuda.
+ */
+export function ventaEnDolares(
+  lineas: readonly { monedaOriginal: 'ARS' | 'USD' }[],
+): boolean {
+  return lineas.length > 0 && lineas.every((l) => l.monedaOriginal === 'USD');
+}
+
 /** Resuelve un descuento (monto o porcentaje) contra una base. */
 export function resolverDescuento(d: Descuento | null, baseCentavos: number): number {
   if (!d) return 0;

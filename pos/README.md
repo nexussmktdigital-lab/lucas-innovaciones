@@ -482,6 +482,14 @@ Tres reglas sobre qué sale impreso, las tres pedidas por el local:
   interno; en el papel va lo que entregó y lo que queda debiendo. Con cuotas, va
   además cada vencimiento con su monto: sin eso el cliente no sabe cuándo tiene
   que volver, y la fecha la discute cada uno de memoria.
+- **El saldo y las cuotas van en la moneda de la deuda, que puede no ser la del
+  papel.** Son dos preguntas distintas: un iPhone en dólares **con descuento**
+  se imprime en pesos —restar un descuento cargado en pesos de un precio en
+  dólares exigiría convertir— y sin embargo se debe en dólares, porque así se
+  vendió (D62). El comprobante entonces sale con el cuerpo en pesos, las cuotas
+  en dólares y una línea que lo dice. El saldo impreso es **exactamente la suma
+  de las cuotas**, no una cuenta aparte: el cliente firma un papel donde los dos
+  números coinciden.
 - **Quién atendió tampoco.** Está en el sistema, que es donde se consulta.
 
 El plazo de garantía queda **en blanco a propósito**, con una raya para
@@ -1728,6 +1736,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un carrito mezclado, o con descuento, se imprime en pesos | `src/ventas/ticket.test.ts` |
 | El comprobante no dice con qué medios se pagó ni quién atendió | `src/ventas/ticket.test.ts` |
 | Con plan, lista cada cuota con su fecha y su monto | `src/ventas/ticket.test.ts` |
+| Las cuotas van en la moneda de la deuda, aunque el papel salga en pesos | `src/ventas/ticket.test.ts` |
+| El saldo impreso es exactamente la suma de las cuotas | `src/ventas/ticket.test.ts` |
+| La boleta del iPhone fiado en dólares no lleva ni una cifra en pesos | `e2e/fiado-dolares.spec.ts` |
+| La moneda de la deuda la decide una sola función, que comparten venta y papel | `src/ventas/carrito.test.ts` |
 | La garantía va en blanco, para escribirla a mano | `src/ventas/ticket.test.ts` |
 | Venta completa desde el navegador, con vuelto y ticket | `e2e/venta.spec.ts` |
 | El iPhone cargado en pesos con la cifra del dólar frena la venta | `src/ventas/cordura.test.ts`, `e2e/calidad.spec.ts` |

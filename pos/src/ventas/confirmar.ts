@@ -39,6 +39,7 @@ import {
   calcularTotales,
   problemasDelCobro,
   stockDisponible,
+  ventaEnDolares,
   type Descuento,
   type LineaCarrito,
   type MedioPago,
@@ -660,14 +661,13 @@ export async function confirmarVenta(
        * la venta, el papel y el sistema se separan en la primera corrida del
        * dólar y el sistema le dice «pagaste todo» a alguien que todavía debe.
        *
-       * El carrito tiene que estar **entero** en dólares. Uno mezclado —un
-       * iPhone y una funda— queda en pesos: inventar una deuda en dólares sobre
-       * un carrito que tiene cosas en pesos sería hacer que la funda también
-       * siga al dólar, que nadie pactó.
+       * La pregunta la responde `ventaEnDolares`, en el carrito, porque el
+       * comprobante tiene que responder exactamente lo mismo: dos versiones de
+       * esta regla se separan en la primera corrida del dólar.
        */
-      const ventaEnDolares = lineas.length > 0 && lineas.every((l) => l.monedaOriginal === 'USD');
+      const enDolares = ventaEnDolares(lineas);
 
-      if (ventaEnDolares && !tcCentavos) {
+      if (enDolares && !tcCentavos) {
         throw new ErrorVenta(
           'No hay cotización cargada y esta venta se fía en dólares. Cargá el tipo de cambio antes de vender.',
           'datos_invalidos',
@@ -676,14 +676,14 @@ export async function confirmarVenta(
 
       // Lo fiado viene en pesos, que es como se cobra. En dólares, la deuda son
       // los dólares que esos pesos valen al cambio de esta venta, sin redondear.
-      const deudaCentavos = ventaEnDolares
+      const deudaCentavos = enDolares
         ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
         : fiadoCentavos;
 
       const deuda = await anotarDeuda(tx, {
         customerId: solicitud.clienteId,
         montoCentavos: deudaCentavos,
-        moneda: ventaEnDolares ? 'USD' : 'ARS',
+        moneda: enDolares ? 'USD' : 'ARS',
         saleId: ventaId,
         numero,
         usuarioId: solicitud.vendedorId,
@@ -704,7 +704,7 @@ export async function confirmarVenta(
           montoCentavos: deudaCentavos,
           cantidad: solicitud.plan.cuotas,
           cadencia: solicitud.plan.cadencia,
-          moneda: ventaEnDolares ? 'USD' : 'ARS',
+          moneda: enDolares ? 'USD' : 'ARS',
           desdeISO: fechaLocalISO(solicitud.diferida?.capturadaEn ?? new Date()),
           descripcion: `Venta ${numero}`,
         });

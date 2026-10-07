@@ -14,8 +14,9 @@ import { useRouter } from 'next/navigation';
 import { calcularCobro, calcularTotales, type Descuento, type LineaCarrito } from '@/ventas/carrito';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
 import { generarTicket } from '@/ventas/ticket';
+import { ventaEnDolares } from '@/ventas/carrito';
 import { cuotasDelPlan } from '@/fiado/plan';
-import { formatearARS, formatearUSD } from '@/lib/dinero';
+import { formatearARS, formatearUSD, pesosAUsdExacto } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import { registrarVenta } from '@/app/acciones-venta';
 import { useOffline } from '@/offline/use-offline';
@@ -307,6 +308,18 @@ export default function PantallaVenta({
       .reduce((n, p) => n + p.montoCentavos, 0);
 
     /*
+     * En qué moneda queda la deuda, con la misma regla que el servidor (D62).
+     *
+     * Sin esto, el papel que el cliente firma sin conexión decía las cuotas en
+     * pesos y el servidor, al subir la venta, armaba el plan en dólares: dos
+     * números distintos para la misma deuda, que es exactamente lo que el modo
+     * sin conexión no puede hacer (D56).
+     */
+    const deudaEnDolares = ventaEnDolares(lineas);
+    const deudaCentavos =
+      deudaEnDolares && tcCentavos ? pesosAUsdExacto(fiadoCentavos, tcCentavos) : fiadoCentavos;
+
+    /*
      * Las cuotas del plan que se acaba de pactar.
      *
      * Sin servidor no hay cuotas guardadas todavía, pero el acuerdo ya existe
@@ -315,10 +328,10 @@ export default function PantallaVenta({
      * que el cliente firma sin conexión no diría cuándo tiene que volver.
      */
     const cuotas = (() => {
-      if (!datos.plan || fiadoCentavos <= 0) return [];
+      if (!datos.plan || deudaCentavos <= 0) return [];
       try {
         return cuotasDelPlan(
-          fiadoCentavos,
+          deudaCentavos,
           datos.plan.cuotas,
           { frecuencia: datos.plan.frecuencia, dias: datos.plan.dias ?? null },
           fechaLocalISO(capturadaEn),
@@ -349,6 +362,7 @@ export default function PantallaVenta({
       totalCentavos: totales.totalCentavos,
       fiadoCentavos,
       cuotas,
+      monedaDeLaDeuda: deudaEnDolares ? 'USD' : 'ARS',
       provisional: true,
     });
 
