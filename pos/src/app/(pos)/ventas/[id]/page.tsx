@@ -312,9 +312,10 @@ export default async function PaginaDetalleDeVenta({
           Ver e imprimir el comprobante
         </a>
 
-        {/* El segundo papel de esta venta: el que lleva las cuotas y queda
-            firmado en el local. El del cliente no dice nada de la deuda. */}
-        {venta.cuotas.length > 0 ? (
+        {/* El segundo papel de esta venta: el que lleva el saldo —con cuotas o
+            sin ellas— y queda firmado en el local. El del cliente no dice nada
+            de la deuda, así que sin este no hay nada firmado. */}
+        {fiadoCentavos > 0 ? (
           <a
             href={`/ticket/${venta.id}?copia=acuerdo`}
             target="_blank"

@@ -321,6 +321,30 @@ export function generarTicket(
     </div>`
       : '';
 
+  /*
+   * El saldo sin plan: «cuando pueda», que es el fiado de toda la vida.
+   *
+   * Sin esto, una venta fiada sin fechas no tenía NINGÚN papel que dijera que
+   * el cliente debe: el suyo no habla de la deuda —a propósito— y el acuerdo
+   * solo existía si había cuotas. Se iba con el teléfono y no firmaba nada.
+   */
+  const bloqueDeSaldoSinPlan =
+    esAcuerdo && cuotas.length === 0 && saldoCentavos > 0
+      ? `
+  <section class="cuotas">
+    <div class="cuotas-encabezado">
+      <span class="etiqueta">SALDO</span>
+      <span class="detalle-chico">sin fechas pactadas</span>
+    </div>
+    ${bloqueDeRecargo}
+    <div class="cuota">
+      <span class="cuota-n"></span>
+      <span class="cuota-fecha">Queda debiendo</span>
+      <span class="cuota-monto">${escapar(cifraDeLaDeuda(saldoCentavos))}</span>
+    </div>
+  </section>`
+      : '';
+
   const bloqueDeCuotas =
     esAcuerdo && cuotas.length > 0
       ? `
@@ -550,14 +574,19 @@ export function generarTicket(
   </div>
 
   ${bloqueDeCuotas}
+  ${bloqueDeSaldoSinPlan}
 
   ${
     esAcuerdo
       ? `<section class="garantia">
     <span class="etiqueta">CONFORMIDAD</span>
     <p>
-      El cliente se compromete a abonar el saldo en las cuotas y fechas detalladas arriba. Esta
-      copia queda en el local; el comprobante de la compra se entrega por separado.
+      ${
+        cuotas.length > 0
+          ? 'El cliente se compromete a abonar el saldo en las cuotas y fechas detalladas arriba.'
+          : 'El cliente reconoce el saldo detallado arriba y se compromete a abonarlo. No se pactaron fechas de pago.'
+      }
+      Esta copia queda en el local; el comprobante de la compra se entrega por separado.
     </p>
   </section>`
       : `<section class="garantia">

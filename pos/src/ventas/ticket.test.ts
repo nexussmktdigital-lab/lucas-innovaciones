@@ -362,6 +362,41 @@ describe('el acuerdo de pago, que queda en el local', () => {
     expect(t).toContain('queda un saldo de US$ 1.650,00');
   });
 
+  it('sin cuotas también sale: el fiado «cuando pueda» se firma igual', () => {
+    /*
+     * Es el fiado más común del mostrador y era el que quedaba sin ningún
+     * papel: el del cliente no habla de la deuda —a propósito— y el acuerdo
+     * solo existía si había cuotas. El cliente se iba con el teléfono y no
+     * firmaba nada.
+     */
+    const t = acuerdo({ ...BASE, fiadoCentavos: 700_000 });
+
+    expect(t).toContain('ACUERDO DE PAGO');
+    expect(t).toContain('SALDO');
+    expect(t).toContain('sin fechas pactadas');
+    expect(t).toContain('Queda debiendo');
+    expect(t).toContain('$ 7.000,00');
+    expect(t).toContain('No se pactaron fechas de pago');
+    expect(t).toContain('Firma del cliente');
+  });
+
+  it('con cuotas no dice «sin fechas»: las fechas están ahí', () => {
+    const t = acuerdo({
+      ...BASE,
+      fiadoCentavos: 1_000_000,
+      cuotas: [{ numero: 1, vencimiento: '2026-11-06', montoCentavos: 1_000_000 }],
+    });
+    expect(t).not.toContain('sin fechas pactadas');
+    expect(t).toContain('Vence el 6 de noviembre de 2026');
+  });
+
+  it('una venta pagada entera no genera acuerdo que firmar', () => {
+    // Sin saldo no hay nada que reconocer: el bloque no se arma.
+    const t = acuerdo(BASE);
+    expect(t).not.toContain('Queda debiendo');
+    expect(t).not.toContain('SALDO');
+  });
+
   it('sin recargo no hay desglose: no hay nada que explicar', () => {
     const t = acuerdo({
       ...BASE,

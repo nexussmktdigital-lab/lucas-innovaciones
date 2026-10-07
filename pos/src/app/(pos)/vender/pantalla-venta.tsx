@@ -395,7 +395,7 @@ export default function PantallaVenta({
      * papel que respalda el saldo esperara a que vuelva internet, no lo firma
      * nadie.
      */
-    if (cuotas.length > 0) {
+    if (fiadoCentavos > 0) {
       setAcuerdoPendiente({
         numero: 'Pendiente',
         id: null,
@@ -449,9 +449,17 @@ export default function PantallaVenta({
     if (ventana) ventana.location.href = `/ticket/${r.ventaId}`;
     else setUltimoTicket({ id: r.ventaId, numero: r.numero });
 
-    // Con plan de cuotas hay un segundo papel que imprimir, y el momento de
-    // hacerlo es ahora: después el cliente ya se fue y no hay quién lo firme.
-    if (datos.plan) setAcuerdoPendiente({ numero: r.numero, id: r.ventaId, html: null });
+    /*
+     * Toda venta fiada tiene un segundo papel, haya cuotas o no.
+     *
+     * Antes salía solo con plan, y el fiado «cuando pueda» —que es el más
+     * común— quedaba sin ningún papel firmado: el del cliente no habla de la
+     * deuda a propósito, así que no quedaba nada. El momento de imprimirlo es
+     * ahora, con el cliente enfrente; después ya se fue y no hay quién firme.
+     */
+    if (datos.pagos.some((p) => p.medio === 'cuenta_corriente')) {
+      setAcuerdoPendiente({ numero: r.numero, id: r.ventaId, html: null });
+    }
 
     vaciar();
     setCobrando(false);
@@ -526,11 +534,11 @@ export default function PantallaVenta({
             className="mt-3 rounded-(--radius-caja) border-2 border-(--color-marca) bg-(--color-panel) p-3 text-sm"
           >
             <p className="font-semibold">
-              La venta {acuerdoPendiente.numero} quedó en cuotas: falta el acuerdo de pago
+              La venta {acuerdoPendiente.numero} quedó fiada: falta el acuerdo de pago
             </p>
             <p className="mt-0.5 text-(--color-tinta-media)">
-              El comprobante que se lleva el cliente no dice nada de las cuotas. Imprimí el
-              acuerdo, que lo firme, y guardalo: es lo que respalda el saldo.
+              El comprobante que se lleva el cliente no dice nada de la deuda. Imprimí el acuerdo,
+              que lo firme, y guardalo: es lo único que respalda el saldo.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               {acuerdoPendiente.id ? (
