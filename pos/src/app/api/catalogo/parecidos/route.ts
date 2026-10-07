@@ -14,6 +14,7 @@ import { auth } from '@/auth';
 import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { buscarParecidos } from '@/catalogo/crear';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,7 +31,19 @@ export async function GET(request: Request) {
   const termino = new URL(request.url).searchParams.get('q') ?? '';
 
   try {
-    return NextResponse.json({ parecidos: await buscarParecidos(db, termino) });
+    /*
+     * El dólar viaja con los resultados.
+     *
+     * Lo necesita el editor de precio para mostrar a cuánto queda en pesos un
+     * precio escrito en dólares, antes de guardarlo. Es una consulta más en una
+     * ruta que ya consulta, y evita pasarlo como prop por dos pantallas.
+     */
+    const [parecidos, cotizacion] = await Promise.all([
+      buscarParecidos(db, termino),
+      cotizacionVigente(db),
+    ]);
+
+    return NextResponse.json({ parecidos, tcCentavos: cotizacion?.valorCentavos ?? null });
   } catch (error) {
     console.error('[parecidos] Falló la búsqueda:', error);
     return NextResponse.json({ error: 'No se pudo buscar' }, { status: 500 });

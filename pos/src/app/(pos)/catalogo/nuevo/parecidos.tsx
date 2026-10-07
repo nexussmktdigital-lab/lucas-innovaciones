@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './sumar-stock';
 import CambiarPrecio from './cambiar-precio';
@@ -53,7 +53,11 @@ export default function Parecidos({
         signal,
       });
       if (!r.ok) throw new Error('No se pudo buscar');
-      return (await r.json()) as { parecidos: ProductoParecido[] };
+      return (await r.json()) as {
+        parecidos: ProductoParecido[];
+        /** El dólar del día, para escribir un precio en dólares. */
+        tcCentavos: number | null;
+      };
     },
     // Lo que importa es si existe, no el stock al segundo: media hora de caché
     // evita repetir la consulta mientras se completa el resto del formulario.
@@ -94,7 +98,13 @@ export default function Parecidos({
             {p.sku ? (
               <span className="tabular text-xs text-(--color-tinta-suave)">SKU {p.sku}</span>
             ) : null}
-            <span className="cifra ml-auto text-sm">{formatearARS(p.mostradorCentavos)}</span>
+            {/* Un producto en dólares se lee en dólares: es el precio que se
+                pactó, y el de pesos lo calcula el dólar del día. */}
+            <span className="cifra ml-auto text-sm">
+              {p.moneda === 'USD' && p.precioUsdCentavos
+                ? formatearUSD(p.precioUsdCentavos)
+                : formatearARS(p.mostradorCentavos)}
+            </span>
             <span className="w-full text-xs text-(--color-tinta-suave)">
               {p.activo ? (
                 p.gestionaStock ? (
@@ -127,7 +137,13 @@ export default function Parecidos({
                 servicio también aumenta. */}
             {puedeCambiarPrecio ? (
               <div className="w-full pt-1">
-                <CambiarPrecio productId={p.id} mostradorCentavos={p.mostradorCentavos} />
+                <CambiarPrecio
+                    productId={p.id}
+                    mostradorCentavos={p.mostradorCentavos}
+                    moneda={p.moneda}
+                    precioUsdCentavos={p.precioUsdCentavos}
+                    tcCentavos={data?.tcCentavos ?? null}
+                  />
               </div>
             ) : null}
           </li>

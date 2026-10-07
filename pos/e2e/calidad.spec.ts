@@ -170,6 +170,62 @@ test('al vendedor lo frena, le explica, y lo deja cobrar a sabiendas', async ({
   ).toBeVisible();
 });
 
+test('el iPhone mal cargado se arregla desde el catálogo, poniéndole dólares', async ({
+  page,
+}) => {
+  /*
+   * Va DESPUÉS de los dos que venden el iPhone mal cargado, a propósito: este
+   * arregla esa ficha, y los otros la necesitan rota. Los tests de este
+   * archivo comparten la base y corren en orden.
+   *
+   * El caso real: el local carga un usado que compró en dólares y la ficha
+   * queda en pesos con la cifra del dólar. Hasta acá la única forma de que una
+   * ficha quedara en dólares era que viniera así de WooCommerce, y un producto
+   * cargado en el mostrador no tenía arreglo desde el POS.
+   */
+  await entrarComoDuenio(page);
+  await page.goto('/catalogo');
+
+  await page.getByLabel('Buscar un producto').fill('iPhone 15 Pro Max 1TB');
+  const ficha = page
+    .getByRole('region', { name: 'Buscar en el catálogo' })
+    .locator('li')
+    .filter({ hasText: 'iPhone 15 Pro Max 1TB' })
+    .first();
+  await ficha.waitFor();
+  await ficha.getByRole('button', { name: 'Cambiar precio' }).click();
+
+  // Se elige dólares y se escribe el precio que se pactó, no los pesos de hoy.
+  await ficha.getByRole('button', { name: 'Precio en dólares' }).click();
+  await ficha.getByLabel('Precio de mostrador en dólares').fill('630');
+
+  // Antes de guardar dice a cuánto queda en pesos: es la cuenta que el
+  // mostrador haría a mano y que es justo donde se equivoca.
+  await expect(ficha.getByText(/Queda en \$/)).toBeVisible();
+
+  await ficha.getByRole('button', { name: 'Guardar precio' }).click();
+  await expect(ficha.getByText(/pasa a US\$\s?630,00/)).toBeVisible();
+
+  // Y en la venta ya sale en dólares, con las dos cifras.
+  await page.goto('/caja');
+  if (
+    await page
+      .getByRole('button', { name: 'Abrir caja' })
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await page.getByLabel('Efectivo inicial').fill('20000');
+    await page.getByRole('button', { name: 'Abrir caja' }).click();
+  }
+
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('iPhone 15 Pro Max 1TB');
+  const resultado = page.getByRole('button', { name: /iPhone 15 Pro Max 1TB/ }).first();
+  await resultado.waitFor();
+  await expect(resultado).toContainText('US$');
+});
+
 test('el vendedor ve las pantallas del mostrador, y solo Reportes le queda afuera', async ({
   page,
 }) => {

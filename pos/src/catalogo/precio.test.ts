@@ -272,4 +272,130 @@ describe('cambiar el precio', () => {
     expect(enBase!.precioCentavos).toBe(11_200_00);
     expect(await db.select().from(syncQueue)).toHaveLength(0);
   });
+
+  describe('un precio en dólares', () => {
+    /*
+     * Es el caso del mostrador: compran un iPhone usado en dólares y hasta acá
+     * la única forma de que la ficha quedara en dólares era que viniera así de
+     * WooCommerce. El que se carga en el local salía en pesos del día, y al
+     * otro día ya estaba mal.
+     */
+    const TC = 1_571_00;
+
+    it('guarda los dólares y calcula los pesos con el dólar del día', async () => {
+      const p = await producto({ precioCentavos: 11_200_00 });
+
+      const r = await cambiarPrecio(db, {
+        productId: p.id,
+        mostradorCentavos: 630_00,
+        moneda: 'USD',
+        tcCentavos: TC,
+        recargoTiendaBp: RECARGO,
+        usuarioId: duenio,
+      });
+
+      expect(r.moneda).toBe('USD');
+      expect(r.mostradorCentavos).toBe(630_00);
+
+      const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+      expect(enBase!.moneda).toBe('USD');
+      expect(enBase!.precioUsdCentavos).toBe(630_00);
+      // El de pesos es el calculado, no el que estaba.
+      expect(enBase!.precioCentavos).toBeGreaterThan(900_000_00);
+    });
+
+    it('sin cotización no se guarda: el precio en pesos saldría de la nada', async () => {
+      const p = await producto({ precioCentavos: 11_200_00 });
+
+      await expect(
+        cambiarPrecio(db, {
+          productId: p.id,
+          mostradorCentavos: 630_00,
+          moneda: 'USD',
+          tcCentavos: null,
+          recargoTiendaBp: RECARGO,
+          usuarioId: duenio,
+        }),
+      ).rejects.toThrow(/cotización/i);
+
+      const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+      expect(enBase!.precioCentavos).toBe(11_200_00);
+      expect(enBase!.moneda).toBe('ARS');
+    });
+
+    it('volver a pesos limpia el precio en dólares', async () => {
+      /*
+       * Si quedara puesto, el repreciado de la cotización lo tomaría como un
+       * producto en dólares y le pisaría el precio que se acaba de escribir.
+       */
+      const p = await producto({
+        precioCentavos: 900_000_00,
+        moneda: 'USD',
+        precioUsdCentavos: 630_00,
+      });
+
+      await cambiarPrecio(db, {
+        productId: p.id,
+        mostradorCentavos: 15_000_00,
+        moneda: 'ARS',
+        recargoTiendaBp: RECARGO,
+        usuarioId: duenio,
+      });
+
+      const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+      expect(enBase!.moneda).toBe('ARS');
+      expect(enBase!.precioUsdCentavos).toBeNull();
+    });
+
+    it('el recargo de la tienda no se le suma: lo repreciaría la cotización', async () => {
+      const p = await producto({ precioCentavos: 11_200_00 });
+
+      await cambiarPrecio(db, {
+        productId: p.id,
+        mostradorCentavos: 100_00,
+        moneda: 'USD',
+        tcCentavos: TC,
+        recargoTiendaBp: RECARGO,
+        usuarioId: duenio,
+      });
+
+      const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+      // US$ 100 al dólar del fixture, sin el 12% encima.
+      expect(enBase!.precioCentavos).toBeLessThan(160_000_00);
+    });
+
+    it('el techo también corre en dólares, convertido', async () => {
+      const p = await producto({ precioCentavos: 11_200_00 });
+
+      await expect(
+        cambiarPrecio(db, {
+          productId: p.id,
+          // US$ 100.000 al dólar del fixture pasan el techo con holgura.
+          mostradorCentavos: 100_000_00,
+          moneda: 'USD',
+          tcCentavos: TC,
+          recargoTiendaBp: RECARGO,
+          usuarioId: duenio,
+        }),
+      ).rejects.toMatchObject({ motivo: 'techo' });
+    });
+
+    it('la bitácora guarda en qué moneda y con qué dólar se escribió', async () => {
+      const p = await producto({ precioCentavos: 11_200_00 });
+
+      await cambiarPrecio(db, {
+        productId: p.id,
+        mostradorCentavos: 630_00,
+        moneda: 'USD',
+        tcCentavos: TC,
+        recargoTiendaBp: RECARGO,
+        usuarioId: duenio,
+      });
+
+      const [fila] = await db.select().from(auditLog);
+      const nuevo = fila!.valorNuevo as { moneda: string; tcCentavos: number };
+      expect(nuevo.moneda).toBe('USD');
+      expect(nuevo.tcCentavos).toBe(TC);
+    });
+  });
 });
