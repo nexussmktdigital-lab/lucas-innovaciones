@@ -304,6 +304,19 @@ export default async function PaginaDetalleDeVenta({
           Ver e imprimir el comprobante
         </a>
 
+        {/* El segundo papel de esta venta: el que lleva las cuotas y queda
+            firmado en el local. El del cliente no dice nada de la deuda. */}
+        {venta.cuotas.length > 0 ? (
+          <a
+            href={`/ticket/${venta.id}?copia=acuerdo`}
+            target="_blank"
+            rel="noopener"
+            className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) px-4 leading-[44px] font-medium"
+          >
+            Imprimir el acuerdo de pago
+          </a>
+        ) : null}
+
         {/* Anular solo dentro del turno abierto: la plata volvió a ese cajón y
             revertir contra una caja cerrada descuadraría dos arqueos (D29). */}
         {puedeAnular && !anulada ? (

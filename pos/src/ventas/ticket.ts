@@ -170,11 +170,31 @@ function montosEnDolares(datos: DatosDelTicket): boolean {
   );
 }
 
+/**
+ * Cuál de los dos papeles se imprime.
+ *
+ * Son dos documentos distintos de la MISMA venta, no dos ventas:
+ *
+ *  - `cliente`: lo que se lleva el cliente. El producto, su precio y la
+ *    garantía. **Nada de la deuda**: ni cuotas, ni frecuencia, ni saldo. Lo
+ *    pidió el local y el motivo es bueno: el papel del cliente es el del
+ *    teléfono, y si vuelve por garantía tiene que discutir un teléfono, no un
+ *    plan de pagos.
+ *  - `acuerdo`: el plan de pagos, con sus fechas y montos, para que lo firme y
+ *    **quede en el local**. Es lo que respalda el saldo el día que se discuta.
+ *
+ * Un solo papel no puede hacer las dos cosas: el que sirve para la garantía no
+ * tiene que hablar de la deuda, y el que respalda la deuda no se lo lleva el
+ * cliente.
+ */
+export type CopiaDelComprobante = 'cliente' | 'acuerdo';
+
 export function generarTicket(
   datos: DatosDelTicket,
-  opciones: { negocio?: DatosDelNegocio } = {},
+  opciones: { negocio?: DatosDelNegocio; copia?: CopiaDelComprobante } = {},
 ): string {
   const negocio = opciones.negocio ?? NEGOCIO_POR_DEFECTO;
+  const esAcuerdo = (opciones.copia ?? 'cliente') === 'acuerdo';
   const enDolares = montosEnDolares(datos);
   const cifra = enDolares ? formatearUSD : formatearARS;
 
@@ -235,10 +255,20 @@ export function generarTicket(
    * POS usa esa misma palabra para lo otro —una venta anulada—, así que la
    * ambigüedad ni siquiera es solo del idioma.
    */
+  /*
+   * Debajo del total.
+   *
+   * Con saldo, en la copia del cliente no va NADA: ni el saldo ni «pagado en
+   * su totalidad», que sería mentira y el peor error posible en un papel
+   * firmado —el cliente lo levantaría para decir que ya pagó—. Lo que debe
+   * está en el acuerdo, que es el papel que habla de la deuda.
+   */
   const leyenda =
     saldoCentavos > 0
-      ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifraDelSaldo(saldoCentavos)}` +
-        (avisoDeMoneda ? ` · ${avisoDeMoneda}` : '')
+      ? esAcuerdo
+        ? `Entregó ${cifra(entregadoCentavos)} y queda un saldo de ${cifraDelSaldo(saldoCentavos)}` +
+          (avisoDeMoneda ? ` · ${avisoDeMoneda}` : '')
+        : ''
       : 'Pagado en su totalidad';
 
   const detalle = datos.lineas
@@ -259,7 +289,7 @@ export function generarTicket(
     .join('');
 
   const bloqueDeCuotas =
-    cuotas.length > 0
+    esAcuerdo && cuotas.length > 0
       ? `
   <section class="cuotas">
     <div class="cuotas-encabezado">
@@ -285,7 +315,7 @@ export function generarTicket(
 <html lang="es-AR">
 <head>
 <meta charset="utf-8">
-<title>Comprobante ${escapar(datos.numero)}</title>
+<title>${esAcuerdo ? 'Acuerdo de pago' : 'Comprobante'} ${escapar(datos.numero)}</title>
 <style>
   @page { size: A4; margin: 0; }
 
@@ -431,7 +461,7 @@ export function generarTicket(
   <div class="regla"></div>
 
   <div class="titulo">
-    <span class="tipo acento">COMPROBANTE DE VENTA</span>
+    <span class="tipo acento">${esAcuerdo ? 'ACUERDO DE PAGO' : 'COMPROBANTE DE VENTA'}</span>
     <span class="numero">N.º ${escapar(datos.numero)}</span>
   </div>
 
@@ -487,14 +517,24 @@ export function generarTicket(
 
   ${bloqueDeCuotas}
 
-  <section class="garantia">
+  ${
+    esAcuerdo
+      ? `<section class="garantia">
+    <span class="etiqueta">CONFORMIDAD</span>
+    <p>
+      El cliente se compromete a abonar el saldo en las cuotas y fechas detalladas arriba. Esta
+      copia queda en el local; el comprobante de la compra se entrega por separado.
+    </p>
+  </section>`
+      : `<section class="garantia">
     <span class="etiqueta">GARANTÍA</span>
     <p>
       <span class="en-blanco"></span> desde la fecha de este comprobante, por fallas de
       funcionamiento. No cubre daño por golpe, humedad ni manipulación de terceros. El reclamo se
       hace en el local, presentando este comprobante.
     </p>
-  </section>
+  </section>`
+  }
 
   <div class="relleno"></div>
 
@@ -510,7 +550,7 @@ export function generarTicket(
   </div>
 
   <footer class="pie">
-    <span>Documento no válido como factura.</span>
+    <span>${esAcuerdo ? 'Copia para el local. Documento no válido como factura.' : 'Documento no válido como factura.'}</span>
     <span>Consultas y garantía: ${escapar(negocio.telefono ?? '')}</span>
   </footer>
 

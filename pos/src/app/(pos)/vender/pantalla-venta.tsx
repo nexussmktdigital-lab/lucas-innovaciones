@@ -121,6 +121,21 @@ export default function PantallaVenta({
   const [aviso, setAviso] = useState<string | null>(null);
   /** Solo se usa si el navegador bloqueó la ventana del comprobante. */
   const [ultimoTicket, setUltimoTicket] = useState<{ id: string; numero: string } | null>(null);
+  /**
+   * La venta fiada que acaba de entrar, para imprimir el acuerdo de pago.
+   *
+   * El comprobante que se lleva el cliente no dice nada de la deuda: ni cuotas
+   * ni saldo. Lo que respalda el saldo es este otro papel, que firma y queda en
+   * el local, y que hay que acordarse de imprimir con el cliente todavía
+   * enfrente. Por eso el aviso queda fijo hasta que se lo cierra.
+   */
+  const [acuerdoPendiente, setAcuerdoPendiente] = useState<{
+    numero: string;
+    /** Con conexión: la venta ya tiene id y el papel se pide al servidor. */
+    id: string | null;
+    /** Sin conexión: no hay id ni servidor, así que el papel ya viene armado. */
+    html: string | null;
+  } | null>(null);
   /** Lo mismo, pero sin conexión: el comprobante ya armado, que no vive en ningún servidor. */
   const [ticketSinConexion, setTicketSinConexion] = useState<string | null>(null);
   /**
@@ -344,7 +359,7 @@ export default function PantallaVenta({
       }
     })();
 
-    const comprobante = generarTicket({
+    const datosDelPapel = {
       numero: 'Pendiente',
       fecha: capturadaEn,
       cliente: todosLosClientes.find((c) => c.id === clienteId)?.nombre ?? null,
@@ -362,9 +377,25 @@ export default function PantallaVenta({
       totalCentavos: totales.totalCentavos,
       fiadoCentavos,
       cuotas,
-      monedaDeLaDeuda: deudaEnDolares ? 'USD' : 'ARS',
+      monedaDeLaDeuda: (deudaEnDolares ? 'USD' : 'ARS') as 'USD' | 'ARS',
       provisional: true,
-    });
+    };
+
+    const comprobante = generarTicket(datosDelPapel);
+
+    /*
+     * Sin conexión el acuerdo también se arma acá: no hay id que pedirle al
+     * servidor, y el cliente se va del mostrador con el teléfono igual. Si el
+     * papel que respalda el saldo esperara a que vuelva internet, no lo firma
+     * nadie.
+     */
+    if (cuotas.length > 0) {
+      setAcuerdoPendiente({
+        numero: 'Pendiente',
+        id: null,
+        html: generarTicket(datosDelPapel, { copia: 'acuerdo' }),
+      });
+    }
 
     if (ventana) {
       ventana.document.write(comprobante);
@@ -411,6 +442,10 @@ export default function PantallaVenta({
     // ventana, queda el enlace en pantalla: nunca se pierde el comprobante.
     if (ventana) ventana.location.href = `/ticket/${r.ventaId}`;
     else setUltimoTicket({ id: r.ventaId, numero: r.numero });
+
+    // Con plan de cuotas hay un segundo papel que imprimir, y el momento de
+    // hacerlo es ahora: después el cliente ya se fue y no hay quién lo firme.
+    if (datos.plan) setAcuerdoPendiente({ numero: r.numero, id: r.ventaId, html: null });
 
     vaciar();
     setCobrando(false);
@@ -477,6 +512,55 @@ export default function PantallaVenta({
           >
             {aviso}
           </p>
+        ) : null}
+
+        {acuerdoPendiente ? (
+          <div
+            role="alert"
+            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-marca) bg-(--color-panel) p-3 text-sm"
+          >
+            <p className="font-semibold">
+              La venta {acuerdoPendiente.numero} quedó en cuotas: falta el acuerdo de pago
+            </p>
+            <p className="mt-0.5 text-(--color-tinta-media)">
+              El comprobante que se lleva el cliente no dice nada de las cuotas. Imprimí el
+              acuerdo, que lo firme, y guardalo: es lo que respalda el saldo.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {acuerdoPendiente.id ? (
+                <a
+                  href={`/ticket/${acuerdoPendiente.id}?copia=acuerdo`}
+                  target="_blank"
+                  rel="noopener"
+                  onClick={() => setAcuerdoPendiente(null)}
+                  className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 leading-10 font-bold text-(--color-marca-texto)"
+                >
+                  Imprimir el acuerdo de pago
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = window.open('', '_blank', 'width=420,height=760');
+                    if (!v) return;
+                    v.document.write(acuerdoPendiente.html!);
+                    v.document.close();
+                    setAcuerdoPendiente(null);
+                  }}
+                  className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 font-bold text-(--color-marca-texto)"
+                >
+                  Imprimir el acuerdo de pago
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setAcuerdoPendiente(null)}
+                className="text-(--color-tinta-suave) underline underline-offset-2"
+              >
+                Ahora no
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {ultimoTicket ? (

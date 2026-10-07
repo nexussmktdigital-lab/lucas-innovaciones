@@ -195,16 +195,72 @@ describe('la moneda', () => {
   });
 });
 
-describe('la venta fiada', () => {
+describe('la copia del cliente no habla de la deuda', () => {
+  /*
+   * Lo pidió el local y el motivo es bueno: el papel que se lleva el cliente es
+   * el del teléfono. Si vuelve por garantía tiene que discutir un teléfono, no
+   * un plan de pagos ni un recargo por financiación.
+   */
+  const FIADO: DatosDelTicket = {
+    ...BASE,
+    fiadoCentavos: 700_000,
+    cuotas: [
+      { numero: 1, vencimiento: '2026-11-06', montoCentavos: 350_000 },
+      { numero: 2, vencimiento: '2026-12-06', montoCentavos: 350_000 },
+    ],
+  };
+
+  it('no lleva las cuotas ni su frecuencia', () => {
+    const t = txt(generarTicket(FIADO));
+    expect(t).not.toContain('SALDO EN CUOTAS');
+    expect(t).not.toContain('Vence el');
+  });
+
+  it('tampoco dice cuánto quedó debiendo', () => {
+    expect(txt(generarTicket(FIADO))).not.toContain('saldo');
+  });
+
+  it('pero NUNCA dice que está pagado, que sería mentira', () => {
+    /*
+     * El error peor posible en un papel firmado: el cliente lo levanta y dice
+     * que ya pagó. Con saldo, debajo del total no va nada.
+     */
+    expect(txt(generarTicket(FIADO))).not.toContain('Pagado en su totalidad');
+  });
+
+  it('el total que muestra es el del producto, que es a lo que vino', () => {
+    const t = txt(generarTicket(FIADO));
+    expect(t).toContain('$ 10.000,00');
+    expect(t).toContain('Vidrio templado 9D');
+  });
+
+  it('y sigue llevando la garantía, que es para lo que sirve', () => {
+    expect(generarTicket(FIADO)).toContain('GARANTÍA');
+  });
+});
+
+describe('el acuerdo de pago, que queda en el local', () => {
+  const acuerdo = (datos: DatosDelTicket) =>
+    txt(generarTicket(datos, { copia: 'acuerdo' }));
+
+  it('se llama distinto y dice que es la copia del local', () => {
+    const t = acuerdo({ ...BASE, fiadoCentavos: 700_000 });
+    expect(t).toContain('ACUERDO DE PAGO');
+    expect(t).toContain('Copia para el local');
+    expect(t).toContain('CONFORMIDAD');
+    // No es el papel de la garantía: ese es el otro.
+    expect(t).not.toContain('GARANTÍA');
+  });
+
   it('dice cuánto entregó y cuánto queda debiendo', () => {
-    const t = txt(generarTicket({ ...BASE, fiadoCentavos: 700_000 }));
+    const t = acuerdo({ ...BASE, fiadoCentavos: 700_000 });
     expect(t).toContain('Entregó $ 3.000,00');
     expect(t).toContain('queda un saldo de $ 7.000,00');
   });
 
   it('en dólares, el saldo también va en dólares y sin convertir', () => {
     // Entregó la mitad de un iPhone de US$ 1.500.
-    const t = txt(generarTicket({ ...IPHONE, fiadoCentavos: 117_825_000 }));
+    const t = acuerdo({ ...IPHONE, fiadoCentavos: 117_825_000 });
     expect(t).toContain('Entregó US$ 750,00');
     expect(t).toContain('queda un saldo de US$ 750,00');
   });
@@ -216,8 +272,7 @@ describe('la venta fiada', () => {
      * el total los dejaba a un centavo de distancia cuando el reparto no era
      * exacto, y un centavo en un papel firmado es una discusión.
      */
-    const t = txt(
-      generarTicket({
+    const t = acuerdo({
         ...IPHONE,
         fiadoCentavos: 235_650_000,
         monedaDeLaDeuda: 'USD',
@@ -227,8 +282,7 @@ describe('la venta fiada', () => {
           { numero: 2, vencimiento: '2026-12-06', montoCentavos: 50_000 },
           { numero: 3, vencimiento: '2027-01-06', montoCentavos: 50_000 },
         ],
-      }),
-    );
+    });
 
     expect(t).toContain('queda un saldo de US$ 1.500,00');
   });
@@ -241,8 +295,7 @@ describe('la venta fiada', () => {
      * porque así se vendió. Las cuotas de US$ 262,50 salían impresas como
      * «$ 262,50»: seiscientas treinta veces menos, en el papel que se firma.
      */
-    const t = txt(
-      generarTicket({
+    const t = acuerdo({
         ...IPHONE,
         descuentoCentavos: 5_000_000,
         totalCentavos: 230_650_000,
@@ -252,8 +305,7 @@ describe('la venta fiada', () => {
           { numero: 1, vencimiento: '2026-11-06', montoCentavos: 73_385 },
           { numero: 2, vencimiento: '2026-12-06', montoCentavos: 73_385 },
         ],
-      }),
-    );
+    });
 
     // El cuerpo en pesos, que es como se cobró con el descuento adentro.
     expect(t).toContain('$ 2.306.500,00');
@@ -264,8 +316,7 @@ describe('la venta fiada', () => {
   });
 
   it('una venta en pesos con plan sigue teniendo sus cuotas en pesos', () => {
-    const t = txt(
-      generarTicket({
+    const t = acuerdo({
         ...BASE,
         fiadoCentavos: 1_000_000,
         monedaDeLaDeuda: 'ARS',
@@ -273,8 +324,7 @@ describe('la venta fiada', () => {
           { numero: 1, vencimiento: '2026-11-06', montoCentavos: 500_000 },
           { numero: 2, vencimiento: '2026-12-06', montoCentavos: 500_000 },
         ],
-      }),
-    );
+    });
 
     expect(t).toContain('$ 5.000,00');
     expect(t).not.toContain('US$');
@@ -282,8 +332,7 @@ describe('la venta fiada', () => {
   });
 
   it('lista las cuotas con su fecha y su monto', () => {
-    const t = txt(
-      generarTicket({
+    const t = acuerdo({
         ...IPHONE,
         fiadoCentavos: 94_260_000,
         cuotas: [
@@ -291,8 +340,7 @@ describe('la venta fiada', () => {
           { numero: 2, vencimiento: '2026-12-06', montoCentavos: 20_000 },
           { numero: 3, vencimiento: '2027-01-06', montoCentavos: 20_000 },
         ],
-      }),
-    );
+    });
 
     expect(t).toContain('SALDO EN CUOTAS');
     expect(t).toContain('3 cuotas');

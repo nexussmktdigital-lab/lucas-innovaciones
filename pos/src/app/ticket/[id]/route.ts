@@ -2,7 +2,13 @@
  * Comprobante imprimible de una venta, en A4.
  *
  * Devuelve HTML suelto, fuera del layout del POS: se abre en una ventana aparte
- * que se manda a imprimir sola y se cierra. Una sola copia, la del cliente.
+ * que se manda a imprimir sola y se cierra.
+ *
+ * Son dos papeles de la misma venta, según `?copia=`:
+ *
+ *  - sin nada (o `cliente`): el que se lleva el cliente. Producto, precio y
+ *    garantía; **nada de la deuda**.
+ *  - `acuerdo`: el plan de cuotas, para que lo firme y quede en el local.
  */
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { auth } from '@/auth';
@@ -32,6 +38,16 @@ export async function GET(
   }
 
   const { id } = await params;
+
+  /*
+   * Cuál de los dos papeles de esta venta.
+   *
+   * Por defecto el del cliente, que es el que se imprime solo al cobrar. El
+   * acuerdo de pago —el que lleva las cuotas y queda firmado en el local— se
+   * pide a mano, desde la pantalla de venta o desde la ficha.
+   */
+  const copia =
+    new URL(request.url).searchParams.get('copia') === 'acuerdo' ? 'acuerdo' : 'cliente';
 
   const [venta] = await db
     .select({
@@ -128,7 +144,7 @@ export async function GET(
     })),
     monedaDeLaDeuda,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
-  });
+  }, { copia });
 
   return new Response(html, {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
