@@ -267,6 +267,37 @@ test('quitar un pago no deja la pantalla mostrando otro número', async ({ page 
   await expect(cobro).toContainText('$ 10.000,00');
 });
 
+test('el historial muestra otros días y deja reimprimir el comprobante', async ({ page }) => {
+  /*
+   * Lo que se pregunta en el mostrador es «la venta del iPhone de la semana
+   * pasada». Antes esta pantalla solo mostraba el turno abierto.
+   */
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  // Arranca en hoy, y la venta recién hecha está.
+  await page.goto('/ventas');
+  await expect(page.getByRole('heading', { name: 'Ventas' })).toBeVisible();
+  await expect(page.getByRole('listitem').first()).toContainText('Vidrio templado');
+
+  // Ayer no tiene nada: el período filtra de verdad.
+  await page.getByRole('link', { name: 'Ayer', exact: true }).click();
+  await expect(page.getByText('No hay ventas en ese período')).toBeVisible();
+
+  // Y en los últimos 7 días vuelve a aparecer, con su comprobante a mano.
+  await page.getByRole('link', { name: 'Últimos 7 días' }).click();
+  const fila = page.getByRole('listitem').first();
+  await expect(fila).toContainText('Vidrio templado');
+  await expect(fila.getByRole('link', { name: /Ver e imprimir/ })).toBeVisible();
+});
+
 test('el dueño anula una venta del turno y todo vuelve atrás', async ({ page }) => {
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);

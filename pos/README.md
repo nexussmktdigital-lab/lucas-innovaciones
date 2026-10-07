@@ -383,6 +383,25 @@ una comisión del 6,29%, el recargo es 6,71%, no 6,29%. La pantalla de Precios
 tiene la calculadora: se pone la comisión del panel de Mercado Pago y devuelve
 el recargo exacto.
 
+### Buscar una venta de otro día
+
+**Ventas** (`F4`) arranca en **hoy** y tiene los mismos períodos de un clic que
+Reportes —ayer, últimos 7 días, este mes, mes pasado— más un rango escrito a
+mano. Antes mostraba solo el turno abierto, y lo que se pregunta en el mostrador
+es «la venta del iPhone de la semana pasada»: un turno es una unidad de caja, no
+de calendario.
+
+De cada venta se puede **volver a imprimir el comprobante**, mandarlo por
+WhatsApp, y ver si quedó plata para devolver. La pantalla abre también con la
+caja cerrada: mirar lo de ayer a la mañana, antes de abrir, es justo cuando se
+mira.
+
+**Anular o devolver, según el turno.** Una venta del turno abierto se anula. Una
+de un turno ya cerrado no: la plata volvió a aquel cajón y revertir contra una
+caja cerrada dejaría dos arqueos mal (D29). Para esas, la fila ofrece
+**devolver**, que sale del cajón de hoy y el arqueo lo explica. El servidor lo
+rechaza igual; no ofrecer el botón evita el clic que falla.
+
 ### El comprobante
 
 Una hoja **A4**, una sola copia, la del cliente. Reemplazó al ticket de
@@ -1651,6 +1670,10 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |
+| El historial trae las ventas del período y deja afuera las de otros días | `src/ventas/anular.test.ts` |
+| El límite de arriba es exclusivo: «ayer» no se come lo de hoy | `src/ventas/anular.test.ts` |
+| Una venta anulada sigue en el historial: el comprobante se reimprime igual | `src/ventas/anular.test.ts` |
+| Se mira otro día y se reimprime desde ahí | `e2e/venta.spec.ts` |
 | Un servidor lento no se anuncia como «sin conexión» cuando no hay copia guardada | `src/offline/sw.test.ts` |
 | Con la red caída de verdad, y sin copia, sí se avisa que no hay conexión | `src/offline/sw.test.ts` |
 | Habiendo copia, se sirve sin esperar al servidor lento, y la tardía se guarda | `src/offline/sw.test.ts` |
