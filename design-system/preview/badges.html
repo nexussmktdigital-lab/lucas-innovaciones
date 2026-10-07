@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Badges & Chips</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.label{font-size:11px;color:var(--li-fg-3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;min-width:110px}
+.b{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:.01em}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pixel{display:inline-flex;align-items:center;font-family:var(--li-font-pixel);background:var(--li-green);color:var(--li-black);padding:2px 10px;border-radius:4px;font-size:15px}
+</style></head>
+<body class="li-body">
+<div class="row"><span class="label">Estado</span>
+  <span class="b" style="background:#E6F9EC;color:#00A63A"><span class="dot"></span>Stock disponible</span>
+  <span class="b" style="background:#FFF4D6;color:#8A5F00"><span class="dot"></span>Últimas 2 unidades</span>
+  <span class="b" style="background:#FCE8E8;color:#D63131"><span class="dot"></span>Sin stock</span>
+  <span class="b" style="background:#EDEDED;color:#3A3A3A"><span class="dot"></span>Retiro en local</span>
+</div>
+<div class="row"><span class="label">Ofertas</span>
+  <span class="b" style="background:var(--li-black);color:var(--li-green)">NUEVO</span>
+  <span class="b" style="background:var(--li-green);color:var(--li-black)">OFERTA</span>
+  <span class="b" style="background:var(--li-black);color:#fff">−13%</span>
+  <span class="pixel">[ POWER_ON ]</span>
+  <span class="pixel" style="background:var(--li-black);color:var(--li-green)">[ TOP_SELLER ]</span>
+</div>
+<div class="row"><span class="label">Filtros</span>
+  <span class="b" style="background:#fff;color:var(--li-fg-1);border:1px solid var(--li-border)">Samsung</span>
+  <span class="b" style="background:var(--li-black);color:#fff">Samsung ✕</span>
+  <span class="b" style="background:#fff;color:var(--li-fg-2);border:1px solid var(--li-border)">$ 500k – 1M</span>
+  <span class="b" style="background:#fff;color:var(--li-fg-2);border:1px solid var(--li-border)">12 cuotas</span>
+</div>
+</body></html>

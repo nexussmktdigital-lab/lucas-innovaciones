@@ -17,6 +17,10 @@ function li_assets(): void {
 
 	wp_enqueue_style( 'li-theme', LI_URI . '/assets/css/theme.css', array(), $ver );
 
+	// Design system: tokens, fuentes y componentes. Va después y manda.
+	$ds = LI_DIR . '/assets/css/ds.css';
+	wp_enqueue_style( 'li-ds', LI_URI . '/assets/css/ds.css', array( 'li-theme' ), file_exists( $ds ) ? (string) filemtime( $ds ) : LI_VERSION );
+
 	// Catálogo y ficha se dibujan enteros desde el tema: sus hojas sobran.
 	wp_dequeue_style( 'woocommerce-general' );
 	wp_dequeue_style( 'woocommerce-layout' );
@@ -31,12 +35,15 @@ function li_assets(): void {
 	if ( li_usa_bloques_wc() ) {
 		$b   = LI_DIR . '/assets/css/blocks.css';
 		$bver = file_exists( $b ) ? (string) filemtime( $b ) : LI_VERSION;
-		wp_enqueue_style( 'li-blocks', LI_URI . '/assets/css/blocks.css', array( 'li-theme', 'wc-blocks-style' ), $bver );
+		wp_enqueue_style( 'li-blocks', LI_URI . '/assets/css/blocks.css', array( 'li-ds', 'wc-blocks-style' ), $bver );
 	}
 
 	$js  = LI_DIR . '/assets/js/theme.js';
 	$jsv = file_exists( $js ) ? (string) filemtime( $js ) : LI_VERSION;
 	wp_enqueue_script( 'li-theme', LI_URI . '/assets/js/theme.js', array(), $jsv, true );
+
+	$dsj = LI_DIR . '/assets/js/ds.js';
+	wp_enqueue_script( 'li-ds', LI_URI . '/assets/js/ds.js', array(), file_exists( $dsj ) ? (string) filemtime( $dsj ) : LI_VERSION, true );
 
 	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
 		wp_enqueue_script( 'comment-reply' );
@@ -65,9 +72,8 @@ add_action( 'wp_head', 'li_precarga_fuentes', 2 );
  */
 function li_precarga_fuentes(): void {
 	$fuentes = array(
-		'/assets/fonts/Montserrat-SemiBold.woff2',
-		'/assets/fonts/Lato-Regular.woff2',
-		'/assets/fonts/IBMPlexMono-Medium.woff2',
+		'/assets/fonts/Inter-Variable.woff2',
+		'/assets/fonts/SpaceGrotesk-Variable.woff2',
 	);
 
 	foreach ( $fuentes as $f ) {

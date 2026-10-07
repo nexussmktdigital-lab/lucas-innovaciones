@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Spacing & Radii</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:20px;box-sizing:border-box;display:grid;grid-template-columns:1.2fr 1fr;gap:20px}
+.card{background:#fff;border:1px solid var(--li-border);border-radius:14px;padding:16px}
+.title{font-size:11px;color:var(--li-fg-3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-bottom:12px}
+.sp-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;color:var(--li-fg-2)}
+.sp-row b{font-family:var(--li-font-mono);min-width:42px;color:var(--li-fg-1)}
+.bar{background:var(--li-green);height:10px;border-radius:2px}
+.radii{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.rc{background:var(--li-black);aspect-ratio:1;display:flex;align-items:flex-end;justify-content:center;color:#fff;font-size:10px;font-family:var(--li-font-mono);padding-bottom:6px}
+</style></head>
+<body class="li-body">
+<div class="card">
+  <div class="title">Spacing · 4px base</div>
+  <div class="sp-row"><b>4</b><span class="bar" style="width:4px"></span>sp-1</div>
+  <div class="sp-row"><b>8</b><span class="bar" style="width:8px"></span>sp-2</div>
+  <div class="sp-row"><b>12</b><span class="bar" style="width:12px"></span>sp-3</div>
+  <div class="sp-row"><b>16</b><span class="bar" style="width:16px"></span>sp-4</div>
+  <div class="sp-row"><b>24</b><span class="bar" style="width:24px"></span>sp-6</div>
+  <div class="sp-row"><b>32</b><span class="bar" style="width:32px"></span>sp-8</div>
+  <div class="sp-row"><b>48</b><span class="bar" style="width:48px"></span>sp-12</div>
+  <div class="sp-row"><b>64</b><span class="bar" style="width:64px"></span>sp-16</div>
+  <div class="sp-row"><b>80</b><span class="bar" style="width:80px"></span>sp-20</div>
+</div>
+<div class="card">
+  <div class="title">Corner radii</div>
+  <div class="radii">
+    <div class="rc" style="border-radius:6px">6</div>
+    <div class="rc" style="border-radius:10px">10</div>
+    <div class="rc" style="border-radius:16px">16</div>
+    <div class="rc" style="border-radius:24px">24</div>
+    <div class="rc" style="border-radius:999px">pill</div>
+  </div>
+  <div class="title" style="margin-top:14px">Uso</div>
+  <div class="sp-row"><b>10</b>botones / inputs</div>
+  <div class="sp-row"><b>16</b>cards producto</div>
+  <div class="sp-row"><b>24</b>hero / banners</div>
+  <div class="sp-row"><b>pill</b>badges · chips · logo</div>
+</div>
+</body></html>

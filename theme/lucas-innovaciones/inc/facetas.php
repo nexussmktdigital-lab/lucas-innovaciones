@@ -28,6 +28,11 @@ function li_atributos(): array {
 		$out[ wc_attribute_taxonomy_name( $a->attribute_name ) ] = $a->attribute_label ? $a->attribute_label : $a->attribute_name;
 	}
 
+	// En Smartphones se suman los filtros que salen del nombre (inc/celulares.php).
+	if ( li_cel_contexto() ) {
+		$out += li_cel_facetas();
+	}
+
 	return $out;
 }
 
@@ -38,7 +43,7 @@ function li_atributos(): array {
  * @return string
  */
 function li_attr_param( string $tax ): string {
-	return str_replace( 'pa_', '', $tax );
+	return str_replace( array( 'pa_', 'cel_' ), '', $tax );
 }
 
 /**
@@ -226,7 +231,9 @@ function li_ids_contexto( array $atributos, ?array $precio = null, ?array $marca
 		);
 	}
 
-	foreach ( $atributos as $tax => $slugs ) {
+	[ $reales, $virtuales ] = li_cel_separar( $atributos );
+
+	foreach ( $reales as $tax => $slugs ) {
 		if ( $slugs ) {
 			$tax_query[] = array(
 				'taxonomy' => $tax,
@@ -245,6 +252,10 @@ function li_ids_contexto( array $atributos, ?array $precio = null, ?array $marca
 		'tax_query'      => $tax_query, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
 		'li_precio'      => $rango,
 	);
+
+	if ( $virtuales ) {
+		$args['post__in'] = li_cel_ids( $virtuales ) ?: array( 0 );
+	}
 
 	if ( is_search() ) {
 		$args['s'] = get_search_query();
@@ -271,10 +282,11 @@ function li_conteo_atributos( array $ids ): array {
 	global $wpdb;
 
 	$lista = implode( ',', array_map( 'absint', $ids ) );
-	$taxes = array_keys( li_atributos() );
+	$taxes = array_values( array_filter( array_keys( li_atributos() ), static fn( $t ) => ! li_cel_es_virtual( $t ) ) );
+	$out   = li_cel_contexto() ? li_cel_conteo( $ids ) : array();
 
 	if ( ! $taxes ) {
-		return array();
+		return $out;
 	}
 
 	$in = "'" . implode( "','", array_map( 'esc_sql', $taxes ) ) . "'";
@@ -292,7 +304,6 @@ function li_conteo_atributos( array $ids ): array {
 		ARRAY_A
 	);
 
-	$out = array();
 	foreach ( $filas as $f ) {
 		$out[ $f['taxonomy'] ][ $f['slug'] ] = array(
 			'nombre' => $f['name'],
@@ -394,14 +405,19 @@ function li_fichas_atributos(): void {
 
 	foreach ( $sel as $tax => $slugs ) {
 		foreach ( $slugs as $slug ) {
-			$t = get_term_by( 'slug', $slug, $tax );
-			if ( ! $t ) {
+			if ( li_cel_es_virtual( $tax ) ) {
+				$nombre = li_cel_etiqueta( $tax, $slug );
+			} else {
+				$t      = get_term_by( 'slug', $slug, $tax );
+				$nombre = $t ? $t->name : '';
+			}
+			if ( '' === $nombre ) {
 				continue;
 			}
 			printf(
 				'<a class="activo" href="%s" data-li-filtro>%s%s</a>',
 				esc_url( li_url_alternar_atributo( $tax, $slug ) ),
-				esc_html( $t->name ),
+				esc_html( $nombre ),
 				'<svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>'
 			);
 		}

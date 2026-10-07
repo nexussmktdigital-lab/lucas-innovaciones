@@ -18,19 +18,7 @@
     });
   }
 
-  /* Contador del carrito ----------------------------------------------- */
-
-  document.body.addEventListener("added_to_cart", function (e) {
-    var nodo = document.querySelector("[data-li-cart-count]");
-    if (!nodo) return;
-
-    var frag = e && e.detail ? e.detail : null;
-    var n = parseInt(nodo.textContent, 10) || 0;
-    nodo.textContent = String(n + 1);
-
-    var cont = nodo.closest(".acciones__item--carrito");
-    if (cont) cont.classList.add("tiene-items");
-  });
+  /* El contador del carrito vive en ds.js (escucha los eventos jQuery de Woo). */
 
   /* Cantidad: evita que el campo quede vacío al borrar ------------------ */
 

@@ -119,11 +119,11 @@ function li_precio_clausulas( array $clauses, WP_Query $q ): array {
 	// Se cruzan los rangos: el del producto y el pedido. Un producto sin
 	// precio tiene NULL y queda afuera, que es lo correcto.
 	if ( null !== $rango['min'] ) {
-		$clauses['where'] .= $wpdb->prepare( ' AND wc_product_meta_lookup.max_price >= %f ', $rango['min'] );
+		$clauses['where'] .= ' AND ' . li_sql_precio_ars( 'wc_product_meta_lookup', 'max_price' ) . $wpdb->prepare( ' >= %f ', $rango['min'] ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	}
 
 	if ( null !== $rango['max'] ) {
-		$clauses['where'] .= $wpdb->prepare( ' AND wc_product_meta_lookup.min_price <= %f ', $rango['max'] );
+		$clauses['where'] .= ' AND ' . li_sql_precio_ars( 'wc_product_meta_lookup', 'min_price' ) . $wpdb->prepare( ' <= %f ', $rango['max'] ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	}
 
 	return $clauses;
@@ -150,9 +150,10 @@ function li_precios_contexto( array $ids ): array {
 
 	$filas = $wpdb->get_results(
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		"SELECT min_price, max_price
-		 FROM {$wpdb->wc_product_meta_lookup}
-		 WHERE product_id IN ({$lista}) AND min_price IS NOT NULL",
+		// Los productos en dólares se cuentan en pesos, igual que en la grilla.
+		"SELECT " . li_sql_precio_ars( 'l', 'min_price' ) . " AS min_price, " . li_sql_precio_ars( 'l', 'max_price' ) . " AS max_price
+		 FROM {$wpdb->wc_product_meta_lookup} l
+		 WHERE l.product_id IN ({$lista}) AND l.min_price IS NOT NULL",
 		// phpcs:enable
 		ARRAY_A
 	);

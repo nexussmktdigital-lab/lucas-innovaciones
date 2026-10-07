@@ -26,8 +26,8 @@ add_action( 'woocommerce_after_main_content', 'li_wc_cerrar', 10 );
  * Apertura del contenedor principal de la tienda.
  */
 function li_wc_abrir(): void {
-	echo '<main id="contenido" class="contenido contenido--tienda">';
-	echo '<div class="contenedor">';
+	echo '<main id="contenido" class="li-shop">';
+	echo '<div class="li-wrap">';
 	li_migas();
 }
 
@@ -43,7 +43,8 @@ function li_wc_cerrar(): void {
  * ---------------------------------------------------------------------- */
 
 add_filter( 'loop_shop_columns', fn() => 4, 20 );
-add_filter( 'loop_shop_per_page', fn() => 24, 20 );
+// 21 = 7 filas de 3 en desktop. Cada página sale llena salvo la última.
+add_filter( 'loop_shop_per_page', fn() => 21, 20 );
 
 add_filter( 'woocommerce_product_loop_start', 'li_abrir_grilla' );
 /**
@@ -53,7 +54,7 @@ add_filter( 'woocommerce_product_loop_start', 'li_abrir_grilla' );
  * @return string
  */
 function li_abrir_grilla( string $html ): string {
-	return '<ul class="grilla productos">';
+	return '<ul class="li-grid grilla productos">';
 }
 
 add_filter( 'woocommerce_product_loop_end', fn() => '</ul>' );
@@ -179,7 +180,53 @@ function li_texto_agregar( string $texto, $product ): string {
 	return __( 'Agregar', 'lucasinnovaciones' );
 }
 
-add_filter( 'woocommerce_product_single_add_to_cart_text', fn() => __( 'Agregar al carrito', 'lucasinnovaciones' ) );
+add_filter( 'woocommerce_product_single_add_to_cart_text', fn() => __( 'Comprar ahora', 'lucasinnovaciones' ) );
+
+/*
+ * "Comprar ahora" (ficha, Product.jsx) lleva directo a finalizar compra.
+ * La marca viaja en el formulario de la ficha; agregar desde otro lado
+ * (carrito, Store API) sigue el flujo normal.
+ */
+add_action( 'woocommerce_before_add_to_cart_button', static function () {
+	echo '<input type="hidden" name="li_comprar_ahora" value="1">';
+} );
+
+add_filter( 'woocommerce_add_to_cart_redirect', 'li_comprar_ahora_redirect', 20 );
+/**
+ * @param string $url Destino por defecto.
+ */
+function li_comprar_ahora_redirect( $url ) {
+	// phpcs:ignore WordPress.Security.NonceVerification -- solo decide a dónde redirigir.
+	return empty( $_REQUEST['li_comprar_ahora'] ) ? $url : wc_get_checkout_url();
+}
+
+add_filter( 'woocommerce_account_menu_items', 'li_menu_cuenta' );
+/**
+ * Mi cuenta sin "Descargas": la tienda no vende archivos.
+ *
+ * @param array<string,string> $items Pestañas.
+ * @return array<string,string>
+ */
+function li_menu_cuenta( array $items ): array {
+	unset( $items['downloads'] );
+	return $items;
+}
+
+add_filter( 'render_block_woocommerce/empty-cart-block', 'li_carrito_vacio' );
+/**
+ * Carrito vacío con el texto del kit, sin tocar el contenido de la página.
+ *
+ * @param string $html HTML del bloque.
+ */
+function li_carrito_vacio( string $html ): string {
+	return sprintf(
+		'<div class="wp-block-woocommerce-empty-cart-block"><h2 class="wc-block-cart__empty-cart__title">%s</h2><p>%s</p><a class="li-btn li-btn--primary li-btn--lg li-empty__cta" href="%s">%s</a></div>',
+		esc_html__( 'Tu carrito está esperando.', 'lucasinnovaciones' ),
+		esc_html__( 'Elegí algo del catálogo y te lo preparamos.', 'lucasinnovaciones' ),
+		esc_url( wc_get_page_permalink( 'shop' ) ),
+		esc_html__( 'Ver catálogo', 'lucasinnovaciones' )
+	);
+}
 
 add_filter( 'woocommerce_breadcrumb_defaults', fn( array $d ) => array_merge( $d, array( 'delimiter' => '' ) ) );
 
@@ -201,16 +248,11 @@ function li_ocultar_solo_mostrador( $q ): void {
 		return;
 	}
 
-	$term = get_term_by( 'slug', 'solo-mostrador', 'product_cat' );
-	if ( ! $term || is_wp_error( $term ) ) {
-		return;
-	}
-
 	$tax = (array) $q->get( 'tax_query' );
 	$tax[] = array(
 		'taxonomy' => 'product_cat',
-		'field'    => 'term_id',
-		'terms'    => array( $term->term_id ),
+		'field'    => 'slug',
+		'terms'    => LI_CATS_SOLO_MOSTRADOR,
 		'operator' => 'NOT IN',
 	);
 	$q->set( 'tax_query', $tax );
@@ -236,4 +278,102 @@ function li_limpiar_scripts_wc(): void {
 	if ( ! is_woocommerce() ) {
 		wp_dequeue_script( 'wc-cart-fragments' );
 	}
+}
+
+/* -------------------------------------------------------------------------
+ * Transferencia y mails
+ * ---------------------------------------------------------------------- */
+
+add_filter( 'woocommerce_bacs_account_fields', 'li_campos_transferencia', 10, 2 );
+/**
+ * Datos de la cuenta con los nombres de acá. WooCommerce no trae el formato
+ * argentino y rotula "Sort code" e "IBAN": en los ajustes, el CBU va en
+ * "Sort code" y el alias en "IBAN".
+ *
+ * @param array $campos   Campos de la cuenta.
+ * @param int   $order_id Pedido.
+ * @return array
+ */
+function li_campos_transferencia( $campos, $order_id ) {
+	$out = array();
+	$mapa = array(
+		'bank_name'      => 'Banco',
+		'account_number' => 'Cuenta',
+		'sort_code'      => 'CBU',
+		'iban'           => 'Alias',
+	);
+	foreach ( $mapa as $clave => $label ) {
+		if ( ! empty( $campos[ $clave ]['value'] ) ) {
+			$out[ $clave ] = array(
+				'label' => $label,
+				'value' => $campos[ $clave ]['value'],
+			);
+		}
+	}
+	return $out;
+}
+
+add_filter( 'woocommerce_email_headers', 'li_responder_al_local', 10, 3 );
+/**
+ * Si el cliente responde un mail de su pedido, la respuesta le llega al local.
+ * El remitente tiene que ser del dominio (si no, cae en spam); la casilla que
+ * el local lee es otra.
+ *
+ * @param string $headers  Cabeceras.
+ * @param string $email_id Tipo de mail.
+ * @param mixed  $objeto   Pedido u otro objeto.
+ * @return string
+ */
+function li_responder_al_local( $headers, $email_id, $objeto = null ) {
+	if ( ! str_starts_with( (string) $email_id, 'customer_' ) ) {
+		return $headers;
+	}
+	$headers = (string) preg_replace( '/^Reply-to:.*\r?\n/mi', '', (string) $headers );
+	return $headers . "Reply-to: Lucas Innovaciones <" . LI_MAIL_LOCAL . ">\r\n";
+}
+
+add_filter( 'woocommerce_get_country_locale', 'li_campos_argentina', 30 );
+/**
+ * Rótulos del checkout en castellano de acá. El plugin de Correo Argentino
+ * vuelve obligatoria la altura (la necesita para la etiqueta): se mantiene,
+ * pero rotulada como lo que es, para que no parezca opcional.
+ *
+ * @param array $locale Configuración por país.
+ * @return array
+ */
+function li_campos_argentina( $locale ) {
+	$rotulos = array(
+		'last_name' => 'Apellido',
+		'address_1' => 'Calle',
+		'address_2' => 'Altura (número), piso y depto.',
+		'city'      => 'Localidad',
+		'state'     => 'Provincia',
+		'postcode'  => 'Código postal',
+	);
+	foreach ( $rotulos as $campo => $rotulo ) {
+		$locale['AR'][ $campo ]['label'] = $rotulo;
+		if ( isset( $locale['AR'][ $campo ]['placeholder'] ) ) {
+			$locale['AR'][ $campo ]['placeholder'] = $rotulo;
+		}
+	}
+	return $locale;
+}
+
+add_filter( 'gettext_woocommerce', 'li_textos_checkout', 10, 2 );
+/**
+ * Textos sueltos del checkout y del pedido que la traducción deja en
+ * castellano de España o sin traducir.
+ *
+ * @param string $traduccion Texto traducido.
+ * @param string $original   Texto original.
+ * @return string
+ */
+function li_textos_checkout( $traduccion, $original ) {
+	static $mapa = array(
+		'Shipping:'                                   => 'Envío:',
+		'Add a note to your order'                    => 'Agregá una nota a tu pedido',
+		'Thank you. Your order has been received.'    => 'Gracias. Recibimos tu pedido.',
+		'Notes about your order, e.g. special notes for delivery.' => 'Notas sobre tu pedido, por ejemplo, para la entrega.',
+	);
+	return $mapa[ $original ] ?? $traduccion;
 }

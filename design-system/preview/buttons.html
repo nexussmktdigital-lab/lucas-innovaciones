@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.label{font-size:11px;color:var(--li-fg-3);text-transform:uppercase;letter-spacing:.08em;font-weight:600;min-width:120px}
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--li-font-sans);font-weight:600;font-size:15px;border-radius:10px;padding:12px 20px;cursor:pointer;border:1px solid transparent;transition:all var(--li-dur) var(--li-ease)}
+.btn-primary{background:var(--li-green);color:var(--li-black);box-shadow:var(--li-shadow-green)}
+.btn-primary:hover{background:var(--li-green-hover)}
+.btn-dark{background:var(--li-black);color:#fff}
+.btn-outline{background:transparent;color:var(--li-black);border-color:var(--li-black)}
+.btn-outline:hover{background:var(--li-black);color:#fff}
+.btn-ghost{background:transparent;color:var(--li-fg-1)}
+.btn-wa{background:var(--li-whatsapp);color:#fff}
+.btn-sm{padding:8px 14px;font-size:13px;border-radius:8px}
+.btn-lg{padding:16px 28px;font-size:17px}
+svg{width:18px;height:18px}
+</style></head>
+<body class="li-body">
+<div class="row"><span class="label">Primary</span>
+  <button class="btn btn-primary">Comprar ahora</button>
+  <button class="btn btn-primary">Ver catálogo →</button>
+  <button class="btn btn-primary btn-sm">Agregar</button>
+  <button class="btn btn-primary btn-lg">Finalizar compra</button>
+</div>
+<div class="row"><span class="label">Secondary</span>
+  <button class="btn btn-dark">Ver producto</button>
+  <button class="btn btn-outline">Seguir comprando</button>
+  <button class="btn btn-ghost">Cancelar</button>
+  <button class="btn btn-wa"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 3.5A10 10 0 0 0 4 16l-1 5 5-1A10 10 0 1 0 20 3.5zM12 21a8.6 8.6 0 0 1-4.4-1.2l-.3-.2-3 .6.6-3-.2-.3A8.8 8.8 0 1 1 12 21zm4.6-6.4c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1l-.7.9c-.1.2-.2.2-.5.1-1-.5-2-1.2-2.9-2.5-.2-.3 0-.3.1-.5l.3-.5c.1-.1.1-.2.2-.4 0-.1 0-.3 0-.4l-.7-1.6c-.2-.4-.4-.4-.5-.4h-.4c-.2 0-.4 0-.6.3-.2.2-.8.8-.8 2s.9 2.3 1 2.5c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.1z"/></svg>Consultar WhatsApp</button>
+</div>
+<div class="row"><span class="label">States</span>
+  <button class="btn btn-primary">Normal</button>
+  <button class="btn btn-primary" style="background:var(--li-green-hover)">Hover</button>
+  <button class="btn btn-primary" style="background:#00A63A;transform:scale(.98);box-shadow:none">Pressed</button>
+  <button class="btn btn-primary" style="background:#CFCFCF;color:#8A8A8A;box-shadow:none;cursor:not-allowed">Disabled</button>
+</div>
+</body></html>

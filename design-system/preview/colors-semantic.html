@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Colors — Semantic</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);font-family:var(--li-font-sans);padding:20px;box-sizing:border-box}
+.row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sw{border-radius:12px;border:1px solid var(--li-border);background:#fff;padding:14px;display:flex;flex-direction:column;gap:10px}
+.dot{width:28px;height:28px;border-radius:50%}
+.title{font-weight:600;font-size:13px}
+.hex{font-family:var(--li-font-mono);font-size:11px;color:var(--li-fg-3)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;width:max-content}
+</style></head>
+<body class="li-body">
+<div class="row">
+  <div class="sw"><div class="dot" style="background:#00A63A"></div><div class="title">Success</div><div class="hex">#00A63A · bg #E6F9EC</div><span class="chip" style="background:#E6F9EC;color:#00A63A">Stock disponible</span></div>
+  <div class="sw"><div class="dot" style="background:#E8A200"></div><div class="title">Warn</div><div class="hex">#E8A200 · bg #FFF4D6</div><span class="chip" style="background:#FFF4D6;color:#8A5F00">Últimas unidades</span></div>
+  <div class="sw"><div class="dot" style="background:#D63131"></div><div class="title">Danger</div><div class="hex">#D63131 · bg #FCE8E8</div><span class="chip" style="background:#FCE8E8;color:#D63131">Sin stock</span></div>
+  <div class="sw"><div class="dot" style="background:#25D366"></div><div class="title">WhatsApp</div><div class="hex">#25D366</div><span class="chip" style="background:#25D366;color:#fff">Consultar</span></div>
+</div>
+</body></html>

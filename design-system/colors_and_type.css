@@ -1,0 +1,164 @@
+/* =====================================================================
+   Lucas Innovaciones — Colors & Type
+   Tech/electronics retailer, Villa Santa Rosa, Córdoba, Argentina.
+   Visual DNA: power-button green on black + pixel retro cursor nod.
+   ===================================================================== */
+
+/* ---------- Webfonts (Google Fonts substitutions — see README) -------- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=VT323&display=swap');
+
+:root {
+  /* ------------------------------------------------------------------
+     COLORS — Core palette (from the logo)
+     ------------------------------------------------------------------ */
+  --li-black:        #0A0A0A;   /* Logo background circle. Primary surface for hero, nav, power moments */
+  --li-green:        #00E64D;   /* "Encendido" power button. CTAs, prices in cuotas, active/stock states */
+  --li-green-hover:  #00C944;   /* Pressed/hover on green */
+  --li-green-soft:   #D6FBE1;   /* Green tinted bg for badges/banners */
+  --li-white:        #FFFFFF;   /* Card surface */
+  --li-bg:           #F4F4F4;   /* Page background — warm neutral grey */
+  --li-bg-alt:       #EDEDED;   /* Alternate stripe */
+  --li-border:       #E5E5E5;   /* Card hairline */
+  --li-border-strong:#D4D4D4;   /* Input/divider */
+
+  /* ------------------------------------------------------------------
+     COLORS — Text
+     ------------------------------------------------------------------ */
+  --li-fg-1:         #0A0A0A;   /* Primary text */
+  --li-fg-2:         #3A3A3A;   /* Secondary (body copy on white) */
+  --li-fg-3:         #6B6B6B;   /* Muted (specs, meta, "Desde $") */
+  --li-fg-4:         #9A9A9A;   /* Disabled / very muted */
+  --li-fg-invert:    #FFFFFF;   /* Text on black */
+  --li-fg-invert-2:  #B8B8B8;   /* Secondary text on black */
+
+  /* ------------------------------------------------------------------
+     COLORS — Semantic
+     ------------------------------------------------------------------ */
+  --li-success:      #00A63A;   /* Stock disponible, confirmed */
+  --li-success-bg:   #E6F9EC;
+  --li-warn:         #E8A200;   /* Últimas unidades */
+  --li-warn-bg:      #FFF4D6;
+  --li-danger:       #D63131;   /* Sin stock / error */
+  --li-danger-bg:    #FCE8E8;
+  --li-info:         #2B6EF2;   /* Mercado Pago blue-ish, info links */
+  --li-whatsapp:     #25D366;   /* WhatsApp brand */
+
+  /* Price accents */
+  --li-price:        #0A0A0A;   /* Precio contado */
+  --li-price-cuotas: #00A63A;   /* Precio en cuotas — slightly darker green for AA on white */
+  --li-discount:     #D63131;   /* Tachado */
+
+  /* ------------------------------------------------------------------
+     TYPE — Families
+     ------------------------------------------------------------------ */
+  --li-font-sans:    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --li-font-display: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --li-font-pixel:   'VT323', 'Courier New', monospace; /* only for the "tech/pixel" accent nod */
+  --li-font-mono:    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ------------------------------------------------------------------
+     TYPE — Scale (desktop; mobile uses clamp() where it matters)
+     ------------------------------------------------------------------ */
+  --li-fs-display:   clamp(2.5rem, 4.5vw + 1rem, 4.75rem); /* 40–76px hero */
+  --li-fs-h1:        2.25rem;   /* 36 */
+  --li-fs-h2:        1.75rem;   /* 28 */
+  --li-fs-h3:        1.25rem;   /* 20 */
+  --li-fs-lead:      1.125rem;  /* 18 */
+  --li-fs-body:      1rem;      /* 16 */
+  --li-fs-sm:        0.875rem;  /* 14 */
+  --li-fs-xs:        0.75rem;   /* 12 — labels, chips */
+
+  --li-lh-tight:     1.1;
+  --li-lh-snug:      1.25;
+  --li-lh-body:      1.55;
+
+  --li-tracking-tight: -0.02em;
+  --li-tracking-label: 0.08em;
+
+  /* ------------------------------------------------------------------
+     SPACING & SHAPE
+     ------------------------------------------------------------------ */
+  --li-sp-1:  4px;
+  --li-sp-2:  8px;
+  --li-sp-3:  12px;
+  --li-sp-4:  16px;
+  --li-sp-5:  20px;
+  --li-sp-6:  24px;
+  --li-sp-8:  32px;
+  --li-sp-10: 40px;
+  --li-sp-12: 48px;
+  --li-sp-16: 64px;
+  --li-sp-20: 80px;
+
+  --li-radius-sm: 6px;
+  --li-radius:    10px;  /* Default card/button */
+  --li-radius-lg: 16px;
+  --li-radius-xl: 24px;
+  --li-radius-pill: 999px;
+
+  /* Shadows — subtle, "minimalista, mucho aire" */
+  --li-shadow-xs:  0 1px 2px rgba(10,10,10,0.04);
+  --li-shadow-sm:  0 1px 3px rgba(10,10,10,0.06), 0 1px 2px rgba(10,10,10,0.04);
+  --li-shadow-md:  0 4px 16px rgba(10,10,10,0.08);
+  --li-shadow-lg:  0 12px 32px rgba(10,10,10,0.12);
+  --li-shadow-green: 0 8px 24px rgba(0, 230, 77, 0.28); /* CTA glow */
+
+  /* Motion */
+  --li-ease:         cubic-bezier(0.2, 0.8, 0.2, 1);
+  --li-ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
+  --li-dur-fast:     120ms;
+  --li-dur:          200ms;
+  --li-dur-slow:     320ms;
+}
+
+/* =====================================================================
+   SEMANTIC ELEMENT STYLES
+   Use by adding class="li-prose" to a container, or applying directly.
+   ===================================================================== */
+
+html { color-scheme: light; }
+
+body.li-body,
+.li-body {
+  font-family: var(--li-font-sans);
+  font-size: var(--li-fs-body);
+  line-height: var(--li-lh-body);
+  color: var(--li-fg-1);
+  background: var(--li-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.li-display {
+  font-family: var(--li-font-display);
+  font-size: var(--li-fs-display);
+  line-height: var(--li-lh-tight);
+  letter-spacing: var(--li-tracking-tight);
+  font-weight: 700;
+}
+
+.li-h1, h1.li { font-family: var(--li-font-display); font-size: var(--li-fs-h1); line-height: var(--li-lh-tight); letter-spacing: var(--li-tracking-tight); font-weight: 700; }
+.li-h2, h2.li { font-family: var(--li-font-display); font-size: var(--li-fs-h2); line-height: var(--li-lh-snug);  letter-spacing: var(--li-tracking-tight); font-weight: 700; }
+.li-h3, h3.li { font-family: var(--li-font-sans);    font-size: var(--li-fs-h3); line-height: var(--li-lh-snug);  font-weight: 600; }
+.li-lead      { font-size: var(--li-fs-lead); line-height: var(--li-lh-body); color: var(--li-fg-2); }
+.li-body-text { font-size: var(--li-fs-body); line-height: var(--li-lh-body); color: var(--li-fg-2); }
+.li-small     { font-size: var(--li-fs-sm);  color: var(--li-fg-3); }
+.li-eyebrow   { font-size: var(--li-fs-xs);  letter-spacing: var(--li-tracking-label); text-transform: uppercase; font-weight: 600; color: var(--li-fg-3); }
+.li-pixel     { font-family: var(--li-font-pixel); letter-spacing: 0.02em; }
+.li-mono      { font-family: var(--li-font-mono); }
+
+/* Price treatment — the brand's signature pattern */
+.li-price-contado { font-family: var(--li-font-display); font-size: 1.75rem; font-weight: 700; color: var(--li-price); letter-spacing: var(--li-tracking-tight); }
+.li-price-cuotas  { font-size: 0.9375rem; color: var(--li-price-cuotas); font-weight: 600; }
+.li-price-tachado { color: var(--li-fg-4); text-decoration: line-through; font-size: 0.875rem; }
+
+/* Link */
+.li-link { color: var(--li-fg-1); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.li-link:hover { color: var(--li-green-hover); text-decoration-color: var(--li-green); }
+
+/* Focus ring — accessible, green */
+.li-focusable:focus-visible,
+*:focus-visible { outline: 2px solid var(--li-green); outline-offset: 2px; border-radius: 4px; }
+
+/* Selection */
+::selection { background: var(--li-green); color: var(--li-black); }

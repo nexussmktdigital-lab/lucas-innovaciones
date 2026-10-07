@@ -28,3 +28,6 @@ dist
 .env
 .env.local
 .env.*.local
+
+# Script de imágenes: datos de trabajo y descargas
+tools/imagenes/datos/
