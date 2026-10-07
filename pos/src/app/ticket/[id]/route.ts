@@ -1,15 +1,22 @@
 /**
- * Comprobante imprimible de una venta.
+ * Comprobante imprimible de una venta, en A4.
  *
  * Devuelve HTML suelto, fuera del layout del POS: se abre en una ventana aparte
- * que se manda a imprimir sola y se cierra. El ancho del papel va por query
- * (`?ancho=58`), con 80 mm por defecto.
+ * que se manda a imprimir sola y se cierra. Una sola copia, la del cliente.
  */
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { auth } from '@/auth';
 import { db } from '@/db';
-import { customers, saleItems, salePayments, sales, users } from '@/db/schema';
-import { generarTicket, type AnchoDeTicket } from '@/ventas/ticket';
+import {
+  creditPlans,
+  customers,
+  installments,
+  saleItems,
+  salePayments,
+  sales,
+} from '@/db/schema';
+import { aFechaISO } from '@/fiado/plan';
+import { generarTicket } from '@/ventas/ticket';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,11 +43,10 @@ export async function GET(
       tcAplicadoCentavos: sales.tcAplicadoCentavos,
       nota: sales.nota,
       estado: sales.estado,
-      vendedor: users.nombre,
       cliente: customers.nombre,
+      documento: customers.dni,
     })
     .from(sales)
-    .leftJoin(users, eq(users.id, sales.vendedorId))
     .leftJoin(customers, eq(customers.id, sales.clienteId))
     .where(eq(sales.id, id))
     .limit(1);
@@ -70,33 +76,47 @@ export async function GET(
     .from(salePayments)
     .where(eq(salePayments.saleId, id));
 
-  // El vuelto no se guarda: se deduce de lo cobrado contra el total.
-  const pagado = pagos.reduce((suma, p) => suma + p.montoCentavos, 0);
-  const efectivo = pagos
-    .filter((p) => p.medio === 'efectivo')
+  // Los medios de pago no se imprimen; de ellos solo sale lo que quedó fiado,
+  // que es lo que el cliente necesita saber de esta compra.
+  const fiadoCentavos = pagos
+    .filter((p) => p.medio === 'cuenta_corriente')
     .reduce((suma, p) => suma + p.montoCentavos, 0);
-  const vueltoCentavos = Math.max(0, Math.min(pagado - venta.totalCentavos, efectivo));
 
-  const anchoPedido = new URL(request.url).searchParams.get('ancho');
-  const ancho: AnchoDeTicket = anchoPedido === '58' ? 58 : 80;
+  /*
+   * Las cuotas pactadas en esta venta, si se pactaron.
+   *
+   * Del plan de ESTA venta y no de la cuenta: un cliente que compró tres veces
+   * tiene tres planes, y en el papel de hoy van las cuotas de hoy. Un plan
+   * anulado no cuenta: la venta se dio de baja y sus cuotas con ella.
+   */
+  const cuotas = await db
+    .select({
+      numero: installments.numero,
+      vencimiento: installments.vencimiento,
+      montoCentavos: installments.montoCentavos,
+    })
+    .from(installments)
+    .innerJoin(creditPlans, eq(creditPlans.id, installments.planId))
+    .where(and(eq(creditPlans.saleId, id), isNull(creditPlans.anuladoEn)))
+    .orderBy(asc(installments.numero));
 
-  const html = generarTicket(
-    {
-      numero: venta.numero,
-      fecha: venta.fecha,
-      vendedor: venta.vendedor ?? '—',
-      cliente: venta.cliente,
-      lineas,
-      subtotalCentavos: venta.subtotalCentavos,
-      descuentoCentavos: venta.descuentoCentavos,
-      totalCentavos: venta.totalCentavos,
-      pagos,
-      vueltoCentavos,
-      tcAplicadoCentavos: venta.tcAplicadoCentavos,
-      nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
-    },
-    { ancho },
-  );
+  const html = generarTicket({
+    numero: venta.numero,
+    fecha: venta.fecha,
+    cliente: venta.cliente,
+    documento: venta.documento,
+    lineas,
+    subtotalCentavos: venta.subtotalCentavos,
+    descuentoCentavos: venta.descuentoCentavos,
+    totalCentavos: venta.totalCentavos,
+    fiadoCentavos,
+    cuotas: cuotas.map((c) => ({
+      numero: c.numero,
+      vencimiento: aFechaISO(c.vencimiento),
+      montoCentavos: c.montoCentavos,
+    })),
+    nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
+  });
 
   return new Response(html, {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },

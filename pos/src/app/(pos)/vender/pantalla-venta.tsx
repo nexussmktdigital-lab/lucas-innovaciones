@@ -14,7 +14,9 @@ import { useRouter } from 'next/navigation';
 import { calcularCobro, calcularTotales, type Descuento, type LineaCarrito } from '@/ventas/carrito';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
 import { generarTicket } from '@/ventas/ticket';
+import { cuotasDelPlan } from '@/fiado/plan';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
+import { fechaLocalISO } from '@/lib/fecha';
 import { registrarVenta } from '@/app/acciones-venta';
 import { useOffline } from '@/offline/use-offline';
 import { resumirVenta } from '@/offline/cola';
@@ -300,10 +302,38 @@ export default function PantallaVenta({
       };
     }
 
+    const fiadoCentavos = datos.pagos
+      .filter((p) => p.medio === 'cuenta_corriente')
+      .reduce((n, p) => n + p.montoCentavos, 0);
+
+    /*
+     * Las cuotas del plan que se acaba de pactar.
+     *
+     * Sin servidor no hay cuotas guardadas todavía, pero el acuerdo ya existe
+     * —se hizo en el mostrador, con el cliente enfrente— y el reparto es la
+     * misma función pura que usa el servidor al confirmar. Sin esto, el papel
+     * que el cliente firma sin conexión no diría cuándo tiene que volver.
+     */
+    const cuotas = (() => {
+      if (!datos.plan || fiadoCentavos <= 0) return [];
+      try {
+        return cuotasDelPlan(
+          fiadoCentavos,
+          datos.plan.cuotas,
+          { frecuencia: datos.plan.frecuencia, dias: datos.plan.dias ?? null },
+          fechaLocalISO(capturadaEn),
+        );
+      } catch {
+        // La venta ya está cobrada y guardada: un plan que no se puede repartir
+        // no puede dejar al cliente sin comprobante. Sale sin el detalle de
+        // cuotas, y el servidor arma el plan cuando la venta suba.
+        return [];
+      }
+    })();
+
     const comprobante = generarTicket({
       numero: 'Pendiente',
       fecha: capturadaEn,
-      vendedor,
       cliente: todosLosClientes.find((c) => c.id === clienteId)?.nombre ?? null,
       lineas: lineas.map((l) => ({
         descripcion: l.descripcion,
@@ -317,14 +347,8 @@ export default function PantallaVenta({
       subtotalCentavos: totales.subtotalCentavos,
       descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
       totalCentavos: totales.totalCentavos,
-      pagos: datos.pagos.map((p) => ({
-        medio: p.medio,
-        montoCentavos: p.montoCentavos,
-        marcaTarjeta: p.marcaTarjeta ?? null,
-        cuotas: p.cuotas ?? null,
-      })),
-      vueltoCentavos: cobro.vueltoCentavos,
-      tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
+      fiadoCentavos,
+      cuotas,
       provisional: true,
     });
 
