@@ -418,6 +418,12 @@ venta donde una palabra cae en el cliente y la otra en lo vendido, y cada
 palabra que se agrega **achica** la lista en vez de vaciarla. Los acentos no se
 interponen: «nunez» encuentra a Núñez.
 
+**El reclamo con el papel en la mano.** El cliente viene con el comprobante y
+dice «T1-000017»: eso se tipea como está impreso —mayúsculas y guion incluidos—
+o solo los dígitos con sus ceros, `000017`. Las dos formas caen en esa venta y en
+ninguna otra. Lo que no alcanza es el número sin los ceros: `17` también está
+adentro de «T1-000170», y el «T1» del prefijo lleva un 1.
+
 Se muestran las 100 más nuevas; si la que se busca no está, se agrega una
 palabra. El término queda en la URL (`/ventas?q=…`), así que el resultado se
 puede recargar o dejar abierto en una pestaña mientras se atiende.
@@ -1740,6 +1746,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El vuelto nunca sale de una transferencia, solo del efectivo entregado | `src/ventas/detalle.test.ts` |
 | Desde la lista se abre la venta y se ve con qué pagó | `e2e/venta.spec.ts` |
 | Se busca una venta por cliente, producto, número, DNI o teléfono | `src/ventas/anular.test.ts` |
+| El comprobante entra como está impreso, en minúsculas, con espacios o solo los dígitos | `src/ventas/anular.test.ts` |
+| El número de una venta no encuentra las demás | `src/ventas/anular.test.ts` |
 | Dos palabras sueltas, en cualquier orden y aunque no estén pegadas | `src/ventas/anular.test.ts` |
 | Cada palabra que se agrega achica la lista, no la agranda | `src/ventas/anular.test.ts` |
 | «nunez» encuentra a Núñez | `src/ventas/anular.test.ts` |
