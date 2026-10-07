@@ -1,0 +1,22 @@
+-- Anular una venta fiada en dólares le tiene que sacar la deuda EN DÓLARES.
+--
+-- La 0017 partió la deuda en dos columnas —`saldo_centavos` y
+-- `saldo_usd_centavos`, que no se suman nunca— y la anulación quedó mirando
+-- solo la primera. El resultado, con el iPhone fiado en dólares:
+--
+--  * la deuda en dólares NO se le sacaba: el cliente devolvía el teléfono y
+--    seguía debiendo los US$ 1.500, y
+--  * se le descontaban pesos de la otra deuda, que no tenía nada que ver.
+--
+-- El arreglo está en el código (`anular.ts`). Acá va lo único que necesita
+-- tabla: la devolución pendiente también tiene moneda.
+--
+-- Una devolución pendiente es la plata del cliente que quedó en la caja cuando
+-- se anuló una venta que él ya había pagado en parte. Si esa venta era en
+-- dólares, lo que hay que devolverle son dólares: guardarlo sin moneda obliga a
+-- elegir una cotización —la de hoy o la de aquel día— y las dos están mal. Es
+-- la misma razón por la que la deuda se partió en dos columnas.
+--
+-- Lo que ya existe queda en ARS, que es lo que es: hasta hoy no había otra.
+
+ALTER TABLE "pending_refunds" ADD COLUMN IF NOT EXISTS "moneda" "moneda" DEFAULT 'ARS' NOT NULL;

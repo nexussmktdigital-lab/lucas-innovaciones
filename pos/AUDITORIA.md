@@ -2295,3 +2295,36 @@ Y una mejora que no era un error pero lo parecía: el saldo impreso se sacaba po
 diferencia contra el total, así que podía quedar a un centavo de la suma de las
 cuotas. Ahora el saldo **es** la suma de las cuotas. Un centavo de diferencia en
 un papel firmado no es un redondeo: es una discusión.
+
+## Anular el iPhone fiado no le sacaba la deuda en dólares
+
+Apareció antes de escribir una línea del recargo por financiación. El local
+describió qué hacen cuando el usado que el cliente entregó viene fallado: se
+anula esa venta y se hace otra por el teléfono nuevo. Fui a ver cómo quedaba la
+deuda y la respuesta era: igual que antes.
+
+La 0017 partió la deuda en dos columnas —`saldo_centavos` y
+`saldo_usd_centavos`, que **no se suman nunca** porque son dos deudas— y la
+anulación quedó mirando solo la primera. Con el iPhone fiado en dólares:
+
+- la deuda en dólares **no se le sacaba**: devolvía el teléfono y seguía
+  debiendo los US$ 1.500, y
+- se le descontaban pesos de la otra deuda, que no tenía nada que ver. Un
+  cliente que debía US$ 1.500 por el iPhone y $80.000 por una funda terminaba
+  debiendo el iPhone igual y la funda gratis.
+
+Lo mismo con la plata que el cliente ya hubiera pagado de esa venta: queda
+anotada como devolución pendiente, y se anotaba en una columna sin moneda. Medio
+millón de pesos y quinientos dólares entraban al mismo campo.
+
+**Por qué ningún test lo agarró.** Había un test de «anular una venta fiada le
+saca la deuda» y había tests de deuda en dólares. Los dos en verde, y el error
+en la intersección que ninguno visitaba. Es la tercera vez en este proyecto que
+el agujero tiene exactamente esta forma —las cuotas de la ficha, las cuotas del
+comprobante, y ahora esto—, y las tres veces la causa es la misma: **un camino
+nuevo se agrega mirando los tests que ya existen, no los que faltan.**
+
+Lo que estoy empezando a hacer, y conviene dejarlo escrito: cuando una decisión
+parte algo en dos —dos monedas, dos planes, dos turnos—, hay que ir a buscar
+**todos** los lugares que leían el entero y revisarlos de a uno. La 0017 cambió
+la forma de la deuda; la anulación la leía y no estaba en la lista.

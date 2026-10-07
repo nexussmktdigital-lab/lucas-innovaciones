@@ -127,6 +127,13 @@
       "when": 1789495144193,
       "tag": "0017_fiado_en_dolares",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789495144194,
+      "tag": "0018_anular_fiado_en_dolares",
+      "breakpoints": true
     }
   ]
 }

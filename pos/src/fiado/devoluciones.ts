@@ -31,6 +31,8 @@ export interface DevolucionPendiente {
   saleId: string;
   numero: string;
   montoCentavos: number;
+  /** En que moneda hay que devolverle. Lo fijo la venta anulada (D62). */
+  moneda: 'ARS' | 'USD';
   motivo: string | null;
   creadoEn: Date;
 }
@@ -47,6 +49,11 @@ export async function anotarDevolucion(
     customerId: string;
     saleId: string;
     montoCentavos: number;
+    /**
+     * En que moneda hay que devolverle. La fija la venta anulada (D62): si se
+     * vendio en dolares, `montoCentavos` son centavos de dolar.
+     */
+    moneda?: 'ARS' | 'USD';
     motivo: string | null;
     usuarioId: string;
   },
@@ -61,6 +68,7 @@ export async function anotarDevolucion(
       customerId: datos.customerId,
       saleId: datos.saleId,
       montoCentavos: datos.montoCentavos,
+      moneda: datos.moneda ?? 'ARS',
       motivo: datos.motivo,
       creadoPorId: datos.usuarioId,
     })
@@ -81,7 +89,7 @@ export async function anotarDevolucion(
 
 const SELECT_PENDIENTE = sql`
   SELECT d.id, d.customer_id, c.nombre, c.telefono, d.sale_id, s.numero,
-         d.monto_centavos, d.motivo, d.creado_en
+         d.monto_centavos, d.moneda, d.motivo, d.creado_en
     FROM pending_refunds d
     JOIN customers c ON c.id = d.customer_id
     JOIN sales s ON s.id = d.sale_id
@@ -95,6 +103,7 @@ interface FilaPendiente {
   sale_id: string;
   numero: string;
   monto_centavos: string | number;
+  moneda: 'ARS' | 'USD';
   motivo: string | null;
   creado_en: string | Date;
 }
@@ -108,6 +117,7 @@ function aDevolucion(f: FilaPendiente): DevolucionPendiente {
     saleId: String(f.sale_id),
     numero: String(f.numero),
     montoCentavos: Number(f.monto_centavos),
+    moneda: f.moneda,
     motivo: f.motivo,
     creadoEn: new Date(f.creado_en),
   };
@@ -216,6 +226,7 @@ export async function historialDeDevoluciones(
       saleId: pendingRefunds.saleId,
       numero: sales.numero,
       montoCentavos: pendingRefunds.montoCentavos,
+      moneda: pendingRefunds.moneda,
       motivo: pendingRefunds.motivo,
       creadoEn: pendingRefunds.creadoEn,
       resueltoEn: pendingRefunds.resueltoEn,

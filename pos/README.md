@@ -1816,6 +1816,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | No se puede cobrar más de lo que se debe, ni a quien no debe | `src/fiado/cuenta.test.ts` |
 | Reintentar el mismo cobro no cobra dos veces | `src/fiado/cuenta.test.ts` |
 | Anular una venta fiada le saca la deuda al cliente | `src/fiado/cuenta.test.ts` |
+| Anular una venta fiada **en dólares** le saca la deuda en dólares, no en pesos | `src/fiado/plan.db.test.ts` |
+| Lo que ya había pagado de esa venta queda a devolver en la moneda en que pagó | `src/fiado/plan.db.test.ts` |
 | Un iPhone fiado deja la deuda en dólares, y el dólar que se mueve no la mueve | `src/fiado/cuenta.test.ts` |
 | Un carrito mezclado NO se fía en dólares: queda en pesos, entero | `src/fiado/cuenta.test.ts` |
 | Las dos deudas conviven en la misma cuenta y no se suman | `src/fiado/cuenta.test.ts` |

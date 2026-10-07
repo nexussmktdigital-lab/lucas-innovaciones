@@ -14,7 +14,7 @@ import {
   type Periodo,
 } from '@/reportes/periodo';
 import { nombreDelMedio } from '@/ventas/ticket';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { formatearFecha, formatearFechaHora, formatearHora } from '@/lib/fecha';
 import { devolucionesPendientes } from '@/fiado/devoluciones';
 import { armarComprobantes } from '@/whatsapp/mensajes';
@@ -246,8 +246,11 @@ export default async function PaginaVentas({
                       className="mt-2 rounded-(--radius-caja) bg-(--color-error-fondo) p-3 text-sm"
                     >
                       <p className="font-bold text-(--color-error)">
-                        Devolvele {formatearARS(aDevolver.get(v.id)!.montoCentavos)} a{' '}
-                        {aDevolver.get(v.id)!.nombre}
+                        Devolvele{' '}
+                        {aDevolver.get(v.id)!.moneda === 'USD'
+                          ? formatearUSD(aDevolver.get(v.id)!.montoCentavos)
+                          : formatearARS(aDevolver.get(v.id)!.montoCentavos)}{' '}
+                        a {aDevolver.get(v.id)!.nombre}
                       </p>
                       <p className="mt-0.5">
                         Ya había pagado esa parte de esta venta y quedó en la caja.

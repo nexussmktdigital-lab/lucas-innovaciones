@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { marcarDevueltaAccion, type EstadoFiado } from '@/app/acciones-fiado';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { formatearFecha } from '@/lib/fecha';
 import type { DevolucionPendiente } from '@/fiado/devoluciones';
 
@@ -47,7 +47,13 @@ function Fila({ devolucion }: { devolucion: DevolucionPendiente }) {
   return (
     <li className="rounded-(--radius-caja) bg-(--color-panel) p-3">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="tabular text-lg font-bold">{formatearARS(devolucion.montoCentavos)}</span>
+        <span className="tabular text-lg font-bold">
+          {/* En la moneda de la venta anulada: lo que se vendió en dólares se
+              devuelve en dólares (D62). */}
+          {devolucion.moneda === 'USD'
+            ? formatearUSD(devolucion.montoCentavos)
+            : formatearARS(devolucion.montoCentavos)}
+        </span>
         <span className="text-xs text-(--color-tinta-suave)">
           de la venta {devolucion.numero}, anulada el {formatearFecha(devolucion.creadoEn)}
         </span>
