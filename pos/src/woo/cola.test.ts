@@ -29,7 +29,13 @@ let cajaId: string;
 let sesionId: string;
 let vidrioId: string;
 
-/** WooCommerce simulado con un stock por producto que se puede inspeccionar. */
+/**
+ * WooCommerce simulado con un stock por producto que se puede inspeccionar.
+ *
+ * Entiende las dos formas de tocar el stock: el PUT del valor absoluto (filas
+ * viejas) y el ajuste por diferencia de li-tienda, que recuerda las
+ * referencias ya aplicadas igual que el plugin real.
+ */
 function wooSimulado(
   stockInicial: Record<number, number>,
   fallar = false,
@@ -38,12 +44,34 @@ function wooSimulado(
 ) {
   const stock = { ...stockInicial };
   const escrituras: { wooId: number; stock: number }[] = [];
+  const aplicadas = new Set<string>();
 
   const fetchImpl = (async (entrada: string | URL, init?: RequestInit) => {
     if (espiar) await espiar();
     if (fallar) return new Response('boom', { status: 503 });
 
     const url = new URL(String(entrada));
+
+    if (url.pathname.endsWith('/wc-li/v1/stock/ajustar')) {
+      const cuerpo = JSON.parse(String(init?.body)) as {
+        ref: string;
+        items: { product_id: number; variation_id?: number; delta: number }[];
+      };
+      const items = cuerpo.items.map((it, i) => {
+        const id = it.variation_id ?? it.product_id;
+        const clave = `${cuerpo.ref}:${i}:${id}`;
+        if (aplicadas.has(clave)) return { i, estado: 'ya_aplicado', stock: stock[id] ?? 0 };
+        aplicadas.add(clave);
+        stock[id] = (stock[id] ?? 0) + it.delta;
+        escrituras.push({ wooId: id, stock: stock[id]! });
+        return { i, estado: 'aplicado', stock: stock[id]! };
+      });
+      return new Response(JSON.stringify({ ref: cuerpo.ref, items }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+
     const wooId = Number(url.pathname.split('/').pop());
 
     if (init?.method === 'PUT') {
@@ -115,7 +143,7 @@ async function venderDos(clave = 'v1') {
 }
 
 describe('drenarCola', () => {
-  it('empuja el stock del POS a WooCommerce y marca la venta sincronizada', async () => {
+  it('resta en WooCommerce lo vendido y marca la venta sincronizada', async () => {
     const r = await venderDos();
     const woo = wooSimulado({ 6485: 40 });
 
@@ -132,7 +160,7 @@ describe('drenarCola', () => {
     expect(cola!.estado).toBe('ok');
   });
 
-  it('drenar dos veces no vuelve a descontar: escribe el mismo valor absoluto', async () => {
+  it('drenar dos veces no vuelve a descontar: Woo recuerda la referencia', async () => {
     await venderDos();
     const woo = wooSimulado({ 6485: 40 });
 
@@ -142,7 +170,7 @@ describe('drenarCola', () => {
     await drenarCola(db, woo.cliente);
 
     expect(woo.stock[6485]).toBe(38);
-    // La segunda vez ni siquiera escribe: Woo ya coincide con el POS.
+    // La segunda vez Woo contesta «ya aplicado» y no resta.
     expect(woo.escrituras).toHaveLength(1);
   });
 
@@ -155,20 +183,40 @@ describe('drenarCola', () => {
     expect(woo.stock[6485]).toBe(36);
   });
 
-  it('registra un conflicto cuando Woo tiene un número inesperado', async () => {
+  it('no pisa lo que vendió la web y deja anotada la diferencia', async () => {
     await venderDos();
-    // Alguien movió el stock en Woo por fuera del POS.
+    // La web vendió 5 que el POS todavía no sabe: Woo tiene 35, no 40.
     const woo = wooSimulado({ 6485: 35 });
 
     const informe = await drenarCola(db, woo.cliente);
-    expect(informe.conflictos).toBe(1);
 
+    // Woo resta lo del local sobre lo que ya tenía: las ventas web siguen ahí.
+    // Antes se escribía el 38 del POS y las 5 unidades vendidas online volvían.
+    expect(woo.stock[6485]).toBe(33);
+
+    expect(informe.conflictos).toBe(1);
     const conflictos = await db.select().from(syncConflicts);
     expect(conflictos).toHaveLength(1);
-    expect(conflictos[0]!.stockWoo).toBe(35);
+    expect(conflictos[0]!.stockWoo).toBe(33);
     expect(conflictos[0]!.stockPos).toBe(38);
+  });
 
-    // Y aun así deja Woo espejando al POS.
+  it('una fila vieja, sin delta, sigue por el camino del valor absoluto', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'venta.descontar_stock',
+      idempotencyKey: 'vieja:1',
+      payload: {
+        ventaId: '00000000-0000-0000-0000-000000000000',
+        numero: 'T1-000001',
+        items: [{ productId: vidrioId, wooId: 6485, cantidad: 2, stockResultante: 38 }],
+      },
+    });
+    await db.update(products).set({ stock: 38 }).where(eq(products.id, vidrioId));
+    const woo = wooSimulado({ 6485: 40 });
+
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
     expect(woo.stock[6485]).toBe(38);
   });
 
@@ -379,7 +427,7 @@ describe('reintentarFallidas', () => {
     expect(venta!.syncedToWoo).toBe(true);
   });
 
-  it('reintentar dos veces no descuenta de más: se escribe el absoluto', async () => {
+  it('reintentar dos veces no descuenta de más: Woo recuerda la referencia', async () => {
     await venderDos();
     const woo = wooSimulado({ 6485: 40 });
 
@@ -396,6 +444,23 @@ describe('reintentarFallidas', () => {
 
     const [enCola] = await db.select().from(syncQueue);
     expect(enCola!.estado).toBe('pendiente');
+  });
+});
+
+describe('stock.empujar', () => {
+  it('con delta suma en Woo sin pisar lo que vendió la web', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'stock.empujar',
+      idempotencyKey: 'stock:ingreso:1',
+      payload: { productId: vidrioId, wooId: 6485, delta: 10 },
+    });
+    // Woo tiene 33: la web vendió mientras tanto. Se suman 10 sobre eso.
+    const woo = wooSimulado({ 6485: 33 });
+
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(woo.stock[6485]).toBe(43);
   });
 });
 

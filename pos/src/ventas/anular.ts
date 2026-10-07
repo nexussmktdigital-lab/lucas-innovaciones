@@ -166,6 +166,7 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
       variantWooId: number | null;
       cantidad: number;
       stockResultante: number;
+      delta: number;
     }[] = [];
     let unidadesRepuestas = 0;
 
@@ -208,6 +209,7 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
             variantWooId: v.wooId,
             cantidad,
             stockResultante: v.stock,
+            delta: cantidad,
           });
         }
         continue;
@@ -238,6 +240,7 @@ export async function anularVenta(db: BaseDatos, datos: DatosAnulacion): Promise
           variantWooId: null,
           cantidad,
           stockResultante: p.stock,
+          delta: cantidad,
         });
       }
     }

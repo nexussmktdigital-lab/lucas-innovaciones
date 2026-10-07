@@ -131,7 +131,7 @@ export async function sumarStock(db: BaseDatos, datos: IngresoDeStock): Promise<
       await tx.insert(syncQueue).values({
         operacion: 'stock.empujar',
         idempotencyKey: `stock:${datos.productId}:${stockResultante}:${Date.now()}`,
-        payload: { productId: datos.productId, wooId: p.woo_id },
+        payload: { productId: datos.productId, wooId: p.woo_id, delta: datos.cantidad },
       });
     }
 

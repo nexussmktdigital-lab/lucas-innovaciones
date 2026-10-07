@@ -844,6 +844,7 @@ export async function confirmarVenta(
           variantWooId: null as number | null,
           cantidad: pedido,
           stockResultante: (catalogo.get(productId)?.stock ?? 0) - pedido,
+          delta: -pedido,
         })),
       ...[...pedidoPorVariante.entries()]
         .filter(([, pedido]) => pedido > 0)
@@ -856,6 +857,7 @@ export async function confirmarVenta(
             variantWooId: v.wooId,
             cantidad: pedido,
             stockResultante: v.stock - pedido,
+            delta: -pedido,
           };
         })
         // Una variación sin id de Woo no se puede escribir allá.

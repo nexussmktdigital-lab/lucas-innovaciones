@@ -4,19 +4,23 @@
  * Las ventas se confirman en la base del POS y el ajuste de stock viaja despues
  * por esta cola. Asi el mostrador nunca depende de que Woo responda rapido.
  *
- * **Como se ajusta el stock, y por que.** Se escribe el valor ABSOLUTO que el
- * POS tiene ahora mismo, no la resta. Tiene tres consecuencias buenas:
+ * **Como se ajusta el stock, y por que.** Se manda la DIFERENCIA (`delta`:
+ * -2 una venta de dos, +1 una devolucion) al endpoint `wc-li/v1/stock/ajustar`
+ * del plugin li-tienda, que resta o suma del lado de WooCommerce.
  *
- *  - Es idempotente: reintentar la misma operacion escribe el mismo numero.
- *  - Se cura sola: si una operacion anterior quedo a medias, la siguiente deja
- *    el valor correcto igual.
- *  - Es simple de razonar: Woo termina espejando al POS.
+ * Antes se escribia el valor ABSOLUTO que tenia el POS. Era idempotente y
+ * simple, pero pisaba todo lo que cambiara el stock en Woo por fuera del POS:
+ * con la tienda online vendiendo, un pedido web entre medio volvia a aparecer
+ * disponible —con un usado, que es unico, es venderlo dos veces—. El endpoint:
  *
- * Y una consecuencia a vigilar: si algo cambia el stock en Woo por fuera del
- * POS —hoy, un pedido web— esta escritura lo pisa. Mientras la tienda online no
- * venda no hay riesgo, y cuando venda los pedidos web van a reservar stock en
- * el POS por webhook. Igual, toda divergencia que se detecta al escribir queda
- * registrada en `sync_conflicts` para que se vea.
+ *  - Es atomico: `stock = stock - n` en una consulta, como los pedidos web.
+ *  - Es idempotente: cada operacion lleva la referencia `cola:{id de la fila}`
+ *    y Woo recuerda las ya aplicadas, asi que reintentar no resta dos veces.
+ *
+ * Las filas encoladas antes de este cambio no traen `delta` y siguen por el
+ * camino viejo (valor absoluto) para no perderse. Toda divergencia que se ve al
+ * escribir queda en `sync_conflicts`: es el lugar donde mirar si Woo y el POS
+ * dejan de coincidir.
  */
 import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
@@ -55,6 +59,8 @@ const itemDeVenta = z.object({
   variantWooId: z.number().nullish(),
   cantidad: z.number(),
   stockResultante: z.number(),
+  /** Cuánto cambia el stock: negativo en una venta, positivo al reponer. */
+  delta: z.number().optional(),
 });
 
 const payloadVenta = z.object({
@@ -64,6 +70,47 @@ const payloadVenta = z.object({
 });
 
 const productoWoo = z.object({ id: z.number(), stock_quantity: z.number().nullish() }).loose();
+
+/** Respuesta del endpoint de ajuste de li-tienda. */
+const respuestaAjuste = z.object({
+  ref: z.string(),
+  items: z.array(
+    z.object({
+      i: z.number(),
+      estado: z.enum(['aplicado', 'ya_aplicado', 'sin_control', 'no_existe']),
+      stock: z.number().nullable(),
+    }),
+  ),
+});
+
+/** Ruta del ajuste por diferencia (plugin li-tienda, autenticado con la clave de Woo). */
+export const RUTA_AJUSTE_STOCK = 'wc-li/v1/stock/ajustar';
+
+/**
+ * Resta o suma stock en Woo. Devuelve, por item y en el mismo orden, el stock
+ * que quedó en Woo (o null si el producto no lleva control de stock allá).
+ */
+async function ajustarEnWoo(
+  cliente: ClienteWoo,
+  ref: string,
+  items: { wooId: number; variantWooId?: number | null; delta: number }[],
+): Promise<(number | null)[]> {
+  const r = await cliente.enviar(
+    'POST',
+    RUTA_AJUSTE_STOCK,
+    {
+      ref,
+      items: items.map((x) => ({
+        product_id: x.wooId,
+        ...(x.variantWooId ? { variation_id: x.variantWooId } : {}),
+        delta: x.delta,
+      })),
+    },
+    respuestaAjuste,
+  );
+  const porIndice = new Map(r.items.map((x) => [x.i, x.stock]));
+  return items.map((_, i) => porIndice.get(i) ?? null);
+}
 
 export interface InformeDeDrenaje {
   procesadas: number;
@@ -183,9 +230,9 @@ export async function drenarCola(
     informe.procesadas += 1;
     try {
       if (operacion.operacion === 'venta.descontar_stock') {
-        informe.conflictos += await sincronizarStockDeVenta(db, cliente, operacion.payload);
+        informe.conflictos += await sincronizarStockDeVenta(db, cliente, operacion.payload, operacion.id);
       } else if (operacion.operacion === 'stock.empujar') {
-        informe.conflictos += await empujarStock(db, cliente, operacion.payload);
+        informe.conflictos += await empujarStock(db, cliente, operacion.payload, operacion.id);
       } else if (operacion.operacion === 'precio.empujar') {
         await empujarPrecio(db, cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.baja') {
@@ -234,11 +281,40 @@ async function sincronizarStockDeVenta(
   db: BaseDatos,
   cliente: ClienteWoo,
   payloadCrudo: unknown,
+  operacionId: string,
 ): Promise<number> {
   const payload = payloadVenta.parse(payloadCrudo);
   let conflictos = 0;
 
-  for (const item of payload.items) {
+  // Camino nuevo: los items con `delta` van todos juntos al ajuste por diferencia.
+  const conDelta = payload.items.filter((x) => x.delta !== undefined && x.delta !== 0);
+  if (conDelta.length > 0) {
+    const enWoo = await ajustarEnWoo(
+      cliente,
+      `cola:${operacionId}`,
+      conDelta.map((x) => ({ wooId: x.wooId, variantWooId: x.variantWooId, delta: x.delta! })),
+    );
+    for (const [i, item] of conDelta.entries()) {
+      const stockEnWoo = enWoo[i];
+      if (stockEnWoo === null || stockEnWoo === undefined) continue;
+      const local = await stockLocal(db, item.productId, item.variantId);
+      if (local !== null && local !== stockEnWoo) {
+        // No se corrige nada: Woo ya quedó bien (restó lo que vendió el POS sin
+        // pisar lo demás). Se anota para que se vea: lo normal es que sea un
+        // pedido web que el POS todavía no importó.
+        await db.insert(syncConflicts).values({
+          productId: item.productId,
+          stockPos: local,
+          stockWoo: stockEnWoo,
+          detalle: { venta: payload.numero, delta: item.delta, tras: 'ajuste' },
+        });
+        conflictos += 1;
+      }
+    }
+  }
+
+  // Camino viejo, solo para filas encoladas antes del cambio (sin `delta`).
+  for (const item of payload.items.filter((x) => x.delta === undefined)) {
     // El valor que se escribe es el que el POS tiene AHORA, no el que tenía
     // cuando se hizo la venta: si hubo más ventas en el medio, esto las lleva
     // todas de una y el resultado sigue siendo correcto.
@@ -300,8 +376,33 @@ async function sincronizarStockDeVenta(
   return conflictos;
 }
 
+/** Stock que el POS tiene ahora de un producto o variación; null si ya no está. */
+async function stockLocal(
+  db: BaseDatos,
+  productId: string,
+  variantId?: string | null,
+): Promise<number | null> {
+  const [fila] = variantId
+    ? await db
+        .select({ stock: productVariants.stock })
+        .from(productVariants)
+        .where(eq(productVariants.id, variantId))
+        .limit(1)
+    : await db
+        .select({ stock: products.stock })
+        .from(products)
+        .where(eq(products.id, productId))
+        .limit(1);
+  return fila ? Number(fila.stock) : null;
+}
+
 /** Lo que necesita cualquier operación que empuja un producto: cuál, y su id de Woo. */
-const payloadDeProducto = z.object({ productId: z.string(), wooId: z.number() });
+const payloadDeProducto = z.object({
+  productId: z.string(),
+  wooId: z.number(),
+  /** Solo en `stock.empujar`: cuánto se sumó. Sin esto, camino viejo (absoluto). */
+  delta: z.number().optional(),
+});
 /** Lo único que se le pide a la respuesta: que sea el producto que se tocó. */
 const respuestaDeProducto = z.object({ id: z.number() }).loose();
 
@@ -321,8 +422,17 @@ async function empujarStock(
   db: BaseDatos,
   cliente: ClienteWoo,
   payloadCrudo: unknown,
+  operacionId: string,
 ): Promise<number> {
   const payload = payloadDeProducto.parse(payloadCrudo);
+
+  // Camino nuevo: se suma la diferencia en Woo, sin pisar lo que vendió la web.
+  if (payload.delta !== undefined) {
+    if (payload.delta !== 0) {
+      await ajustarEnWoo(cliente, `cola:${operacionId}`, [{ wooId: payload.wooId, delta: payload.delta }]);
+    }
+    return 0;
+  }
 
   const [local] = await db
     .select({ stock: products.stock, nombre: products.nombre })

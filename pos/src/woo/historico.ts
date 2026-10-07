@@ -27,7 +27,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { legacySales } from '@/db/schema';
+import { legacySales, sales } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import type { ClienteWoo } from './cliente';
 import { precioACentavos } from './tipos';
@@ -191,6 +191,17 @@ export async function importarHistorico(
 
   const porPagina = opciones.porPagina ?? 100;
 
+  // Los pedidos web que ya entraron como ventas (canal «web», ver pedidos-web.ts)
+  // no van al histórico: los reportes suman los dos y quedarían contados dos veces.
+  const yaSonVentas = new Set(
+    (
+      await db
+        .select({ wooOrderId: sales.wooOrderId })
+        .from(sales)
+        .where(sql`${sales.wooOrderId} IS NOT NULL`)
+    ).map((x) => x.wooOrderId),
+  );
+
   for await (const pagina of cliente.listarTodo(
     'orders',
     wooPedido,
@@ -203,6 +214,10 @@ export async function importarHistorico(
     for (const pedido of pagina) {
       if (!ESTADOS_QUE_CUENTAN.includes(pedido.status)) {
         informe.descartadosPorEstado += 1;
+        continue;
+      }
+      if (yaSonVentas.has(pedido.id)) {
+        informe.repetidos += 1;
         continue;
       }
       filas.push(mapearPedido(pedido));
