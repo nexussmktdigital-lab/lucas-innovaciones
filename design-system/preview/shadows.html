@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Shadows</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:28px;box-sizing:border-box;display:grid;grid-template-columns:repeat(4,1fr);gap:20px;align-items:center;justify-items:center;min-height:240px}
+.box{width:140px;height:100px;background:#fff;border-radius:14px;border:1px solid var(--li-border);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;font-size:12px}
+.box b{font-size:13px;color:var(--li-fg-1)}
+.box span{color:var(--li-fg-3);font-family:var(--li-font-mono);font-size:10px}
+.s1{box-shadow:var(--li-shadow-xs)}
+.s2{box-shadow:var(--li-shadow-sm)}
+.s3{box-shadow:var(--li-shadow-md)}
+.s4{box-shadow:var(--li-shadow-green);border-color:transparent;background:var(--li-green)}
+.s4 b{color:var(--li-black)}
+.s4 span{color:#0A0A0A}
+</style></head>
+<body class="li-body">
+<div class="box s1"><b>xs</b><span>hairline</span></div>
+<div class="box s2"><b>sm</b><span>resting card</span></div>
+<div class="box s3"><b>md</b><span>hover card</span></div>
+<div class="box s4"><b>green glow</b><span>CTA primary</span></div>
+</body></html>

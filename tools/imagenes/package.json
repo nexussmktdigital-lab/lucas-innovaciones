@@ -1,0 +1,16 @@
+{
+  "name": "li-imagenes",
+  "private": true,
+  "type": "module",
+  "description": "Fotos de producto para Lucas Innovaciones: exportar, buscar, filtrar, revisar y subir.",
+  "scripts": {
+    "exportar": "node imagenes.mjs exportar",
+    "buscar": "node imagenes.mjs buscar",
+    "filtrar": "node imagenes.mjs filtrar",
+    "revisar": "node imagenes.mjs revisar",
+    "subir": "node imagenes.mjs subir"
+  },
+  "dependencies": {
+    "sharp": "^0.34.0"
+  }
+}

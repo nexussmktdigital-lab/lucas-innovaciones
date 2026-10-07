@@ -1,0 +1,47 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Form inputs</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:22px;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+label{font-size:12px;font-weight:600;color:var(--li-fg-1)}
+.hint{font-size:11px;color:var(--li-fg-3)}
+input,select{font-family:var(--li-font-sans);font-size:14px;padding:10px 12px;border:1px solid var(--li-border-strong);border-radius:10px;background:#fff;color:var(--li-fg-1);outline:none;transition:all .15s var(--li-ease)}
+input:focus{border-color:var(--li-green);box-shadow:0 0 0 3px rgba(0,230,77,0.2)}
+.search{position:relative}
+.search input{padding-left:38px;width:100%;box-sizing:border-box}
+.search svg{position:absolute;top:50%;transform:translateY(-50%);left:12px;width:16px;height:16px;color:var(--li-fg-3)}
+.error input{border-color:var(--li-danger)}
+.error .hint{color:var(--li-danger)}
+.radio-row{display:flex;gap:8px}
+.radio{flex:1;border:1px solid var(--li-border-strong);border-radius:10px;padding:10px 12px;font-size:13px;display:flex;align-items:center;gap:8px;cursor:pointer;background:#fff}
+.radio.on{border-color:var(--li-green);background:#F5FFF7;font-weight:600}
+.radio.on::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--li-green);border:3px solid #fff;box-shadow:0 0 0 1px var(--li-green)}
+.radio::before{content:'';width:12px;height:12px;border-radius:50%;border:1px solid var(--li-border-strong)}
+</style></head>
+<body class="li-body">
+<div class="field">
+  <label>Buscar producto</label>
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input placeholder="¿Qué necesitás hoy?" value="Galaxy A55">
+  </div>
+  <span class="hint">Presioná enter para buscar</span>
+</div>
+<div class="field">
+  <label>Email</label>
+  <input placeholder="tu@email.com" value="lucas@vsr.com.ar" style="border-color:var(--li-green);box-shadow:0 0 0 3px rgba(0,230,77,0.2)">
+  <span class="hint">Te mandamos el comprobante acá</span>
+</div>
+<div class="field error">
+  <label>DNI</label>
+  <input value="abcd" style="border-color:var(--li-danger)">
+  <span class="hint">Ingresá sólo números</span>
+</div>
+<div class="field">
+  <label>Método de entrega</label>
+  <div class="radio-row">
+    <div class="radio on">Retiro en local</div>
+    <div class="radio">Envío a domicilio</div>
+  </div>
+</div>
+</body></html>

@@ -10,67 +10,7 @@
    1. Tipografías
    -------------------------------------------------------------------------- */
 
-/* Títulos e interfaz */
-@font-face {
-  font-family: "Montserrat";
-  src: url("../fonts/Montserrat-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Montserrat";
-  src: url("../fonts/Montserrat-SemiBold.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Montserrat";
-  src: url("../fonts/Montserrat-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* Cuerpo de texto */
-@font-face {
-  font-family: "Lato";
-  src: url("../fonts/Lato-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Lato";
-  src: url("../fonts/Lato-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Plex Mono";
-  src: url("../fonts/IBMPlexMono-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Plex Mono";
-  src: url("../fonts/IBMPlexMono-Medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Pixel LI";
-  src: url("../fonts/VT323-Regular.woff2") format("woff2"),
-       url("../fonts/VT323-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
+/* Las fuentes del design system (Inter, Space Grotesk, VT323) se declaran en ds.css. */
 
 /* --------------------------------------------------------------------------
    2. Tokens — rescatados del Kit de Elementor, ver DESIGN-TOKENS.md

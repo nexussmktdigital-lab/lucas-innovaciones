@@ -1,10 +1,13 @@
 <?php
 /**
- * Catálogo: tienda, categorías, marcas y atributos.
+ * Catálogo: tienda, categorías, marcas, atributos y búsqueda.
  *
- * Una categoría suma banners, subcategorías y el carrusel de marcas. La
- * tienda entera y los archivos de marca o atributo usan la misma grilla,
- * sin esos agregados.
+ * El kit no trae listado: se arma con los tokens y piezas del design system
+ * (tarjeta, chips, botones) sobre la lógica de filtros del tema (facetas,
+ * precio, marcas), que sigue andando sin JavaScript y con AJAX encima.
+ *
+ * En móvil los filtros viven en un panel lateral que abre el botón "Filtros";
+ * en desktop son la barra de la izquierda.
  *
  * @package LucasInnovaciones
  */
@@ -19,20 +22,20 @@ $li_obj = is_product_taxonomy() ? get_queried_object() : null;
 $li_cat = ( $li_obj instanceof WP_Term && 'product_cat' === $li_obj->taxonomy ) ? $li_obj : null;
 ?>
 
-<?php if ( $li_cat ) : ?>
-	<?php li_banners_render( li_banners_categoria( $li_cat ) ); ?>
-<?php endif; ?>
-
-<div class="catalogo__cabecera">
-	<h1 class="catalogo__titulo">
-		<?php woocommerce_page_title(); ?>
+<header class="li-shop__head">
+	<h1 class="li-shop__title">
+		<?php
+		if ( is_search() ) {
+			/* translators: %s: términos buscados. */
+			printf( esc_html__( 'Resultados para «%s»', 'lucasinnovaciones' ), esc_html( get_search_query() ) );
+		} else {
+			woocommerce_page_title();
+		}
+		?>
 	</h1>
 
-	<?php
-	$li_desc = $li_obj && ! empty( $li_obj->description ) ? $li_obj->description : '';
-	if ( $li_desc ) :
-		?>
-		<div class="catalogo__bajada"><?php echo wp_kses_post( wpautop( $li_desc ) ); ?></div>
+	<?php if ( $li_obj && ! empty( $li_obj->description ) ) : ?>
+		<div class="li-shop__desc"><?php echo wp_kses_post( wpautop( $li_obj->description ) ); ?></div>
 	<?php endif; ?>
 
 	<?php
@@ -40,7 +43,7 @@ $li_cat = ( $li_obj instanceof WP_Term && 'product_cat' === $li_obj->taxonomy ) 
 		li_subcategorias( $li_cat );
 	}
 	?>
-</div>
+</header>
 
 <?php
 if ( li_hay_carrusel( $li_obj ) ) {
@@ -50,38 +53,52 @@ if ( li_hay_carrusel( $li_obj ) ) {
 
 <div class="catalogo">
 
-	<aside class="lateral" aria-label="<?php esc_attr_e( 'Filtros', 'lucasinnovaciones' ); ?>">
-		<?php if ( is_active_sidebar( 'filtros-catalogo' ) ) : ?>
-			<?php dynamic_sidebar( 'filtros-catalogo' ); ?>
-		<?php else : ?>
-			<section class="filtro">
-				<h2 class="filtro__titulo"><?php esc_html_e( 'Categorías', 'lucasinnovaciones' ); ?></h2>
-				<ul>
-					<?php
-					foreach ( array_slice( li_lista_lateral( $li_cat ), 0, 20 ) as $li_c ) {
-						printf(
-							'<li%s><a href="%s">%s <span class="count">%d</span></a></li>',
-							$li_cat && $li_c['slug'] === $li_cat->slug ? ' class="es-actual"' : '',
-							esc_url( $li_c['url'] ),
-							esc_html( $li_c['nombre'] ),
-							(int) $li_c['cuenta']
-						);
-					}
-					?>
-				</ul>
-			</section>
+	<aside class="lateral" id="li-filtros" aria-label="<?php esc_attr_e( 'Filtros', 'lucasinnovaciones' ); ?>">
+		<div class="lateral__head">
+			<span class="lateral__titulo"><?php esc_html_e( 'Filtros', 'lucasinnovaciones' ); ?></span>
+			<button class="li-iconbtn" type="button" data-li-filtros-cerrar aria-label="<?php esc_attr_e( 'Cerrar filtros', 'lucasinnovaciones' ); ?>">
+				<?php echo li_ds_icono( 'x' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+			</button>
+		</div>
+
+		<div class="lateral__body">
+			<?php $li_lista = array_slice( li_lista_lateral( $li_cat ), 0, 20 ); ?>
+			<?php if ( $li_lista ) : ?>
+				<section class="filtro">
+					<h2 class="filtro__titulo"><?php esc_html_e( 'Categorías', 'lucasinnovaciones' ); ?></h2>
+					<ul class="filtro__cats">
+						<?php foreach ( $li_lista as $li_c ) : ?>
+							<li<?php echo $li_cat && $li_c['slug'] === $li_cat->slug ? ' class="es-actual"' : ''; ?>>
+								<a href="<?php echo esc_url( $li_c['url'] ); ?>"><?php echo esc_html( $li_c['nombre'] ); ?> <span class="count"><?php echo (int) $li_c['cuenta']; ?></span></a>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</section>
+			<?php endif; ?>
 
 			<div data-li-facetas>
 				<?php li_panel_filtros(); ?>
 			</div>
-		<?php endif; ?>
-	</aside>
+		</div>
 
-	<div class="catalogo__cuerpo" data-li-resultados>
-		<?php
-		li_filtros_activos();
-		li_render_resultados( $GLOBALS['wp_query'] );
-		?>
+		<div class="lateral__foot">
+			<button class="li-btn li-btn--primary li-btn--block" type="button" data-li-filtros-cerrar><?php esc_html_e( 'Ver productos', 'lucasinnovaciones' ); ?></button>
+		</div>
+	</aside>
+	<div class="lateral__fondo" data-li-filtros-cerrar></div>
+
+	<div class="catalogo__cuerpo">
+		<button class="li-filtros-btn" type="button" data-li-filtros-abrir aria-controls="li-filtros" aria-expanded="false">
+			<svg class="li-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+			<?php esc_html_e( 'Filtros', 'lucasinnovaciones' ); ?>
+		</button>
+
+		<div data-li-resultados>
+			<?php
+			li_filtros_activos();
+			li_render_resultados( $GLOBALS['wp_query'] );
+			?>
+		</div>
 	</div>
 
 </div>

@@ -77,6 +77,12 @@ function li_aplicar_filtros( WP_Query $q ): void {
 	 * mismo atributo, la O —128GB *o* 256GB—. Es lo que espera cualquiera
 	 * que haya usado un buscador de productos.
 	 */
+	[ $atributos, $virtuales ] = li_cel_separar( $atributos );
+	if ( $virtuales ) {
+		// Los filtros de celulares salen del nombre: se traducen a una lista de IDs.
+		$q->set( 'post__in', li_cel_ids( $virtuales ) ?: array( 0 ) );
+	}
+
 	foreach ( $atributos as $taxonomia => $slugs ) {
 		$tax[] = array(
 			'taxonomy' => $taxonomia,
@@ -156,8 +162,8 @@ function li_rama_ids( WP_Term $term ): array {
 function li_marcas_de_categoria( WP_Term $term ): array {
 	$clave = 'li_marcas_cat_' . $term->term_id;
 	$cache = get_transient( $clave );
-	if ( is_array( $cache ) ) {
-		return $cache;
+	if ( is_array( $cache ) && ( $cache['huella'] ?? '' ) === li_huella_publicables() ) {
+		return $cache['marcas'];
 	}
 
 	global $wpdb;
@@ -183,6 +189,7 @@ function li_marcas_de_categoria( WP_Term $term ): array {
 		   WHERE trv.object_id = p.ID AND ttv.taxonomy = 'product_visibility'
 		     AND tv.slug = 'exclude-from-catalog'
 		 )
+		 " . li_sql_publicables( 'p.ID' ) . "
 		 GROUP BY b.term_id, b.name, b.slug
 		 ORDER BY n DESC, b.name ASC",
 		// phpcs:enable
@@ -202,7 +209,7 @@ function li_marcas_de_categoria( WP_Term $term ): array {
 		);
 	}
 
-	set_transient( $clave, $out, 6 * HOUR_IN_SECONDS );
+	set_transient( $clave, array( 'huella' => li_huella_publicables(), 'marcas' => $out ), 6 * HOUR_IN_SECONDS );
 
 	return $out;
 }
@@ -647,7 +654,7 @@ function li_render_resultados( WP_Query $q ): void {
 
 	$original = $GLOBALS['post'] ?? null;
 
-	echo '<ul class="grilla productos">';
+	echo '<ul class="li-grid grilla productos">';
 
 	while ( $q->have_posts() ) {
 		$q->the_post();
@@ -659,6 +666,15 @@ function li_render_resultados( WP_Query $q ): void {
 
 	$GLOBALS['post'] = $original; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
 	wp_reset_postdata();
+
+	// Si la tarjeta descartó alguno (caché de publicables vieja), la página
+	// salió corta: se renueva la lista para que la próxima carga venga llena.
+	foreach ( $q->posts as $p ) {
+		if ( ! li_producto_publicable( $p instanceof WP_Post ? $p->ID : (int) $p ) ) {
+			li_limpiar_publicables();
+			break;
+		}
+	}
 
 	if ( $q->max_num_pages > 1 ) {
 		// Se reusa la clase de WooCommerce: el tema ya la tiene estilada.

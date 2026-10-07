@@ -1,13 +1,14 @@
 <?php
 /**
- * Portada.
+ * Portada — design-system/ui_kit/Home.jsx.
  *
- * Diseñada para el catálogo real: 797 productos, 77 categorías, 93 marcas
- * y apenas 22 fotos. Una portada apoyada en imágenes sería una promesa que
- * el catálogo no puede sostener, así que se apoya en lo que sí hay de sobra:
- * amplitud, datos de venta reales y un local con dirección y horario.
+ * Hero negro, tira de marcas, 6 categorías, lo más vendido y "Nosotros".
+ * Desvíos del kit (pedidos de Matias): sin cuotas (ni en el hero ni el banner
+ * de cuotas), sin bloque de reseñas, "20 años", dirección Caseros 924, sin
+ * emoji y nada que no esté confirmado (garantía, envío en 24 hs, horarios).
  *
- * Cuando entren las fotos, se agrega el bloque visual sin tocar el resto.
+ * Todo sale del catálogo publicable: si una sección no tiene qué mostrar,
+ * no se dibuja.
  *
  * @package LucasInnovaciones
  */
@@ -16,193 +17,159 @@ defined( 'ABSPATH' ) || exit;
 
 get_header();
 
-$li_datos  = li_datos_portada();
-$li_local  = li_local();
+$li_datos = li_datos_portada();
+$li_dest  = $li_datos['destacado'] ? wc_get_product( $li_datos['destacado'] ) : null;
+$li_shop  = wc_get_page_permalink( 'shop' );
 ?>
 
-<main id="contenido" class="contenido contenido--portada">
+<main id="contenido" class="li-home">
 
-	<!-- ---------------------------------------------------------------
-		 Encabezado
-		 --------------------------------------------------------------- -->
-	<section class="hero">
-		<div class="contenedor">
-			<div class="hero__grilla">
-
-				<div class="hero__texto">
-					<p class="hero__ubicacion">
-						<?php li_icono( 'filtro' ); ?>
-						<?php echo esc_html( $li_local['ciudad'] ? $li_local['ciudad'] : 'Córdoba' ); ?>
-					</p>
-
-					<h1 class="hero__titulo">
-						Tecnología<br>
-						<span class="hero__titulo-acento">a la vuelta</span>
-					</h1>
-
-					<p class="hero__bajada">
-						Del cable que necesitás hoy al teléfono que venís buscando.
-						<?php if ( $li_local['direccion'] ) : ?>
-							Retiralo en <strong><?php echo esc_html( $li_local['direccion'] ); ?></strong> o te lo enviamos.
-						<?php endif; ?>
-					</p>
-
-					<form role="search" method="get" class="hero__buscador" action="<?php echo esc_url( home_url( '/' ) ); ?>">
-						<label class="visually-hidden" for="li-hero-buscar">Buscar productos</label>
-						<input type="search" id="li-hero-buscar" name="s" class="hero__campo"
-							placeholder="Buscar cable, funda, cargador, celular…" autocomplete="off">
-						<input type="hidden" name="post_type" value="product">
-						<button type="submit" class="boton hero__enviar">Buscar</button>
-					</form>
-
-					<p class="hero__atajos">
-						<span>Buscado seguido:</span>
-						<?php foreach ( $li_datos['atajos'] as $a ) : ?>
-							<a href="<?php echo esc_url( $a['url'] ); ?>"><?php echo esc_html( $a['nombre'] ); ?></a>
-						<?php endforeach; ?>
-					</p>
+	<section class="li-hero">
+		<div class="li-wrap li-hero__grid">
+			<div class="li-hero__text">
+				<span class="li-badge li-badge--pixel li-badge--greendk li-hero__kicker">[ DESTACADO_DEL_MES ]</span>
+				<h1 class="li-hero__title">Tenemos toda la tecnología para brindarte la <span class="li-green">comodidad</span> que te mereces.</h1>
+				<p class="li-hero__lead">Celulares, accesorios, audio y más. Te atendemos en Villa Santa Rosa y enviamos a todo el país.</p>
+				<div class="li-hero__ctas">
+					<a class="li-btn li-btn--primary li-btn--lg" href="<?php echo esc_url( $li_shop ); ?>">Ver catálogo <?php echo li_ds_icono( 'chevron-r', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></a>
+					<a class="li-btn li-btn--outline-light li-btn--lg" href="<?php echo esc_url( li_whatsapp_url( 'Hola! Quería hacer una consulta.' ) ); ?>" target="_blank" rel="noopener"><?php echo li_ds_icono( 'whatsapp', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Consultar por WhatsApp</a>
 				</div>
-
-				<!-- La escala del catálogo como elemento gráfico: es lo que
-					 realmente distingue al negocio y no necesita fotos. -->
-				<aside class="hero__cifras" aria-label="El catálogo en números">
-					<div class="cifra">
-						<span class="cifra__num"><?php echo esc_html( number_format( $li_datos['productos'], 0, ',', '.' ) ); ?></span>
-						<span class="cifra__etq">productos</span>
-					</div>
-					<div class="cifra">
-						<span class="cifra__num"><?php echo esc_html( (string) $li_datos['categorias'] ); ?></span>
-						<span class="cifra__etq">categorías</span>
-					</div>
-					<div class="cifra">
-						<span class="cifra__num"><?php echo esc_html( (string) $li_datos['marcas'] ); ?></span>
-						<span class="cifra__etq">marcas</span>
-					</div>
-				</aside>
-
+				<ul class="li-hero__checks">
+					<li><?php echo li_ds_icono( 'check', 14 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> 20 años de trayectoria</li>
+					<li><?php echo li_ds_icono( 'check', 14 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Retiro en <?php echo esc_html( LI_DIRECCION ); ?></li>
+					<li><?php echo li_ds_icono( 'check', 14 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envíos a todo el país</li>
+				</ul>
 			</div>
-		</div>
-	</section>
 
-	<!-- ---------------------------------------------------------------
-		 Destacados
-		 --------------------------------------------------------------- -->
-	<?php li_banners_render(); ?>
-
-	<!-- ---------------------------------------------------------------
-		 Retiro en el local — la propuesta más fuerte del negocio
-		 --------------------------------------------------------------- -->
-	<?php if ( $li_local['direccion'] ) : ?>
-	<section class="local">
-		<div class="contenedor">
-			<div class="local__caja">
-				<div class="local__bloque">
-					<p class="local__etq">Retiro en el local</p>
-					<p class="local__dato"><?php echo esc_html( $li_local['direccion'] ); ?></p>
-					<?php if ( $li_local['ciudad'] ) : ?>
-						<p class="local__sub"><?php echo esc_html( $li_local['ciudad'] ); ?><?php echo $li_local['cp'] ? ' · CP ' . esc_html( $li_local['cp'] ) : ''; ?></p>
+			<div class="li-hero__visual" aria-hidden="<?php echo $li_dest ? 'false' : 'true'; ?>">
+				<div class="li-hero__glow"></div>
+				<div class="li-hero__circle">
+					<?php if ( $li_dest ) : ?>
+						<?php echo $li_dest->get_image( 'large', array( 'class' => 'li-hero__img', 'fetchpriority' => 'high', 'loading' => 'eager' ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+					<?php else : ?>
+						<?php echo li_ds_icono( 'power', 96, 'li-hero__power' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 					<?php endif; ?>
 				</div>
-
-				<?php if ( $li_local['horario'] ) : ?>
-				<div class="local__bloque">
-					<p class="local__etq">Horario</p>
-					<p class="local__dato local__dato--mono"><?php echo esc_html( $li_local['horario'] ); ?></p>
-				</div>
+				<?php if ( $li_dest ) : ?>
+					<a class="li-hero__float" href="<?php echo esc_url( $li_dest->get_permalink() ); ?>">
+						<?php $li_m = li_marca_producto( $li_dest->get_id() ); ?>
+						<?php if ( $li_m ) : ?>
+							<span class="li-card__brand"><?php echo esc_html( $li_m ); ?></span>
+						<?php endif; ?>
+						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_publico( $li_dest->get_name() ) ); ?></span>
+						<?php echo li_ds_precio( $li_dest, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+					</a>
 				<?php endif; ?>
+			</div>
+		</div>
+	</section>
 
-				<div class="local__bloque">
-					<p class="local__etq">Cómo pagás</p>
-					<p class="local__sub">Mercado Pago, tarjeta o transferencia</p>
+	<?php if ( $li_datos['marcas_top'] ) : ?>
+	<section class="li-brands" aria-label="Marcas">
+		<div class="li-wrap li-brands__in">
+			<?php foreach ( $li_datos['marcas_top'] as $m ) : ?>
+				<?php
+				// Versión para la tira (silueta recortada, tools/imagenes/logos-tira.mjs), si existe.
+				$li_tira = '/assets/img/marcas/tira/' . $m['slug'] . '.png';
+				$li_logo = file_exists( LI_DIR . $li_tira ) ? LI_URI . $li_tira : $m['img'];
+				?>
+				<a class="li-brands__item" href="<?php echo esc_url( $m['url'] ); ?>" title="<?php echo esc_attr( $m['nombre'] ); ?>"><img class="li-brands__logo" src="<?php echo esc_url( $li_logo ); ?>" alt="<?php echo esc_attr( $m['nombre'] ); ?>" loading="lazy" decoding="async"></a>
+			<?php endforeach; ?>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $li_datos['categorias_top'] ) : ?>
+	<section class="li-wrap li-section li-section--first">
+		<div class="li-section__head">
+			<h2 class="li-h2">Elegí tu categoría</h2>
+			<a class="li-more" href="<?php echo esc_url( $li_shop ); ?>">Ver todas →</a>
+		</div>
+		<div class="li-cats">
+			<?php foreach ( $li_datos['categorias_top'] as $c ) : ?>
+				<a class="li-cat" href="<?php echo esc_url( $c['url'] ); ?>">
+					<span class="li-cat__img">
+						<?php if ( $c['img'] ) : ?>
+							<img src="<?php echo esc_url( $c['img'] ); ?>" alt="" loading="lazy" width="44" height="44">
+						<?php else : ?>
+							<?php echo li_svg_categoria( $c['slug'], $c['nombre'] ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+						<?php endif; ?>
+					</span>
+					<span class="li-cat__name"><?php echo esc_html( $c['nombre'] ); ?></span>
+					<span class="li-cat__more">Ver productos →</span>
+				</a>
+			<?php endforeach; ?>
+		</div>
+	</section>
+	<?php endif; ?>
+
+	<?php if ( $li_datos['mas_vendidos'] ) : ?>
+	<section class="li-wrap li-section">
+		<div class="li-section__head">
+			<div>
+				<span class="li-badge li-badge--pixel li-badge--green li-section__kicker">[ TOP_SELLERS ]</span>
+				<h2 class="li-h2">Lo más vendido del mes</h2>
+			</div>
+			<a class="li-more" href="<?php echo esc_url( add_query_arg( 'orderby', 'popularity', $li_shop ) ); ?>">Ver más →</a>
+		</div>
+		<?php li_ds_grilla( array_slice( $li_datos['mas_vendidos'], 0, 4 ), 'li-grid--4' ); ?>
+	</section>
+	<?php endif; ?>
+
+	<?php
+	$li_resto = array_values( array_diff( $li_datos['ultimos'], $li_datos['mas_vendidos'] ) );
+	if ( count( $li_resto ) >= 4 ) :
+		?>
+	<section class="li-wrap li-section">
+		<div class="li-section__head">
+			<h2 class="li-h2">Últimos ingresos</h2>
+			<a class="li-more" href="<?php echo esc_url( add_query_arg( 'orderby', 'date', $li_shop ) ); ?>">Ver más →</a>
+		</div>
+		<?php li_ds_grilla( array_slice( $li_resto, 0, 4 ), 'li-grid--4' ); ?>
+	</section>
+	<?php endif; ?>
+
+	<section class="li-trust">
+		<div class="li-wrap li-trust__grid">
+			<div>
+				<span class="li-badge li-badge--neutral">Nosotros</span>
+				<h2 class="li-h2 li-trust__title">Somos el local de tecnología de Villa Santa Rosa. Hace <?php echo esc_html( LI_ANTIGUEDAD ); ?>.</h2>
+				<p class="li-lead">No somos un ecommerce anónimo. Nos conocés, nos ves en el pueblo y nos bancamos lo que vendemos.</p>
+				<div class="li-features">
+					<div class="li-feature">
+						<span class="li-feature__ico"><?php echo li_ds_icono( 'store' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+						<div><strong>Retirá en el local</strong><span>Comprá online y pasá a buscarlo por <?php echo esc_html( LI_DIRECCION ); ?>.</span></div>
+					</div>
+					<div class="li-feature">
+						<span class="li-feature__ico"><?php echo li_ds_icono( 'truck' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+						<div><strong>Envíos a todo el país</strong><span>Gratis desde $ 100.000.</span></div>
+					</div>
+					<div class="li-feature">
+						<span class="li-feature__ico"><?php echo li_ds_icono( 'card' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+						<div><strong>Pagá como quieras</strong><span>Mercado Pago, transferencia o efectivo al retirar.</span></div>
+					</div>
+					<div class="li-feature">
+						<span class="li-feature__ico"><?php echo li_ds_icono( 'whatsapp' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+						<div><strong>WhatsApp humano</strong><span>Te atiende una persona, no un bot.</span></div>
+					</div>
 				</div>
 			</div>
+
+			<?php // Foto real del frente (original con retoque de luz, sin agregados). ?>
+			<a class="li-local" href="<?php echo esc_url( 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode( LI_DIRECCION . ', ' . LI_LOCALIDAD ) ); ?>" target="_blank" rel="noopener">
+				<img class="li-local__foto" src="<?php echo esc_url( LI_URI . '/assets/img/local-820.webp' ); ?>"
+					srcset="<?php echo esc_url( LI_URI . '/assets/img/local-480.webp' ); ?> 480w, <?php echo esc_url( LI_URI . '/assets/img/local-820.webp' ); ?> 820w"
+					sizes="(min-width: 900px) 560px, 100vw" width="820" height="615" loading="lazy" decoding="async"
+					alt="<?php echo esc_attr( 'Frente del local de Lucas Innovaciones en ' . LI_DIRECCION . ', ' . LI_LOCALIDAD ); ?>">
+				<span class="li-badge li-badge--pixel li-badge--green">[ EL_LOCAL ]</span>
+				<span class="li-local__info">
+					<span class="li-local__addr"><?php echo esc_html( LI_DIRECCION ); ?></span>
+					<span class="li-local__city"><?php echo esc_html( LI_LOCALIDAD ); ?></span>
+				</span>
+				<span class="li-local__cta">Cómo llegar →</span>
+			</a>
 		</div>
 	</section>
-	<?php endif; ?>
-
-	<!-- ---------------------------------------------------------------
-		 Categorías
-		 --------------------------------------------------------------- -->
-	<?php if ( $li_datos['categorias_top'] ) : ?>
-	<section class="seccion-portada">
-		<div class="contenedor">
-			<div class="seccion__cabecera">
-				<h2 class="seccion__titulo">Categorías</h2>
-				<a class="seccion__enlace" href="<?php echo esc_url( wc_get_page_permalink( 'shop' ) ); ?>">Ver todo el catálogo</a>
-			</div>
-
-			<ul class="categorias">
-				<?php foreach ( $li_datos['categorias_top'] as $c ) : ?>
-					<li class="categoria">
-						<a class="categoria__enlace" href="<?php echo esc_url( $c['url'] ); ?>">
-							<?php li_medallon_categoria( $c ); ?>
-							<span class="categoria__nombre"><?php echo esc_html( $c['nombre'] ); ?></span>
-							<span class="categoria__cuenta"><?php echo esc_html( (string) $c['cuenta'] ); ?></span>
-						</a>
-					</li>
-				<?php endforeach; ?>
-			</ul>
-		</div>
-	</section>
-	<?php endif; ?>
-
-	<!-- ---------------------------------------------------------------
-		 Lo que más se vende — datos reales de 12 meses
-		 --------------------------------------------------------------- -->
-	<?php if ( $li_datos['mas_vendidos'] ) : ?>
-	<section class="seccion-portada seccion-portada--alt">
-		<div class="contenedor">
-			<div class="seccion__cabecera">
-				<h2 class="seccion__titulo">Lo que más se vende</h2>
-				<span class="seccion__enlace">últimos 12 meses</span>
-			</div>
-
-			<?php li_grilla_productos( $li_datos['mas_vendidos'] ); ?>
-		</div>
-	</section>
-	<?php endif; ?>
-
-	<!-- ---------------------------------------------------------------
-		 Marcas
-		 --------------------------------------------------------------- -->
-	<?php if ( $li_datos['marcas_top'] ) : ?>
-	<section class="seccion-portada">
-		<div class="contenedor">
-			<div class="seccion__cabecera">
-				<h2 class="seccion__titulo">Marcas</h2>
-				<span class="seccion__enlace"><?php echo esc_html( (string) $li_datos['marcas'] ); ?> en total</span>
-			</div>
-
-			<ul class="marcas">
-				<?php foreach ( $li_datos['marcas_top'] as $m ) : ?>
-					<li>
-						<a class="marca-item" href="<?php echo esc_url( $m['url'] ); ?>">
-							<?php li_medallon_marca( $m ); ?>
-							<span class="marca-item__nombre"><?php echo esc_html( $m['nombre'] ); ?></span>
-							<span class="marca-item__cuenta"><?php echo esc_html( (string) $m['cuenta'] ); ?></span>
-						</a>
-					</li>
-				<?php endforeach; ?>
-			</ul>
-		</div>
-	</section>
-	<?php endif; ?>
-
-	<!-- ---------------------------------------------------------------
-		 Últimos ingresos
-		 --------------------------------------------------------------- -->
-	<?php if ( $li_datos['ultimos'] ) : ?>
-	<section class="seccion-portada seccion-portada--alt">
-		<div class="contenedor">
-			<div class="seccion__cabecera">
-				<h2 class="seccion__titulo">Últimos ingresos</h2>
-				<a class="seccion__enlace" href="<?php echo esc_url( add_query_arg( 'orderby', 'date', wc_get_page_permalink( 'shop' ) ) ); ?>">Ver más</a>
-			</div>
-
-			<?php li_grilla_productos( $li_datos['ultimos'] ); ?>
-		</div>
-	</section>
-	<?php endif; ?>
 
 </main>
 

@@ -1,10 +1,8 @@
 <?php
 /**
- * Páginas sueltas.
- *
- * Cubre también Carrito, Finalizar compra y Mi cuenta: las dos primeras están
- * construidas con bloques de WooCommerce y la tercera con el shortcode clásico.
- * En los tres casos el tema aporta el envoltorio, no el contenido.
+ * Páginas sueltas: también Carrito y Finalizar compra (bloques de
+ * WooCommerce) y Mi cuenta (shortcode clásico). El tema pone el envoltorio
+ * y el título; el estilo de esas pantallas está en assets/css/blocks.css.
  *
  * @package LucasInnovaciones
  */
@@ -13,26 +11,22 @@ defined( 'ABSPATH' ) || exit;
 
 get_header();
 
-$li_es_tienda = function_exists( 'is_cart' ) && ( is_cart() || is_checkout() || is_account_page() );
-$li_ancho     = function_exists( 'is_checkout' ) && is_checkout() && ! is_order_received_page();
+$li_cuenta = function_exists( 'is_account_page' ) && is_account_page();
 ?>
 
-<main id="contenido" class="contenido <?php echo $li_es_tienda ? 'contenido--tienda' : ''; ?>">
-	<div class="contenedor">
+<main id="contenido" class="li-shop li-page<?php echo $li_cuenta ? ' li-cuenta' : ''; ?>">
+	<div class="li-wrap">
 		<?php li_migas(); ?>
 
 		<?php
 		while ( have_posts() ) :
 			the_post();
 			?>
+			<header class="li-page__head">
+				<h1 class="li-shop__title"><?php the_title(); ?></h1>
+			</header>
 
-			<?php if ( ! $li_ancho ) : ?>
-				<header class="pagina__cabecera">
-					<h1 class="catalogo__titulo"><?php the_title(); ?></h1>
-				</header>
-			<?php endif; ?>
-
-			<div class="pagina__cuerpo">
+			<div class="li-page__body">
 				<?php
 				the_content();
 
@@ -44,7 +38,6 @@ $li_ancho     = function_exists( 'is_checkout' ) && is_checkout() && ! is_order_
 				);
 				?>
 			</div>
-
 			<?php
 		endwhile;
 		?>

@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Categorías que nunca se muestran en la navegación.
  */
-const LI_CAT_OCULTAS = array( 'solo-mostrador', 'sin-categorizar', 'uncategorized' );
+const LI_CAT_OCULTAS = array( 'solo-mostrador', 'vapers', 'sin-categorizar', 'uncategorized' );
 
 /**
  * Productos únicos por rama: los propios más los de toda su descendencia.
@@ -47,7 +47,7 @@ function li_cuentas_por_rama(): array {
 		   JOIN {$wpdb->terms} tv ON tv.term_id = ttv.term_id
 		   WHERE trv.object_id = p.ID AND ttv.taxonomy = 'product_visibility'
 		     AND tv.slug = 'exclude-from-catalog'
-		 )",
+		 )" . li_sql_publicables( 'p.ID' ), // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		ARRAY_A
 	);
 
@@ -85,9 +85,11 @@ function li_cuentas_por_rama(): array {
  * @return array<int,array<string,mixed>>
  */
 function li_arbol_categorias(): array {
+	// La caché lleva la huella de los publicables: si un producto gana o
+	// pierde foto, precio o stock, el árbol se rehace con las cuentas nuevas.
 	$cache = get_transient( 'li_arbol_cat' );
-	if ( is_array( $cache ) ) {
-		return $cache;
+	if ( is_array( $cache ) && ( $cache['huella'] ?? '' ) === li_huella_publicables() ) {
+		return $cache['arbol'];
 	}
 
 	$todas = get_terms(
@@ -117,7 +119,7 @@ function li_arbol_categorias(): array {
 
 	$arbol = isset( $por_padre[0] ) ? li_rama_categorias( $por_padre[0], $por_padre, $cuentas ) : array();
 
-	set_transient( 'li_arbol_cat', $arbol, 6 * HOUR_IN_SECONDS );
+	set_transient( 'li_arbol_cat', array( 'huella' => li_huella_publicables(), 'arbol' => $arbol ), 6 * HOUR_IN_SECONDS );
 
 	return $arbol;
 }

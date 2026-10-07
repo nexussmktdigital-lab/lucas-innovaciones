@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Product Card</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);padding:24px;box-sizing:border-box;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.card{background:#fff;border:1px solid var(--li-border);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;transition:all .2s var(--li-ease);position:relative}
+.card.hover{box-shadow:var(--li-shadow-md);transform:translateY(-2px)}
+.img{background:#F8F8F8;border-radius:10px;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--li-font-mono);color:var(--li-fg-4);font-size:11px}
+.badge{position:absolute;top:18px;left:18px;background:var(--li-green);color:var(--li-black);font-family:var(--li-font-pixel);font-size:14px;padding:2px 8px;border-radius:4px}
+.heart{position:absolute;top:18px;right:18px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.9);border:1px solid var(--li-border);display:flex;align-items:center;justify-content:center}
+.brand{font-size:11px;color:var(--li-fg-3);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.name{font-size:14px;font-weight:600;line-height:1.3;color:var(--li-fg-1)}
+.price{font-family:var(--li-font-display);font-size:20px;font-weight:700;color:var(--li-fg-1);letter-spacing:-0.02em}
+.cuotas{font-size:12px;color:#00A63A;font-weight:600}
+.stock{font-size:11px;color:#00A63A;display:flex;align-items:center;gap:5px}
+.stock::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+</style></head>
+<body class="li-body">
+<div class="card">
+  <span class="badge">−13%</span>
+  <span class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1 7.8 7.8 7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.9z"/></svg></span>
+  <div class="img">samsung-a55.jpg</div>
+  <div class="brand">Samsung</div>
+  <div class="name">Galaxy A55 5G 256GB Awesome Navy</div>
+  <div>
+    <div class="price">$ 1.299.000</div>
+    <div class="cuotas">12 cuotas sin interés de $ 108.250</div>
+  </div>
+  <div class="stock">Stock · Retiralo hoy</div>
+</div>
+<div class="card hover">
+  <div class="img">xiaomi-redmi-14.jpg</div>
+  <div class="brand">Xiaomi</div>
+  <div class="name">Redmi Note 14 Pro 5G 256GB</div>
+  <div>
+    <div class="price">$ 949.000</div>
+    <div class="cuotas">12 cuotas sin interés de $ 79.080</div>
+  </div>
+  <div class="stock">Stock disponible</div>
+</div>
+<div class="card">
+  <span class="badge" style="background:var(--li-black);color:var(--li-green)">NUEVO</span>
+  <div class="img">jbl-go4.jpg</div>
+  <div class="brand">JBL</div>
+  <div class="name">Parlante Bluetooth Go 4 Portátil</div>
+  <div>
+    <div class="price">$ 69.900</div>
+    <div class="cuotas">6 cuotas sin interés de $ 11.650</div>
+  </div>
+  <div class="stock">Stock disponible</div>
+</div>
+</body></html>

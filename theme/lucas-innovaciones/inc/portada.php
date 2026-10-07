@@ -11,154 +11,126 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Reúne lo que necesita la portada, cacheado 6 horas.
+ * Reúne lo que necesita la portada. Todo sale de los productos que cumplen
+ * las reglas de catálogo (inc/catalogo.php): la caché lleva la huella de esa
+ * lista y se rehace sola cuando un producto gana o pierde foto, precio o stock.
  *
  * @return array<string,mixed>
  */
 function li_datos_portada(): array {
-	$cache = get_transient( 'li_portada' );
-	if ( is_array( $cache ) ) {
+	$huella = li_huella_publicables();
+	$cache  = get_transient( 'li_portada' );
+	if ( is_array( $cache ) && ( $cache['huella'] ?? '' ) === $huella ) {
 		return $cache;
 	}
 
 	global $wpdb;
 
-	$excluir = array( 'solo-mostrador', 'sin-categorizar' );
+	$ids      = li_ids_publicables();
+	$en_lista = li_sql_publicables( 'p.ID' );
 
-	// --- Cifras -------------------------------------------------------
-	$productos = (int) $wpdb->get_var(
-		"SELECT COUNT(*) FROM {$wpdb->posts} p
-		 WHERE p.post_type = 'product' AND p.post_status = 'publish'
-		 AND NOT EXISTS (
-			SELECT 1 FROM {$wpdb->term_relationships} tr
-			JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
-			JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
-			WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug = 'exclude-from-catalog'
-		 )"
-	);
-
-	$categorias = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->term_taxonomy} WHERE taxonomy = 'product_cat' AND count > 0" );
-	$marcas     = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->term_taxonomy} WHERE taxonomy = 'product_brand' AND count > 0" );
-
-	// --- Categorías ---------------------------------------------------
-	$cats = get_terms(
-		array(
-			'taxonomy'   => 'product_cat',
-			'hide_empty' => true,
-			'orderby'    => 'count',
-			'order'      => 'DESC',
-			'number'     => 14,
-		)
-	);
-
+	// --- Categorías de primer nivel con productos a la venta -----------
 	$categorias_top = array();
-	if ( $cats && ! is_wp_error( $cats ) ) {
-		foreach ( $cats as $c ) {
-			if ( in_array( $c->slug, $excluir, true ) || count( $categorias_top ) >= 10 ) {
-				continue;
-			}
-			$categorias_top[] = array(
-				'nombre' => $c->name,
-				'slug'   => $c->slug,
-				'cuenta' => (int) $c->count,
-				'url'    => (string) get_term_link( $c ),
-				'img'    => li_termino_imagen( $c->term_id ) ?: li_categoria_imagen( $c->slug ),
-			);
-		}
-	}
-
-	// --- Marcas -------------------------------------------------------
-	$brands = get_terms(
-		array(
-			'taxonomy'   => 'product_brand',
-			'hide_empty' => true,
-			'orderby'    => 'count',
-			'order'      => 'DESC',
-			'number'     => 16,
-		)
-	);
-
-	$marcas_top = array();
-	if ( $brands && ! is_wp_error( $brands ) ) {
-		foreach ( $brands as $b ) {
-			// La imagen del término gana; si no hay, el logo que trae el tema.
-			$propia = li_termino_imagen( $b->term_id );
-			$logo   = li_marca_logo( $b->slug );
-
-			$marcas_top[] = array(
-				'nombre' => $b->name,
-				'slug'   => $b->slug,
-				'cuenta' => (int) $b->count,
-				'url'    => (string) get_term_link( $b ),
-				'img'    => $propia ?: $logo['url'],
-				'fondo'  => $propia ? '' : $logo['fondo'],
-			);
-		}
-	}
-
-	// --- Más vendidos, con venta real de los últimos 12 meses ---------
-	$tabla = $wpdb->prefix . 'wc_order_product_lookup';
-	$ids   = $wpdb->get_col(
-		"SELECT l.product_id FROM {$tabla} l
-		 JOIN {$wpdb->posts} p ON p.ID = l.product_id AND p.post_status = 'publish'
-		 WHERE l.date_created >= DATE_SUB(NOW(), INTERVAL 12 MONTH) AND l.product_id > 0
-		 GROUP BY l.product_id
-		 ORDER BY SUM(l.product_qty) DESC
-		 LIMIT 10"
-	);
-
-	$mas_vendidos = li_filtrar_visibles( $ids, 5 );
-
-	// --- Últimos ingresos ---------------------------------------------
-	$nuevos  = get_posts(
-		array(
-			'post_type'      => 'product',
-			'post_status'    => 'publish',
-			'posts_per_page' => 12,
-			'orderby'        => 'date',
-			'order'          => 'DESC',
-			'fields'         => 'ids',
-		)
-	);
-	$ultimos = li_filtrar_visibles( $nuevos, 5 );
-
-	// --- Atajos de búsqueda: las categorías con más rotación ----------
-	$atajos = array();
-	foreach ( array_slice( $categorias_top, 0, 4 ) as $c ) {
-		$atajos[] = array(
+	foreach ( li_categorias_principales( 6 ) as $c ) {
+		$t = get_term_by( 'slug', $c['slug'], 'product_cat' );
+		$categorias_top[] = array(
 			'nombre' => $c['nombre'],
+			'slug'   => $c['slug'],
+			'cuenta' => $c['cuenta'],
 			'url'    => $c['url'],
+			'img'    => $t ? ( li_termino_imagen( $t->term_id ) ?: li_categoria_imagen( $c['slug'] ) ) : '',
 		);
 	}
 
-	$datos = compact( 'productos', 'categorias', 'marcas', 'categorias_top', 'marcas_top', 'mas_vendidos', 'ultimos', 'atajos' );
+	// --- Marcas con productos a la venta -------------------------------
+	// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	$filas = $wpdb->get_results(
+		"SELECT t.term_id, t.name, t.slug, COUNT(DISTINCT p.ID) n
+		 FROM {$wpdb->posts} p
+		 JOIN {$wpdb->term_relationships} tr ON tr.object_id = p.ID
+		 JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_brand'
+		 JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+		 WHERE 1 = 1 {$en_lista}
+		 GROUP BY t.term_id, t.name, t.slug
+		 ORDER BY n DESC, t.name ASC
+		 LIMIT 60",
+		ARRAY_A
+	);
+	// phpcs:enable
+
+	$marcas_top = array();
+	// La tira de la portada muestra logos: entran solo las marcas que tienen
+	// logo (propio del término o el que trae el tema), las 10 con más productos.
+	foreach ( $filas as $b ) {
+		if ( count( $marcas_top ) >= 10 ) {
+			break;
+		}
+		$propia = li_termino_imagen( (int) $b['term_id'] );
+		$logo   = li_marca_logo( $b['slug'] );
+		if ( ! $propia && ! $logo['url'] ) {
+			continue;
+		}
+
+		$marcas_top[] = array(
+			'nombre' => $b['name'],
+			'slug'   => $b['slug'],
+			'cuenta' => (int) $b['n'],
+			'url'    => (string) get_term_link( $b['slug'], 'product_brand' ),
+			'img'    => $propia ?: $logo['url'],
+			'fondo'  => $propia ? '' : $logo['fondo'],
+		);
+	}
+
+	// --- Más vendidos: venta real de los últimos 12 meses --------------
+	$tabla        = $wpdb->prefix . 'wc_order_product_lookup';
+	$mas_vendidos = $ids ? array_map(
+		'intval',
+		$wpdb->get_col(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT l.product_id AS ID FROM {$tabla} l
+			 JOIN {$wpdb->posts} p ON p.ID = l.product_id
+			 WHERE l.date_created >= DATE_SUB(NOW(), INTERVAL 12 MONTH) {$en_lista}
+			 GROUP BY l.product_id
+			 ORDER BY SUM(l.product_qty) DESC
+			 LIMIT 4"
+		)
+	) : array();
+
+	// --- Últimos ingresos ----------------------------------------------
+	$ultimos = $ids ? array_map(
+		'intval',
+		$wpdb->get_col(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT p.ID FROM {$wpdb->posts} p WHERE 1 = 1 {$en_lista} ORDER BY p.post_date DESC LIMIT 8"
+		)
+	) : array();
+
+	// Si todavía hay pocas ventas con foto, se completa con lo último que entró.
+	foreach ( $ultimos as $id ) {
+		if ( count( $mas_vendidos ) >= 4 ) {
+			break;
+		}
+		if ( ! in_array( $id, $mas_vendidos, true ) ) {
+			$mas_vendidos[] = $id;
+		}
+	}
+
+	// --- Destacado del hero: el producto más caro a la venta ------------
+	$destacado = $ids ? (int) $wpdb->get_var(
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		"SELECT p.ID FROM {$wpdb->posts} p
+		 JOIN {$wpdb->wc_product_meta_lookup} l ON l.product_id = p.ID
+		 WHERE 1 = 1 {$en_lista}
+		 ORDER BY " . li_sql_precio_ars( 'l', 'max_price' ) . " DESC LIMIT 1"
+	) : 0;
+
+	$productos = count( $ids );
+
+	$datos = compact( 'huella', 'productos', 'categorias_top', 'marcas_top', 'mas_vendidos', 'ultimos', 'destacado' );
 
 	set_transient( 'li_portada', $datos, 6 * HOUR_IN_SECONDS );
 
 	return $datos;
-}
-
-/**
- * Deja solo productos visibles y comprables, hasta un máximo.
- *
- * @param array<int,int|string> $ids   Identificadores.
- * @param int                   $tope  Cantidad máxima.
- * @return int[]
- */
-function li_filtrar_visibles( array $ids, int $tope ): array {
-	$out = array();
-
-	foreach ( $ids as $id ) {
-		if ( count( $out ) >= $tope ) {
-			break;
-		}
-		$p = wc_get_product( (int) $id );
-		if ( $p && $p->is_visible() ) {
-			$out[] = (int) $id;
-		}
-	}
-
-	return $out;
 }
 
 /**
@@ -209,7 +181,7 @@ function li_grilla_productos( array $ids ): void {
 
 	$original = $GLOBALS['post'] ?? null;
 
-	echo '<ul class="grilla productos">';
+	echo '<ul class="li-grid grilla productos">';
 
 	foreach ( $ids as $id ) {
 		$GLOBALS['post'] = get_post( $id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride

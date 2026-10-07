@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Logo</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+body{margin:0;background:var(--li-bg);font-family:var(--li-font-sans);display:flex;align-items:center;gap:24px;padding:20px;height:260px;box-sizing:border-box}
+.tile{display:flex;align-items:center;justify-content:center;border-radius:16px;border:1px solid var(--li-border);flex:1;height:100%;background:#fff}
+.tile.dark{background:var(--li-black);border-color:var(--li-black)}
+.tile img{max-width:80%;max-height:80%;object-fit:contain}
+.label{position:absolute;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--li-fg-3);margin:10px}
+.tile{position:relative}
+</style></head>
+<body class="li-body">
+  <div class="tile"><span class="label">Sobre claro</span><img src="../assets/logo-full.png" alt=""></div>
+  <div class="tile dark"><span class="label" style="color:var(--li-fg-invert-2)">Sobre oscuro</span><img src="../assets/logo-full.png" alt=""></div>
+  <div class="tile">
+    <span class="label">Mark</span>
+    <div style="width:120px;height:120px;border-radius:50%;background:var(--li-black);display:flex;align-items:center;justify-content:center;position:relative">
+      <span style="font-family:var(--li-font-display);color:#fff;font-size:64px;font-weight:800;line-height:1">L.</span>
+      <span style="position:absolute;right:-12px;bottom:-4px;width:42px;height:42px;border-radius:50%;background:var(--li-green);display:flex;align-items:center;justify-content:center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2v10M18.36 6.64a9 9 0 1 1-12.72 0"/></svg>
+      </span>
+    </div>
+  </div>
+</body></html>
