@@ -4,7 +4,7 @@ Punto de venta del local de Caseros 924, Villa Santa Rosa (Córdoba). Comparte
 catálogo y stock con la tienda online de WooCommerce, y lleva por su cuenta lo
 que WooCommerce no sabe llevar: ventas, fiado, caja, gastos y auditoría.
 
-**Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, ver las ventas del turno, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
+**Estado: v1.1 terminada.** Se puede abrir caja, vender, cobrar con varios medios, **fiar y cobrar el fiado**, imprimir el ticket, preparar el comprobante y los recordatorios **por WhatsApp**, cargar **gastos** y mover plata entre cuentas, buscar una venta de cualquier día y abrir su ficha —qué se vendió, cómo se pagó, en qué cuotas quedó—, reimprimir un comprobante, anular una venta mal cargada y **cerrar el turno contando los billetes, con el reporte del turno impreso**. Lo de un turno ya cerrado **vuelve por devolución**, que sale del cajón de hoy y el arqueo lo explica. El producto que falta **se carga desde la misma pantalla de venta** —de a uno o con una planilla entera— y queda vendible en el acto. Los **reportes** dicen cuánto se vendió, de qué, con qué margen y contra qué período anterior, **arrancando en la facturación del sistema anterior** y no el día que se instaló el POS, y bajan en planilla para el contador. El mostrador cobra su propio precio, más barato que el de la tienda online. El sistema frena las ventas con precios imposibles y muestra qué fichas del catálogo hay que arreglar. Y si se corta internet **se sigue vendiendo**: la venta se guarda en la tablet y entra sola cuando vuelve.
 
 El sistema pasó **nueve auditorías**, anotadas en [AUDITORIA.md](AUDITORIA.md): las fases 3.5 a 3.7 salieron de la primera, y las dos últimas son el control previo a producción — los diecinueve invariantes de plata dando sobre la base de verdad, y una medición con el catálogo completo (803 productos: el buscador tarda 6 ms y los reportes 3).
 
@@ -401,6 +401,32 @@ de un turno ya cerrado no: la plata volvió a aquel cajón y revertir contra una
 caja cerrada dejaría dos arqueos mal (D29). Para esas, la fila ofrece
 **devolver**, que sale del cajón de hoy y el arqueo lo explica. El servidor lo
 rechaza igual; no ofrecer el botón evita el clic que falla.
+
+### La ficha de una venta
+
+El número de comprobante de cada fila —y el enlace **Ver la venta**, que es el
+que queda a mano en la tablet— abren `/ventas/<id>`: la venta entera en una
+pantalla. Entre la lista, que muestra una línea, y el comprobante, que muestra
+lo que el cliente se lleva, faltaba lo de adentro, que es lo que se mira cuando
+el cliente vuelve con una compra de hace dos días.
+
+Lleva, en este orden: el cliente con su DNI y su teléfono, enlazado a su ficha;
+**qué se vendió**, renglón por renglón, con la cantidad, el precio unitario, el
+precio en dólares si se vendió en dólares y el descuento que se le hizo;
+**cómo se pagó** —cada medio, la marca y las cuotas de la tarjeta, los billetes
+verdes que entraron con su cotización, el vuelto que se dio y lo que quedó
+fiado—; **cómo lo paga**, con cada cuota, su vencimiento y lo que falta, en la
+moneda del plan (D62); y **qué se devolvió** después, con el motivo y de dónde
+salió la plata. Si se cobró sin conexión lo dice, con la hora real del cobro y
+la diferencia contra el catálogo.
+
+**Acá sí van los medios de pago**, que en el comprobante no van a propósito:
+esta pantalla es de adentro y aquel papel es del cliente.
+
+Las cuotas que muestra son **las del plan de esta venta**, no las de la cuenta
+del cliente: quien compró tres veces tiene tres planes, y un plan anulado no
+aparece. Desde la ficha se reimprime el comprobante y se anula o se devuelve,
+con la misma regla del turno de la lista.
 
 ### El comprobante
 
@@ -1674,6 +1700,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | El límite de arriba es exclusivo: «ayer» no se come lo de hoy | `src/ventas/anular.test.ts` |
 | Una venta anulada sigue en el historial: el comprobante se reimprime igual | `src/ventas/anular.test.ts` |
 | Se mira otro día y se reimprime desde ahí | `e2e/venta.spec.ts` |
+| La ficha trae lo vendido, con qué se pagó y el vuelto deducido | `src/ventas/detalle.test.ts` |
+| Las cuotas que muestra son las de esa venta, no las de la cuenta del cliente | `src/ventas/detalle.test.ts` |
+| Un plan anulado no deja cuotas en la ficha de su venta | `src/ventas/detalle.test.ts` |
+| La ficha sabe si el turno sigue abierto: de eso depende anular o devolver | `src/ventas/detalle.test.ts` |
+| El vuelto nunca sale de una transferencia, solo del efectivo entregado | `src/ventas/detalle.test.ts` |
+| Desde la lista se abre la venta y se ve con qué pagó | `e2e/venta.spec.ts` |
 | Un servidor lento no se anuncia como «sin conexión» cuando no hay copia guardada | `src/offline/sw.test.ts` |
 | Con la red caída de verdad, y sin copia, sí se avisa que no hay conexión | `src/offline/sw.test.ts` |
 | Habiendo copia, se sirve sin esperar al servidor lento, y la tardía se guarda | `src/offline/sw.test.ts` |

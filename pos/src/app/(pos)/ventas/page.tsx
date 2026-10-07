@@ -161,8 +161,15 @@ export default async function PaginaVentas({
                     <span className="tabular text-sm text-(--color-tinta-suave)">
                       {unSoloDia ? formatearHora(v.fecha) : formatearFecha(v.fecha)}
                     </span>
-                    <span className="tabular hidden text-sm text-(--color-tinta-suave) sm:block">
-                      {v.numero}
+                    {/* El número abre la ficha. Es por donde se entra cuando se
+                        busca una venta vieja y hay que ver qué pasó adentro. */}
+                    <span className="tabular hidden text-sm sm:block">
+                      <Link
+                        href={`/ventas/${v.id}`}
+                        className="text-(--color-tinta-suave) underline underline-offset-2"
+                      >
+                        {v.numero}
+                      </Link>
                     </span>
                     <span className="min-w-0 text-sm">
                       {v.detalle}{' '}
@@ -237,6 +244,16 @@ export default async function PaginaVentas({
                   ) : null}
 
                   <div className="mt-2 flex flex-wrap items-center gap-3">
+                    {/* En la tablet la columna del número no entra, así que el
+                        camino a la ficha también está acá: es el primero,
+                        porque mirar la venta es lo que se hace antes de
+                        decidir si se reimprime, se anula o se devuelve. */}
+                    <Link
+                      href={`/ventas/${v.id}`}
+                      className="text-sm font-medium underline underline-offset-2"
+                    >
+                      Ver la venta
+                    </Link>
                     <a
                       href={`/ticket/${v.id}`}
                       target="_blank"
