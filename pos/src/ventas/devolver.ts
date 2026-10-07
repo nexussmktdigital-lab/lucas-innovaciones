@@ -401,6 +401,7 @@ export async function registrarDevolucion(
       variantWooId: number | null;
       cantidad: number;
       stockResultante: number;
+      delta: number;
     }[] = [];
     let unidadesAlStock = 0;
 
@@ -441,6 +442,7 @@ export async function registrarDevolucion(
             variantWooId: v.wooId,
             cantidad: x.cantidad,
             stockResultante: v.stock,
+            delta: x.cantidad,
           });
         }
         continue;
@@ -471,6 +473,7 @@ export async function registrarDevolucion(
           variantWooId: null,
           cantidad: x.cantidad,
           stockResultante: p.stock,
+          delta: x.cantidad,
         });
       }
     }
