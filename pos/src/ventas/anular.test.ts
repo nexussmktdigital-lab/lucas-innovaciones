@@ -21,7 +21,7 @@ import {
   users,
 } from '@/db/schema';
 import { confirmarVenta } from './confirmar';
-import { anularVenta, ErrorAnulacion, ventasDelTurno } from './anular';
+import { anularVenta, ErrorAnulacion, ventasDelTurno, ventasEnPeriodo } from './anular';
 
 let db: TestDb;
 let duenioId: string;
@@ -236,6 +236,19 @@ describe('ventasDelTurno', () => {
     expect(anulada.vendedor).toBe('Lucas');
   });
 
+  it('trae el cliente y el turno, que es lo que la pantalla necesita para decidir', async () => {
+    // El turno decide si se ofrece «Anular» o «Devolver»: una venta de un turno
+    // cerrado no se anula. Y el cliente es por quien se busca una venta vieja.
+    const venta = await venderVidrio(1);
+
+    const [fila] = await ventasDelTurno(db, sesionId);
+
+    expect(fila!.id).toBe(venta.id);
+    expect(fila!.cashSessionId).toBe(sesionId);
+    // Esta venta fue sin cliente, que es el caso del mostrador.
+    expect(fila!.cliente).toBeNull();
+  });
+
   it('una venta anulada no cuenta en el arqueo del turno', async () => {
     const venta = await venderVidrio(2);
     await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Prueba' });
@@ -245,5 +258,101 @@ describe('ventasDelTurno', () => {
 
     expect(resumen.cantidadDeVentas).toBe(0);
     expect(resumen.efectivoEsperadoCentavos).toBe(0);
+  });
+});
+
+/*
+ * El historial. Hasta ahora la pantalla de Ventas solo mostraba el turno
+ * abierto, y lo que se pregunta en el mostrador es «la venta del iPhone de la
+ * semana pasada».
+ */
+describe('ventasEnPeriodo', () => {
+  /*
+   * Una venta con fecha de otro día.
+   *
+   * No se puede mover una venta ya hecha: un disparador de la 0001 las hace
+   * inmutables salvo el estado, y está bien que así sea. La vía legítima es la
+   * misma que usa una venta cobrada sin conexión, que entra con la hora en que
+   * se cobró y no con la de ahora (D56).
+   */
+  async function venderEl(fecha: Date, cantidad = 1) {
+    return confirmarVenta(db, {
+      lineas: [{ productId: vidrioId, cantidad }],
+      pagos: [{ medio: 'efectivo', montoCentavos: 500_000 * cantidad, monetaryAccountId: cajaId }],
+      vendedorId: duenioId,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: `vieja-${Math.random()}`,
+      diferida: {
+        capturadaEn: fecha,
+        preciosCobradosCentavos: [500_000],
+      },
+    });
+  }
+
+  const UN_DIA = 24 * 60 * 60 * 1000;
+
+  it('trae las de ese rango y deja afuera las de otros días', async () => {
+    const ahora = new Date();
+    const hoy = await venderVidrio(1);
+    const ayer = await venderEl(new Date(ahora.getTime() - UN_DIA));
+    await venderEl(new Date(ahora.getTime() - 8 * UN_DIA));
+
+    const ultimaSemana = await ventasEnPeriodo(
+      db,
+      new Date(ahora.getTime() - 6 * UN_DIA),
+      new Date(ahora.getTime() + UN_DIA),
+    );
+
+    expect(ultimaSemana.map((v) => v.numero).sort()).toEqual([hoy.numero, ayer.numero].sort());
+  });
+
+  it('el límite de arriba es exclusivo, así «ayer» no se come lo de hoy', async () => {
+    /*
+     * Un límite inclusivo deja afuera la última fracción de segundo del día, y
+     * un período que termina a las 00:00 de hoy no tiene que traer la venta de
+     * las 00:00 de hoy. Es el mismo criterio que usan los reportes.
+     */
+    const corte = new Date('2026-06-15T03:00:00Z');
+    await venderEl(corte);
+
+    const hasta = await ventasEnPeriodo(db, new Date('2026-06-14T03:00:00Z'), corte);
+    const incluye = await ventasEnPeriodo(
+      db,
+      corte,
+      new Date('2026-06-16T03:00:00Z'),
+    );
+
+    expect(hasta).toHaveLength(0);
+    expect(incluye).toHaveLength(1);
+  });
+
+  it('las anuladas siguen apareciendo: el comprobante se reimprime igual', async () => {
+    const venta = await venderVidrio(1);
+    await anularVenta(db, { ventaId: venta.id, usuarioId: duenioId, motivo: 'Prueba' });
+
+    const ahora = new Date();
+    const lista = await ventasEnPeriodo(
+      db,
+      new Date(ahora.getTime() - UN_DIA),
+      new Date(ahora.getTime() + UN_DIA),
+    );
+
+    expect(lista).toHaveLength(1);
+    expect(lista[0]!.estado).toBe('cancelled');
+  });
+
+  it('de la más nueva a la más vieja', async () => {
+    const ahora = new Date();
+    const vieja = await venderEl(new Date(ahora.getTime() - 3 * UN_DIA));
+    const nueva = await venderVidrio(2);
+
+    const lista = await ventasEnPeriodo(
+      db,
+      new Date(ahora.getTime() - 7 * UN_DIA),
+      new Date(ahora.getTime() + UN_DIA),
+    );
+
+    expect(lista.map((v) => v.numero)).toEqual([nueva.numero, vieja.numero]);
   });
 });

@@ -399,9 +399,19 @@ export interface VentaDelTurno {
   estado: 'completed' | 'cancelled';
   motivoAnulacion: string | null;
   vendedor: string | null;
+  /** A quién se le vendió, si quedó registrado. */
+  cliente: string | null;
   medios: string[];
   unidades: number;
   detalle: string;
+  /**
+   * El turno en el que se cobró.
+   *
+   * Lo necesita la pantalla para saber si ofrecer «Anular»: una venta de un
+   * turno ya cerrado no se anula —descuadraría dos arqueos— y se devuelve. El
+   * servidor lo rechaza igual; no ofrecerlo evita el clic que falla.
+   */
+  cashSessionId: string | null;
   /** True si se cobró sin conexión y entró después (D56). */
   offline: boolean;
   /** Cuándo se cobró de verdad, si fue sin conexión. */
@@ -414,6 +424,45 @@ export async function ventasDelTurno(
   db: BaseDatos,
   cashSessionId: string,
 ): Promise<VentaDelTurno[]> {
+  return consultarVentas(db, sql`s.cash_session_id = ${cashSessionId}`);
+}
+
+/**
+ * Ventas entre dos instantes, de la más nueva a la más vieja.
+ *
+ * `hasta` es **exclusivo**, igual que en los reportes: «ayer» va desde las
+ * 00:00 de ayer hasta las 00:00 de hoy. Un límite inclusivo deja afuera la
+ * última fracción de segundo, que es poco hasta el día que una venta cae justo
+ * ahí.
+ *
+ * La fecha que manda es la de la venta, no la del turno: una venta cobrada sin
+ * conexión entra con la hora en que se cobró (D56), que es cuando pasó.
+ */
+export async function ventasEnPeriodo(
+  db: BaseDatos,
+  desde: Date,
+  hasta: Date,
+  limite = 300,
+): Promise<VentaDelTurno[]> {
+  return consultarVentas(
+    db,
+    sql`s.fecha >= ${desde.toISOString()} AND s.fecha < ${hasta.toISOString()}`,
+    limite,
+  );
+}
+
+/**
+ * La consulta que comparten las dos.
+ *
+ * Una sola, y no dos parecidas, porque la pantalla de Ventas las muestra igual:
+ * dos consultas que devuelven lo mismo se despegan en la primera columna que se
+ * le agregue a una.
+ */
+async function consultarVentas(
+  db: BaseDatos,
+  filtro: ReturnType<typeof sql>,
+  limite?: number,
+): Promise<VentaDelTurno[]> {
   const filas = filasDe<{
     id: string;
     numero: string;
@@ -422,6 +471,8 @@ export async function ventasDelTurno(
     estado: 'completed' | 'cancelled';
     motivo_anulacion: string | null;
     vendedor: string | null;
+    cliente: string | null;
+    cash_session_id: string | null;
     medios: string[] | null;
     unidades: string | number | null;
     detalle: string | null;
@@ -439,7 +490,9 @@ export async function ventasDelTurno(
              s.offline,
              s.offline_capturada_en,
              s.offline_desvio_centavos,
+             s.cash_session_id,
              u.nombre AS vendedor,
+             c.nombre AS cliente,
              (SELECT array_agg(DISTINCT p.medio::text)
                 FROM sale_payments p WHERE p.sale_id = s.id)          AS medios,
              (SELECT COALESCE(SUM(i.cantidad), 0)
@@ -448,8 +501,10 @@ export async function ventasDelTurno(
                 FROM sale_items i WHERE i.sale_id = s.id)             AS detalle
         FROM sales s
         LEFT JOIN users u ON u.id = s.vendedor_id
-       WHERE s.cash_session_id = ${cashSessionId}
+        LEFT JOIN customers c ON c.id = s.cliente_id
+       WHERE ${filtro}
        ORDER BY s.fecha DESC
+       ${limite === undefined ? sql`` : sql`LIMIT ${limite}`}
     `),
   );
 
@@ -461,6 +516,8 @@ export async function ventasDelTurno(
     estado: f.estado,
     motivoAnulacion: f.motivo_anulacion,
     vendedor: f.vendedor,
+    cliente: f.cliente,
+    cashSessionId: f.cash_session_id === null ? null : String(f.cash_session_id),
     medios: f.medios ?? [],
     unidades: Number(f.unidades ?? 0),
     detalle: f.detalle ?? '',

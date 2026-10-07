@@ -4,10 +4,18 @@ import { puede } from '@/auth/permisos';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
-import { ventasDelTurno } from '@/ventas/anular';
+import { ventasEnPeriodo } from '@/ventas/anular';
+import {
+  ErrorPeriodo,
+  leerNombreDePeriodo,
+  periodoEntre,
+  periodoPorNombre,
+  PERIODOS,
+  type Periodo,
+} from '@/reportes/periodo';
 import { nombreDelMedio } from '@/ventas/ticket';
 import { formatearARS } from '@/lib/dinero';
-import { formatearFechaHora, formatearHora } from '@/lib/fecha';
+import { formatearFecha, formatearFechaHora, formatearHora } from '@/lib/fecha';
 import { devolucionesPendientes } from '@/fiado/devoluciones';
 import { armarComprobantes } from '@/whatsapp/mensajes';
 import type { MedioPago } from '@/ventas/carrito';
@@ -29,33 +37,59 @@ const COLUMNAS =
   'lg:grid-cols-[52px_120px_1fr_110px_150px_130px]';
 
 /**
- * Ventas del turno.
+ * Historial de ventas.
  *
- * Existe por dos cosas que faltaban y que se necesitan todos los días: volver a
- * imprimir un comprobante —hasta ahora, si se cerraba la ventana, se perdía— y
- * anular una venta mal cargada.
+ * Existe por tres cosas que se necesitan todos los días: volver a imprimir un
+ * comprobante —hasta ahora, si se cerraba la ventana, se perdía—, anular una
+ * venta mal cargada, y **buscar una venta de otro día**: «la del iPhone de la
+ * semana pasada», que es lo que se pregunta cuando el cliente vuelve.
+ *
+ * Arranca en **hoy** y no en el turno abierto, que es lo que mostraba antes: un
+ * turno es una unidad de caja, no de calendario, y quien busca una venta piensa
+ * en días. De paso, la pantalla ahora abre con la caja cerrada —mirar lo de ayer
+ * a la mañana, antes de abrir, es justo cuando se mira—.
  */
-export default async function PaginaVentas() {
+export default async function PaginaVentas({
+  searchParams,
+}: {
+  searchParams: Promise<{ periodo?: string; desde?: string; hasta?: string }>;
+}) {
   const sesion = await auth();
   const puedeAnular = sesion?.user ? puede(sesion.user.rol, 'venta.anular') : false;
   const terminal = config().POS_TERMINAL;
   const caja = await sesionAbierta(db, terminal);
 
-  if (!caja) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <h1 className="font-titulo text-2xl font-bold tracking-tight">Ventas del turno</h1>
-        <p className="mt-4 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-6 text-sm">
-          La caja está cerrada, así que no hay un turno en curso.{' '}
-          <Link href="/caja" className="font-semibold underline underline-offset-2">
-            Abrir la caja
-          </Link>
-        </p>
-      </div>
-    );
+  const { periodo: pedido, desde, hasta } = await searchParams;
+
+  /*
+   * El período, igual que en Reportes y con el mismo código.
+   *
+   * Un rango escrito a mano que no se entiende no deja la pantalla en blanco:
+   * se muestra el error y se cae a «hoy», que es lo que casi siempre se quiere.
+   */
+  let error: string | null = null;
+  let periodo: Periodo;
+  let elegido: string | null = null;
+
+  if (desde && hasta) {
+    try {
+      periodo = periodoEntre(desde, hasta);
+    } catch (e) {
+      error = e instanceof ErrorPeriodo ? e.message : 'No se entiende ese rango de fechas.';
+      periodo = periodoPorNombre('hoy');
+      elegido = 'hoy';
+    }
+  } else {
+    const nombre = pedido ? leerNombreDePeriodo(pedido) : 'hoy';
+    periodo = periodoPorNombre(nombre);
+    elegido = nombre;
   }
 
-  const ventas = await ventasDelTurno(db, caja.id);
+  const ventas = await ventasEnPeriodo(db, periodo.desde, periodo.hasta);
+
+  // Con un período de un día alcanza la hora; con varios hace falta la fecha,
+  // o dos ventas de días distintos se leen como si fueran del mismo.
+  const unSoloDia = periodo.desdeISO === periodo.hastaISO;
   const vigentes = ventas.filter((v) => v.estado === 'completed');
   const facturado = vigentes.reduce((suma, v) => suma + v.totalCentavos, 0);
   const comprobantes = await armarComprobantes(
@@ -75,12 +109,15 @@ export default async function PaginaVentas() {
     <div className="mx-auto max-w-5xl space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="font-titulo text-2xl font-bold tracking-tight">Ventas del turno</h1>
+          <h1 className="font-titulo text-2xl font-bold tracking-tight">Ventas</h1>
           <p className="text-sm text-(--color-tinta-suave)">
-            Desde {formatearFechaHora(caja.abiertaEn)} · Terminal {terminal}
+            {periodo.etiqueta} · Terminal {terminal}
+            {caja ? ` · turno abierto desde ${formatearFechaHora(caja.abiertaEn)}` : ' · caja cerrada'}
           </p>
         </div>
       </div>
+
+      <Selector elegido={elegido} periodo={periodo} error={error} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Dato titulo="Ventas" valor={vigentes.length.toLocaleString('es-AR')} />
@@ -89,7 +126,7 @@ export default async function PaginaVentas() {
 
       {ventas.length === 0 ? (
         <p className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-6 text-center text-sm text-(--color-tinta-suave)">
-          Todavía no se vendió nada en este turno.
+          No hay ventas en ese período.
         </p>
       ) : (
         <div className="overflow-hidden rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel)">
@@ -101,10 +138,10 @@ export default async function PaginaVentas() {
             vendió y cuánto.
           */}
           <div className={`${COLUMNAS} bg-(--color-papel) px-4 py-2.5 text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase`}>
-            <div>Hora</div>
+            <div>{unSoloDia ? 'Hora' : 'Fecha'}</div>
             <div className="hidden sm:block">Comprobante</div>
             <div>Qué se vendió</div>
-            <div className="hidden sm:block">Vendedor</div>
+            <div className="hidden sm:block">Cliente</div>
             <div className="hidden lg:block">Pago</div>
             <div className="text-right">Total</div>
           </div>
@@ -122,7 +159,7 @@ export default async function PaginaVentas() {
                 >
                   <div className={`${COLUMNAS} items-baseline`}>
                     <span className="tabular text-sm text-(--color-tinta-suave)">
-                      {formatearHora(v.fecha)}
+                      {unSoloDia ? formatearHora(v.fecha) : formatearFecha(v.fecha)}
                     </span>
                     <span className="tabular hidden text-sm text-(--color-tinta-suave) sm:block">
                       {v.numero}
@@ -147,7 +184,7 @@ export default async function PaginaVentas() {
                       ) : null}
                     </span>
                     <span className="hidden text-sm text-(--color-tinta-suave) sm:block">
-                      {v.vendedor ?? '—'}
+                      {v.cliente ?? v.vendedor ?? '—'}
                     </span>
                     <span className="hidden text-sm text-(--color-tinta-suave) lg:block">
                       {v.medios.map((m) => nombreDelMedio(m as MedioPago)).join(' + ') || '—'}
@@ -229,8 +266,23 @@ export default async function PaginaVentas() {
                       />
                     ) : null}
 
+                    {/*
+                      Anular solo dentro del turno abierto: la plata volvió a
+                      ese cajón y revertir contra una caja cerrada descuadraría
+                      dos arqueos. Lo de otro día se devuelve, que sale del
+                      cajón de hoy y el arqueo lo explica.
+                    */}
                     {puedeAnular && !anulada ? (
-                      <FormularioAnulacion ventaId={v.id} numero={v.numero} />
+                      caja && v.cashSessionId === caja.id ? (
+                        <FormularioAnulacion ventaId={v.id} numero={v.numero} />
+                      ) : (
+                        <Link
+                          href={`/devoluciones/${v.id}`}
+                          className="text-sm font-medium underline underline-offset-2"
+                        >
+                          Devolver
+                        </Link>
+                      )
                     ) : null}
                   </div>
                 </li>
@@ -242,8 +294,84 @@ export default async function PaginaVentas() {
 
       <p className="text-sm text-(--color-tinta-suave)">
         Anular repone el stock y saca la plata de la caja del turno, con el asiento contrario en
-        cada libro. La venta no se borra: queda marcada como anulada, con el motivo.
+        cada libro. La venta no se borra: queda marcada como anulada, con el motivo. Una venta de
+        un turno ya cerrado no se anula —descuadraría el arqueo de aquel día—: se{' '}
+        <strong>devuelve</strong>, y eso sale del cajón de hoy.
       </p>
+    </div>
+  );
+}
+
+/** Los períodos de un clic, más un rango escrito a mano. Igual que en Reportes. */
+function Selector({
+  elegido,
+  periodo,
+  error,
+}: {
+  elegido: string | null;
+  periodo: Periodo;
+  error: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {PERIODOS.map((p) => (
+          <Link
+            key={p.nombre}
+            href={`/ventas?periodo=${p.nombre}`}
+            className={`min-h-10 rounded-(--radius-caja) border px-3 text-sm leading-10 font-medium ${
+              elegido === p.nombre
+                ? 'border-(--color-marca) bg-(--color-marca)/10'
+                : 'border-(--color-borde)'
+            }`}
+          >
+            {p.etiqueta}
+          </Link>
+        ))}
+      </div>
+
+      <form
+        action="/ventas"
+        aria-label="Elegir un rango de fechas"
+        className="flex flex-wrap items-end gap-2"
+      >
+        <div>
+          <label htmlFor="desde" className="mb-1 block text-xs text-(--color-tinta-suave)">
+            Desde
+          </label>
+          <input
+            id="desde"
+            name="desde"
+            type="date"
+            defaultValue={periodo.desdeISO}
+            className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+          />
+        </div>
+        <div>
+          <label htmlFor="hasta" className="mb-1 block text-xs text-(--color-tinta-suave)">
+            Hasta
+          </label>
+          <input
+            id="hasta"
+            name="hasta"
+            type="date"
+            defaultValue={periodo.hastaISO}
+            className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+          />
+        </div>
+        <button
+          type="submit"
+          className="min-h-10 rounded-(--radius-caja) border border-(--color-borde) px-3 text-sm font-medium"
+        >
+          Ver
+        </button>
+      </form>
+
+      {error ? (
+        <p role="alert" className="text-sm font-medium text-(--color-error)">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
