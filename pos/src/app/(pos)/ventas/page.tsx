@@ -167,13 +167,16 @@ export default async function PaginaVentas({
           <ul>
             {ventas.map((v) => {
               const anulada = v.estado === 'cancelled';
+              const web = v.canal === 'web';
               const comprobante = comprobantes.get(v.id);
               return (
                 <li
                   key={v.id}
+                  // Las ventas de la tienda online resaltan en verde: no pasaron
+                  // por la caja y hay que prepararlas para retirar o enviar.
                   className={`border-t border-(--color-borde) px-4 py-3 ${
-                    anulada ? 'opacity-70' : ''
-                  }`}
+                    web ? 'border-l-4 border-l-(--color-ok) bg-(--color-ok-fondo)' : ''
+                  } ${anulada ? 'opacity-70' : ''}`}
                 >
                   <div className={`${COLUMNAS} items-baseline`}>
                     <span className="tabular text-sm text-(--color-tinta-suave)">
@@ -194,6 +197,11 @@ export default async function PaginaVentas({
                       <span className="text-(--color-tinta-suave)">
                         · {v.unidades} {v.unidades === 1 ? 'unidad' : 'unidades'}
                       </span>
+                      {web ? (
+                        <span className="ml-1.5 rounded bg-(--color-ok) px-1.5 py-0.5 text-xs font-bold text-(--color-marca-texto)">
+                          Venta web
+                        </span>
+                      ) : null}
                       {anulada ? (
                         <span className="ml-1.5 rounded bg-(--color-error-fondo) px-1.5 py-0.5 text-xs font-bold text-(--color-error)">
                           Anulada
@@ -310,7 +318,16 @@ export default async function PaginaVentas({
                       dos arqueos. Lo de otro día se devuelve, que sale del
                       cajón de hoy y el arqueo lo explica.
                     */}
-                    {puedeAnular && !anulada ? (
+                    {/* Una venta web no pasó por la caja: se cancela o se
+                        reembolsa en la tienda, y el POS la anula solo en la
+                        próxima sincronización. Acá no se ofrece anular ni
+                        devolver, que moverían plata de un cajón que no la tiene. */}
+                    {web && !anulada ? (
+                      <span className="text-sm text-(--color-tinta-suave)">
+                        Se cancela desde la tienda online
+                      </span>
+                    ) : null}
+                    {puedeAnular && !anulada && !web ? (
                       caja && v.cashSessionId === caja.id ? (
                         <FormularioAnulacion ventaId={v.id} numero={v.numero} />
                       ) : (

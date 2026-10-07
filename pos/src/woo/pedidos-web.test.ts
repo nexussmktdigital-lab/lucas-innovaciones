@@ -13,6 +13,7 @@ import {
   syncQueue,
 } from '@/db/schema';
 import { ClienteWoo } from './cliente';
+import { ventasEnPeriodo } from '@/ventas/anular';
 import { importarPedidosWeb, medioDePago, type PedidoWeb } from './pedidos-web';
 
 let db: TestDb;
@@ -206,6 +207,15 @@ describe('importarPedidosWeb', () => {
 
     const [marca] = await db.select().from(settings).where(eq(settings.clave, 'woo.pedidos_web'));
     expect((marca!.valor as { desde: string }).desde).toBe('2026-10-07T20:56:00.000Z');
+  });
+});
+
+describe('la lista de ventas', () => {
+  it('marca como web lo que vino de la tienda, para pintarlo distinto', async () => {
+    await importarPedidosWeb(db, wooConPedidos([pedido()]).cliente, { ahora });
+    const ventas = await ventasEnPeriodo(db, new Date('2026-10-01T00:00:00Z'), new Date('2026-10-31T00:00:00Z'));
+    expect(ventas).toHaveLength(1);
+    expect(ventas[0]!.canal).toBe('web');
   });
 });
 

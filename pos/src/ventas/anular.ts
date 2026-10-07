@@ -502,6 +502,8 @@ export interface VentaDelTurno {
   offlineCapturadaEn: Date | null;
   /** Lo cobrado menos lo que decía el catálogo al entrar. Cero es lo normal. */
   offlineDesvioCentavos: number;
+  /** Dónde se vendió: el mostrador o la tienda online (pedidos web, terminal WEB). */
+  canal: 'local' | 'web';
 }
 
 export async function ventasDelTurno(
@@ -611,6 +613,7 @@ async function consultarVentas(
     offline: boolean;
     offline_capturada_en: string | Date | null;
     offline_desvio_centavos: string | number;
+    canal: 'local' | 'web';
   }>(
     await db.execute(sql`
       SELECT s.id,
@@ -623,6 +626,7 @@ async function consultarVentas(
              s.offline_capturada_en,
              s.offline_desvio_centavos,
              s.cash_session_id,
+             s.canal,
              u.nombre AS vendedor,
              c.nombre AS cliente,
              (SELECT array_agg(DISTINCT p.medio::text)
@@ -658,5 +662,6 @@ async function consultarVentas(
     // consulta escrita a mano; PGlite lo devuelve como Date. Se convierte aca.
     offlineCapturadaEn: f.offline_capturada_en === null ? null : new Date(f.offline_capturada_en),
     offlineDesvioCentavos: Number(f.offline_desvio_centavos ?? 0),
+    canal: f.canal === 'web' ? 'web' : 'local',
   }));
 }
