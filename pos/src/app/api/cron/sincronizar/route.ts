@@ -7,7 +7,11 @@
  * una operación que agotaba los seis reintentos quedaba muerta sin que nadie se
  * enterara.
  *
- * **Dos, refresca el catálogo con lo que cambió.** Eso lo harían los webhooks,
+ * **Dos, trae los pedidos de la tienda online** como ventas con canal «web»
+ * (ver `src/woo/pedidos-web.ts`): descuentan el stock del espejo y aparecen en
+ * los reportes. Va antes del refresco porque es stock, igual que la cola.
+ *
+ * **Tres, refresca el catálogo con lo que cambió.** Eso lo harían los webhooks,
  * pero el servidor de la tienda no los puede ni dar de alta: su `curl` rechaza
  * el certificado del POS. Así que el POS pregunta en vez de esperar el aviso
  * (ver `src/woo/refrescar.ts`).
@@ -30,6 +34,7 @@ import { db } from '@/db';
 import { exchangeRates } from '@/db/schema';
 import { ClienteWoo, ErrorWoo } from '@/woo/cliente';
 import { drenarCola, pendientesDeSincronizar } from '@/woo/cola';
+import { importarPedidosWeb } from '@/woo/pedidos-web';
 import { refrescarCatalogo } from '@/woo/refrescar';
 
 export const runtime = 'nodejs';
@@ -120,6 +125,22 @@ export async function GET(request: Request) {
     });
     const cola = await pendientesDeSincronizar(db);
 
+    // Pedidos web, en su propio try: si fallan, el informe de la cola no se pierde
+    // y la marca de agua no avanzó, así que la corrida siguiente los vuelve a pedir.
+    let pedidosWeb: unknown;
+    const paraPedidos = TOPE_TOTAL_MS - (Date.now() - inicio) - MINIMO_REFRESCO_MS;
+    if (paraPedidos < 3_000) {
+      pedidosWeb = { corrio: false, saltado: 'Sin tiempo: la cola se llevó la corrida.' };
+    } else {
+      try {
+        pedidosWeb = await importarPedidosWeb(db, cliente, { limiteMs: paraPedidos });
+      } catch (error) {
+        const motivo = error instanceof Error ? error.message : String(error);
+        console.warn('[cron] No se pudieron traer los pedidos web:', motivo);
+        pedidosWeb = { corrio: false, error: motivo };
+      }
+    }
+
     const resto = TOPE_TOTAL_MS - (Date.now() - inicio);
     /*
      * El refresco va adentro de su propio `try`: si la tienda se cae justo
@@ -143,7 +164,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, ...informe, cola, catalogo });
+    return NextResponse.json({ ok: true, ...informe, cola, pedidosWeb, catalogo });
   } catch (error) {
     if (error instanceof ErrorWoo) {
       // Woo caído no es un error de esta ruta: la cola espera y se reintenta.
