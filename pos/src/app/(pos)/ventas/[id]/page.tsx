@@ -12,6 +12,7 @@ import {
 import { nombreDelMedio } from '@/ventas/ticket';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO, formatearFecha, formatearFechaHora } from '@/lib/fecha';
+import { TERMINAL_WEB } from '@/woo/pedidos-web';
 import FormularioAnulacion from '../formulario-anulacion';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,8 @@ export default async function PaginaDetalleDeVenta({
   const devueltoCentavos = devueltoDeLaVenta(venta);
   const vueltoCentavos = vueltoDeLaVenta(venta);
   const anulada = venta.estado === 'cancelled';
+  // Un pedido de la tienda online: entra solo, sin caja, y se cancela allá.
+  const web = venta.terminal === TERMINAL_WEB;
   const cifraDelPlan = venta.monedaDelPlan === 'USD' ? formatearUSD : formatearARS;
   const hoy = fechaLocalISO();
 
@@ -69,6 +72,16 @@ export default async function PaginaDetalleDeVenta({
         </p>
       </div>
 
+      {web ? (
+        <section className="rounded-(--radius-caja) border-l-4 border-l-(--color-ok) bg-(--color-ok-fondo) p-4 text-sm">
+          <p className="font-bold">Venta de la tienda online</p>
+          <p className="mt-0.5">
+            Entró sola desde la web y no pasó por la caja. Si hay que cancelarla, se cancela en la
+            tienda y acá se anula en la próxima sincronización, con el stock de vuelta.
+          </p>
+        </section>
+      ) : null}
+
       {anulada ? (
         <section role="alert" className="rounded-(--radius-caja) bg-(--color-error-fondo) p-4">
           <p className="font-bold text-(--color-error)">Esta venta está anulada</p>
@@ -76,8 +89,9 @@ export default async function PaginaDetalleDeVenta({
             <p className="mt-0.5 text-sm">Motivo: {venta.motivoAnulacion}</p>
           ) : null}
           <p className="mt-0.5 text-sm text-(--color-tinta-media)">
-            El stock volvió y la plata salió de la caja de aquel turno. La venta no se borra:
-            queda acá para poder reconstruir lo que pasó.
+            {web
+              ? 'El stock volvió. La venta no se borra: queda acá para poder reconstruir lo que pasó.'
+              : 'El stock volvió y la plata salió de la caja de aquel turno. La venta no se borra: queda acá para poder reconstruir lo que pasó.'}
           </p>
         </section>
       ) : null}
@@ -327,8 +341,9 @@ export default async function PaginaDetalleDeVenta({
         ) : null}
 
         {/* Anular solo dentro del turno abierto: la plata volvió a ese cajón y
-            revertir contra una caja cerrada descuadraría dos arqueos (D29). */}
-        {puedeAnular && !anulada ? (
+            revertir contra una caja cerrada descuadraría dos arqueos (D29).
+            Una venta web no pasó por ninguna caja: se cancela en la tienda. */}
+        {puedeAnular && !anulada && !web ? (
           venta.turnoAbierto ? (
             <FormularioAnulacion ventaId={venta.id} numero={venta.numero} />
           ) : (
