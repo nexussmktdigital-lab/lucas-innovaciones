@@ -765,3 +765,10 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-promo__lista { font-size: 12px; color: var(--li-fg-3); }
 .li-promo__transf { font-size: 12px; color: var(--li-fg-2); }
 .li-promo__transf strong { display: block; font-family: var(--li-font-display); font-size: 17px; color: var(--li-fg-1); }
+/* Ajustes 08/10: en celular el precio con transferencia va en dos líneas prolijas,
+   y la etiqueta de la ficha no se parte. */
+.li-transf--ficha .li-badge { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 767px) {
+  .li-card .li-transf { display: flex; flex-direction: column; border-radius: var(--li-radius); padding: 4px 8px; line-height: 1.3; }
+  .li-card .li-transf > span { font-size: 11px; color: var(--li-fg-2); }
+}
