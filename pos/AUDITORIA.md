@@ -2483,3 +2483,35 @@ uno que decía «un producto sin categoría ni marca no tiene piso» y pasaba en
 verde. **El agujero estaba escrito como comportamiento esperado.** No era un
 caso olvidado: era un caso decidido mal, y revisarlo requería mirar el catálogo
 real, no los tests.
+
+## El papel era todo en dólares o todo en pesos
+
+Tercera vuelta sobre la misma boleta, y la que faltaba. El comprobante decidía
+**una** moneda para todo el documento: dólares solo si cada renglón estaba
+cotizado en dólares y no había ningún descuento. Cualquier otra cosa salía en
+pesos, entera.
+
+Parecía prudente —el papel no convierte, y restar un descuento cargado en pesos
+de un precio en dólares exige convertir— pero la consecuencia era al revés de
+lo buscado: **una funda de $15.000 en el mismo carrito hacía que el iPhone
+saliera a $2.356.500**. El cliente firmaba pesos por un teléfono que había
+pactado en US$ 1.500, y en la primera corrida del dólar el papel y la deuda
+dejaban de decir lo mismo. Exactamente lo que la regla de la moneda existía
+para evitar.
+
+El error de razonamiento es visible en retrospectiva: **«en qué moneda va el
+total» y «en qué moneda va este renglón» son dos preguntas distintas y yo las
+respondí con una sola función.** El total no puede sumar dos monedas (D62), eso
+está bien; pero de ahí no se sigue que un renglón tenga que mentir sobre la
+suya. Cada renglón sabe en qué moneda se vendió y es el único que tiene que
+decirlo.
+
+Ahora el renglón del teléfono dice dólares siempre, y cuando el total va en
+pesos cada renglón en dólares lleva su equivalente en chiquito —«$ 1.108.000 al
+cambio»— para que el total salga de sumar lo que está impreso. Una venta toda
+en dólares sigue sin tener un solo número en pesos: ahí no hay nada que
+explicar.
+
+Lo que me hizo verlo fue que el local insistiera tres veces sobre el mismo
+papel. Las dos primeras arreglé lo que me mostraban; esta vez fui a mirar la
+condición y era demasiado estricta desde el día que la escribí.

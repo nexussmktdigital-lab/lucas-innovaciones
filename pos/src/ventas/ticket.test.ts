@@ -180,9 +180,16 @@ describe('la moneda', () => {
     expect(txt(generarTicket(BASE))).toContain('$ 10.000,00');
   });
 
-  it('un carrito mezclado sale en pesos, entero', () => {
-    // No hay forma de poner una funda cotizada en pesos en un papel en dólares
-    // sin convertirla, y convertir es justo lo que no se hace acá.
+  /*
+   * El renglón del teléfono dice dólares aunque el total vaya en pesos.
+   *
+   * Antes el papel era todo en dólares o todo en pesos, así que alcanzaba con
+   * una funda de $10.000 en el mismo carrito para que el iPhone también
+   * saliera convertido: el cliente firmaba «$ 2.356.500» por algo que había
+   * pactado en US$ 1.500. Lo pidió el local: el renglón del teléfono dice
+   * dólares, sí o sí.
+   */
+  it('en un carrito mezclado, el iPhone sigue diciendo dólares', () => {
     const t = txt(
       generarTicket({
         ...IPHONE,
@@ -190,21 +197,47 @@ describe('la moneda', () => {
         totalCentavos: 236_650_000,
       }),
     );
-    expect(t).toContain('$ 2.366.500,00');
-    expect(t).not.toContain('US$ 1.500,00');
+
+    expect(t).toContain('US$ 1.500,00'); // el teléfono, en su moneda
+    expect(t).toContain('$ 10.000,00'); // la funda, en la suya
+    expect(t).toContain('$ 2.366.500,00'); // el total, que no suma dos monedas
   });
 
-  it('con descuento sale en pesos, aunque se haya vendido en dólares', () => {
+  it('el total en pesos sale de sumar lo que se ve', () => {
+    /*
+     * Con el renglón en dólares y el total en pesos, el papel tendría un total
+     * que no cierra con nada de lo impreso. El equivalente va chico y al lado
+     * del precio, que es el que manda.
+     */
+    const t = txt(
+      generarTicket({
+        ...IPHONE,
+        lineas: [...IPHONE.lineas, ...BASE.lineas],
+        totalCentavos: 236_650_000,
+      }),
+    );
+    expect(leido(t)).toContain('US$ 1.500,00');
+    expect(t).toContain('$ 2.356.500,00 al cambio');
+  });
+
+  it('una venta toda en dólares no lleva ni un número en pesos', () => {
+    // Acá no hay nada que explicar: el total también es en dólares.
+    const t = txt(generarTicket(IPHONE));
+    expect(t).not.toContain('al cambio');
+    expect(t.replace(/US\$/g, 'USD')).not.toContain('$ 2.356.500,00');
+  });
+
+  it('con descuento el total sale en pesos, pero el renglón sigue en dólares', () => {
     /*
      * El descuento se carga en pesos. Restarlo de un precio en dólares exige
-     * una conversión, y el papel no convierte: sale en la moneda en la que de
-     * verdad se cobró.
+     * una conversión, y el total no convierte: sale en la moneda en la que de
+     * verdad se cobró. El teléfono, en cambio, vale lo que se pactó.
      */
     const t = txt(
       generarTicket({ ...IPHONE, descuentoCentavos: 5_000_000, totalCentavos: 230_650_000 }),
     );
     expect(t).toContain('$ 2.306.500,00');
-    expect(t).not.toContain('US$');
+    expect(t).toContain('US$ 1.500,00');
   });
 });
 

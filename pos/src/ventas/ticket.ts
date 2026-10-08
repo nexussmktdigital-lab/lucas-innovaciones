@@ -172,11 +172,25 @@ function montosEnDolares(datos: DatosDelTicket): boolean {
   const sinDescuentos =
     datos.descuentoCentavos === 0 && datos.lineas.every((l) => l.descuentoCentavos === 0);
 
-  return (
-    sinDescuentos &&
-    datos.lineas.length > 0 &&
-    datos.lineas.every((l) => l.monedaOriginal === 'USD' && l.precioUsdCentavos !== null)
-  );
+  return sinDescuentos && datos.lineas.length > 0 && datos.lineas.every(lineaEnDolares);
+}
+
+/**
+ * Un renglón en dólares se imprime en dólares. **Siempre.**
+ *
+ * Esto es aparte de la moneda del total, y la distinción es la que faltaba: el
+ * papel era todo en dólares o todo en pesos, así que alcanzaba con que la venta
+ * llevara una funda de $15.000 —o cualquier descuento— para que el iPhone
+ * también saliera convertido. El cliente se llevaba «$ 1.108.000» por un
+ * teléfono que había pactado en US$ 705, y dentro de tres meses el papel dice
+ * una cosa y la deuda otra.
+ *
+ * El local fue terminante: el renglón del teléfono dice dólares, sí o sí. El
+ * total es otra pregunta —no se suman dos monedas (D62)— y la contesta
+ * `montosEnDolares`.
+ */
+function lineaEnDolares(l: LineaDeTicket): boolean {
+  return l.monedaOriginal === 'USD' && l.precioUsdCentavos !== null;
 }
 
 /**
@@ -267,9 +281,12 @@ function hojaDelComprobante(
   const enDolares = montosEnDolares(datos);
   const cifra = enDolares ? formatearUSD : formatearARS;
 
-  /** Lo que se cobra por un renglón, en la moneda que se imprime. */
+  /** Lo que se cobra por un renglón, en **su** moneda. */
   const totalDeLinea = (l: LineaDeTicket) =>
-    enDolares ? (l.precioUsdCentavos ?? 0) * l.cantidad : l.totalCentavos;
+    lineaEnDolares(l) ? l.precioUsdCentavos! * l.cantidad : l.totalCentavos;
+
+  /** Con qué signo se escribe ese renglón. */
+  const cifraDeLinea = (l: LineaDeTicket) => (lineaEnDolares(l) ? formatearUSD : formatearARS);
 
   const totalCentavos = enDolares
     ? datos.lineas.reduce((n, l) => n + totalDeLinea(l), 0)
@@ -342,17 +359,30 @@ function hojaDelComprobante(
 
   const detalle = datos.lineas
     .map((l) => {
-      const unitario = enDolares ? (l.precioUsdCentavos ?? 0) : l.precioUnitarioCentavos;
-      const porUnidad =
-        l.cantidad > 1 ? `${l.cantidad} × ${escapar(cifra(unitario))}` : escapar(l.sku ?? '');
+      const enUsd = lineaEnDolares(l);
+      const cifraAca = cifraDeLinea(l);
+      const unitario = enUsd ? l.precioUsdCentavos! : l.precioUnitarioCentavos;
+
+      const partes: string[] = [];
+      if (l.cantidad > 1) partes.push(`${l.cantidad} × ${cifraAca(unitario)}`);
+      else if (l.sku) partes.push(l.sku);
+      /*
+       * En una venta mixta el total va en pesos y este renglón en dólares, así
+       * que sin esto el papel tendría un total que no sale de sumar lo que se
+       * ve. El equivalente va chico y al costado: el precio, el que manda, es
+       * el de arriba.
+       */
+      if (enUsd && !enDolares) partes.push(`${formatearARS(l.totalCentavos)} al cambio`);
+
+      const porUnidad = partes.join(' · ');
 
       return `
       <div class="renglon">
         <div>
           <div class="producto">${escapar(l.descripcion)}</div>
-          ${porUnidad ? `<div class="detalle-chico">${porUnidad}</div>` : ''}
+          ${porUnidad ? `<div class="detalle-chico">${escapar(porUnidad)}</div>` : ''}
         </div>
-        <div class="importe">${escapar(cifra(totalDeLinea(l)))}</div>
+        <div class="importe">${escapar(cifraAca(totalDeLinea(l)))}</div>
       </div>`;
     })
     .join('');

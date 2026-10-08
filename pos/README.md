@@ -519,11 +519,16 @@ garantía y dos renglones para firmar. **No es una factura** y el pie lo dice
 
 Tres reglas sobre qué sale impreso, las tres pedidas por el local:
 
-- **El precio del sistema, en su moneda.** Un iPhone se pacta en dólares y el
-  papel dice dólares (D62). Nada de conversiones: el cliente firma el número que
-  acordó, no el que da el dólar de hoy. Un carrito mezclado, o cualquier venta
-  con descuento, sale en pesos — restar un descuento cargado en pesos de un
-  precio en dólares exigiría convertir, que es justo lo que no se hace acá.
+- **El precio del sistema, en su moneda, renglón por renglón.** Un iPhone se
+  pacta en dólares y su renglón dice dólares (D62), **siempre**: aunque en el
+  mismo carrito haya una funda en pesos y aunque la venta lleve descuento. El
+  cliente firma el número que acordó, no el que da el dólar de hoy. El **total**
+  es otra pregunta —no se suman dos monedas— y ahí sí: con un carrito mezclado o
+  con descuento sale en pesos, que es lo que de verdad se cobró, y cada renglón
+  en dólares lleva su equivalente en chiquito para que el total salga de sumar
+  lo que se ve. Una venta toda en dólares no tiene un solo número en pesos.
+  Antes el papel era todo o nada: alcanzaba una funda de $15.000 para que el
+  iPhone también saliera convertido.
 - **Los medios de pago no se imprimen.** Cómo se compuso el pago es asunto
   interno; en el papel va lo que entregó y lo que queda debiendo. Con cuotas, va
   además cada vencimiento con su monto: sin eso el cliente no sabe cuándo tiene
