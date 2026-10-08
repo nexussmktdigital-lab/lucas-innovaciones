@@ -31,11 +31,11 @@ const LI_CATS_SOLO_MOSTRADOR = array( 'solo-mostrador', 'vapers' );
  * Lucas, 07/10). Se ocultan de la web hasta que el stock se corrija en el POS,
  * que es quien lo manda; después se saca cada ID de acá. Es código, no datos:
  * el stock de Woo no se toca.
+ *
+ * 08/10: Lucas puso en 0 los otros 21 en el POS. Quedan los dos avisos del
+ * mismo iPhone 12 (IMEI 45039), que siguen con stock 1.
  */
-const LI_IDS_SIN_STOCK_REAL = array(
-	6713, 6707, 6876, 7163, 6801, 6800, 7348, 6905, 6904, 6968, 7280, 6972,
-	6931, 6870, 6835, 6845, 6846, 6791, 6286, 6685, 6885, 6290, 6273,
-);
+const LI_IDS_SIN_STOCK_REAL = array( 6713, 6707 );
 
 /* -------------------------------------------------------------------------
    Contexto
