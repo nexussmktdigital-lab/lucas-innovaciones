@@ -149,8 +149,11 @@ add_filter( 'wp_robots', 'li_seo_robots_filtros' );
 function li_seo_robots_filtros( array $robots ): array {
 	if ( ( is_product_taxonomy() || ( function_exists( 'is_shop' ) && is_shop() ) ) && li_seo_listado_filtrado() ) {
 		$robots['noindex'] = true;
-		$robots['follow']  = true;
 		unset( $robots['index'] );
+		// Con el sitio entero en "no indexar" ya viene nofollow: no se contradice.
+		if ( empty( $robots['nofollow'] ) ) {
+			$robots['follow'] = true;
+		}
 	}
 	return $robots;
 }
