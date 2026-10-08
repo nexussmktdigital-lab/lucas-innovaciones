@@ -26,17 +26,6 @@ defined( 'ABSPATH' ) || exit;
  */
 const LI_CATS_SOLO_MOSTRADOR = array( 'solo-mostrador', 'vapers' );
 
-/**
- * Productos que figuran con stock en Woo pero NO están en el local (lista de
- * Lucas, 07/10). Se ocultan de la web hasta que el stock se corrija en el POS,
- * que es quien lo manda; después se saca cada ID de acá. Es código, no datos:
- * el stock de Woo no se toca.
- *
- * 08/10: Lucas puso en 0 los otros 21 en el POS. Quedan los dos avisos del
- * mismo iPhone 12 (IMEI 45039), que siguen con stock 1.
- */
-const LI_IDS_SIN_STOCK_REAL = array( 6713, 6707 );
-
 /* -------------------------------------------------------------------------
    Contexto
    ------------------------------------------------------------------------- */
@@ -112,7 +101,6 @@ function li_ids_publicables(): array {
 		     WHERE trv.object_id = p.ID
 		   )
 		   AND NOT EXISTS ( SELECT 1 FROM {$wpdb->term_relationships} trs WHERE trs.object_id = p.ID AND trs.term_taxonomy_id IN ({$solo}) )
-		   AND p.ID NOT IN (" . implode( ',', array_map( 'intval', LI_IDS_SIN_STOCK_REAL ) ) . ")
 		   {$sin_usd}"
 	);
 	// phpcs:enable
@@ -165,9 +153,6 @@ function li_producto_publicable( $producto ): bool {
 		return false;
 	}
 	if ( ! $p->is_in_stock() ) {
-		return false;
-	}
-	if ( in_array( $padre->get_id(), LI_IDS_SIN_STOCK_REAL, true ) ) {
 		return false;
 	}
 	if ( has_term( LI_CATS_SOLO_MOSTRADOR, 'product_cat', $padre->get_id() ) ) {
