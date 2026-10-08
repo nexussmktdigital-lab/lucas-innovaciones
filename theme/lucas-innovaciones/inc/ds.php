@@ -63,9 +63,10 @@ function li_ds_icono( string $nombre, int $tam = 20, string $clase = '' ): strin
 	);
 
 	if ( 'whatsapp' === $nombre ) {
-		// Relleno, como en el kit (IconWhats).
+		// Logo oficial de WhatsApp (el glifo de la marca). Toma el color del
+		// contexto: blanco sobre el botón verde, verde WhatsApp en el resto (CSS).
 		return sprintf(
-			'<svg class="li-ico %s" width="%2$d" height="%2$d" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20 3.5A10 10 0 0 0 4 16l-1 5 5-1A10 10 0 1 0 20 3.5zM12 21a8.6 8.6 0 0 1-4.4-1.2l-.3-.2-3 .6.6-3-.2-.3A8.8 8.8 0 1 1 12 21zm4.6-6.4c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1l-.7.9c-.1.2-.2.2-.5.1-1-.5-2-1.2-2.9-2.5-.2-.3 0-.3.1-.5l.3-.5c.1-.1.1-.2.2-.4 0-.1 0-.3 0-.4l-.7-1.6c-.2-.4-.4-.4-.5-.4h-.4c-.2 0-.4 0-.6.3-.2.2-.8.8-.8 2s.9 2.3 1 2.5c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.1z"/></svg>',
+			'<svg class="li-ico li-ico--wa %s" width="%2$d" height="%2$d" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/></svg>',
 			esc_attr( $clase ),
 			$tam
 		);
@@ -138,26 +139,47 @@ function li_precio_transferencia( WC_Product $p ): int {
 }
 
 /**
- * Precio pagando por transferencia: una línea en la tarjeta, o el recuadro
- * de la ficha. Es el gancho de venta de la web (10% OFF, Matias 08/10).
+ * Precios de la tarjeta y de la ficha: el de transferencia, grande, como
+ * precio principal, y el de lista (tarjeta o Mercado Pago), chico. Es el
+ * gancho de venta de la web (10% OFF, Matias 08/10). Si no hay precio con
+ * transferencia (sin descuento, "Consultar"), queda el precio de siempre.
  *
  * @param WC_Product $p   Producto.
  * @param string     $tam card | ficha.
  */
-function li_ds_transferencia( WC_Product $p, string $tam = 'card' ): string {
+function li_ds_precios( WC_Product $p, string $tam = 'card' ): string {
 	$t = li_precio_transferencia( $p );
 	if ( ! $t ) {
-		return '';
+		return li_ds_precio( $p, 'ficha' === $tam ? 'xl' : 'md' );
 	}
-	$pct = Li_Dolar::porcentaje( Li_Dolar::descuento_bp() );
+
+	$pct   = Li_Dolar::porcentaje( Li_Dolar::descuento_bp() );
+	$lista = esc_html( li_precio_txt( (float) wc_get_price_to_display( $p ) ) );
+	if ( $p->is_on_sale() && ! $p->is_type( 'variable' ) ) {
+		$antes = (float) wc_get_price_to_display( $p, array( 'price' => $p->get_regular_price() ) );
+		if ( $antes > (float) wc_get_price_to_display( $p ) ) {
+			$lista = '<del>' . esc_html( li_precio_txt( $antes ) ) . '</del> ' . $lista;
+		}
+	}
+
 	if ( 'ficha' === $tam ) {
 		return sprintf(
-			'<div class="li-transf li-transf--ficha"><span class="li-badge li-badge--pixel li-badge--green">%s OFF</span><div><strong class="li-transf__monto">%s</strong><span>pagando con transferencia bancaria</span></div></div>',
-			esc_html( $pct ),
-			esc_html( li_precio_txt( $t ) )
+			'<div class="li-precios li-precios--ficha">'
+			. '<div class="li-precios__lista">Precio de lista <strong>%1$s</strong><span>con tarjeta o Mercado Pago</span></div>'
+			. '<div class="li-precios__especial"><span class="li-precios__monto">%2$s</span><span class="li-precios__leyenda"><span class="li-badge li-badge--pixel li-badge--green">%3$s OFF</span> Precio especial transferencia</span></div>'
+			. '</div>',
+			$lista,
+			esc_html( li_precio_txt( $t ) ),
+			esc_html( $pct )
 		);
 	}
-	return sprintf( '<span class="li-transf"><strong>%s</strong> <span>con transferencia</span></span>', esc_html( li_precio_txt( $t ) ) );
+
+	return sprintf(
+		'<div class="li-precios li-precios--card"><span class="li-precios__monto">%1$s</span><span class="li-precios__leyenda"><strong>%2$s OFF</strong> con transferencia</span><span class="li-precios__lista">Precio de lista %3$s</span></div>',
+		esc_html( li_precio_txt( $t ) ),
+		esc_html( $pct ),
+		$lista
+	);
 }
 
 /**

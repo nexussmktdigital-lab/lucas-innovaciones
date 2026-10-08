@@ -57,7 +57,7 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 							<span class="li-card__brand"><?php echo esc_html( $li_m ); ?></span>
 						<?php endif; ?>
 						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_web( $li_dest ) ); ?></span>
-						<?php echo li_ds_precio( $li_dest, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+						<?php echo li_ds_precios( $li_dest ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 					</a>
 				<?php endif; ?>
 			</div>
@@ -66,15 +66,31 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 
 	<?php if ( $li_datos['marcas_top'] ) : ?>
 	<section class="li-brands" aria-label="Marcas">
+		<?php
+		// Marquesina (Matias 08/10): la tira se mueve sola, en celular y en
+		// desktop. El grupo se repite hasta llenar pantallas anchas y después
+		// se duplica entero: la animación corre la mitad y vuelve sin salto.
+		// La copia es decorativa (sin foco ni lector de pantalla).
+		$li_marcas = $li_datos['marcas_top'];
+		$li_grupo  = array();
+		while ( count( $li_grupo ) < 14 ) {
+			$li_grupo = array_merge( $li_grupo, $li_marcas );
+		}
+		?>
 		<div class="li-wrap li-brands__in">
-			<?php foreach ( $li_datos['marcas_top'] as $m ) : ?>
-				<?php
-				// Versión para la tira (silueta recortada, tools/imagenes/logos-tira.mjs), si existe.
-				$li_tira = '/assets/img/marcas/tira/' . $m['slug'] . '.png';
-				$li_logo = file_exists( LI_DIR . $li_tira ) ? LI_URI . $li_tira : $m['img'];
-				?>
-				<a class="li-brands__item" href="<?php echo esc_url( $m['url'] ); ?>" title="<?php echo esc_attr( $m['nombre'] ); ?>"><img class="li-brands__logo" src="<?php echo esc_url( $li_logo ); ?>" alt="<?php echo esc_attr( $m['nombre'] ); ?>" loading="lazy" decoding="async"></a>
-			<?php endforeach; ?>
+			<div class="li-brands__track">
+				<?php foreach ( array( false, true ) as $li_copia ) : ?>
+					<?php foreach ( $li_grupo as $li_i => $m ) : ?>
+						<?php
+						// Versión para la tira (silueta recortada, tools/imagenes/logos-tira.mjs), si existe.
+						$li_tira  = '/assets/img/marcas/tira/' . $m['slug'] . '.png';
+						$li_logo  = file_exists( LI_DIR . $li_tira ) ? LI_URI . $li_tira : $m['img'];
+						$li_extra = $li_copia || $li_i >= count( $li_marcas );
+						?>
+						<a class="li-brands__item" href="<?php echo esc_url( $m['url'] ); ?>" title="<?php echo esc_attr( $m['nombre'] ); ?>"<?php echo $li_extra ? ' tabindex="-1" aria-hidden="true"' : ''; ?>><img class="li-brands__logo" src="<?php echo esc_url( $li_logo ); ?>" alt="<?php echo $li_extra ? '' : esc_attr( $m['nombre'] ); ?>" decoding="async"></a>
+					<?php endforeach; ?>
+				<?php endforeach; ?>
+			</div>
 		</div>
 	</section>
 	<?php endif; ?>
@@ -104,8 +120,8 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 							<span class="li-promo__media"><?php echo $li_p->get_image( 'li-card', array( 'class' => 'li-promo__img', 'loading' => 'lazy', 'alt' => esc_attr( li_nombre_web( $li_p ) ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
 							<span class="li-promo__nombre"><?php echo esc_html( li_nombre_web( $li_p ) ); ?></span>
 							<?php if ( $li_t ) : ?>
-								<span class="li-promo__lista"><?php echo esc_html( li_precio_txt( (float) wc_get_price_to_display( $li_p ) ) ); ?></span>
 								<span class="li-promo__transf"><strong><?php echo esc_html( li_precio_txt( $li_t ) ); ?></strong> con transferencia</span>
+								<span class="li-promo__lista">Lista <?php echo esc_html( li_precio_txt( (float) wc_get_price_to_display( $li_p ) ) ); ?></span>
 							<?php endif; ?>
 						</a>
 					<?php endforeach; ?>

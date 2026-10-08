@@ -106,8 +106,7 @@ if ( li_es_usado( $li_id ) ) {
 			<?php li_cel_otras_unidades( $product ); ?>
 
 			<div class="li-pdp__box">
-				<?php echo li_ds_precio( $product, 'xl' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-				<?php echo li_ds_transferencia( $product, 'ficha' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+				<?php echo li_ds_precios( $product, 'ficha' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
 				<?php if ( $li_compra ) : ?>
 					<div class="li-pdp__sep"></div>
@@ -189,7 +188,12 @@ if ( li_es_usado( $li_id ) ) {
 
 	<?php if ( $li_compra ) : ?>
 		<div class="li-buybar" aria-hidden="true">
-			<?php echo li_ds_precio( $product, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+			<?php $li_t = li_precio_transferencia( $product ); ?>
+			<?php if ( $li_t ) : ?>
+				<div class="li-buybar__precio"><strong><?php echo esc_html( li_precio_txt( $li_t ) ); ?></strong><span>con transferencia · lista <?php echo esc_html( li_precio_txt( (float) wc_get_price_to_display( $product ) ) ); ?></span></div>
+			<?php else : ?>
+				<?php echo li_ds_precio( $product, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+			<?php endif; ?>
 			<button type="button" class="li-btn li-btn--primary" data-li-comprar tabindex="-1">Comprar</button>
 		</div>
 	<?php endif; ?>

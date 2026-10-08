@@ -360,9 +360,16 @@ body.li-drawer-abierto { overflow: hidden; }
 
 /* Tira de marcas */
 .li-brands { background: #fff; border-bottom: 1px solid var(--li-border); }
-.li-brands__in { display: flex; gap: 16px 28px; align-items: center; justify-content: space-between; flex-wrap: nowrap; padding-top: 22px; padding-bottom: 22px; }
-@media (max-width: 767px) { .li-brands__in { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 28px; scrollbar-width: none; } .li-brands__in::-webkit-scrollbar { display: none; } }
-.li-brands__item { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 36px; text-decoration: none; }
+/* Marquesina: la pista tiene el grupo dos veces y corre la mitad, sin salto.
+   Bordes difuminados; se frena al pasar el mouse. */
+.li-brands__in { overflow: hidden; padding-top: 22px; padding-bottom: 22px; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.li-brands__track { display: flex; align-items: center; width: max-content; animation: li-marquesina 50s linear infinite; }
+.li-brands__in:hover .li-brands__track { animation-play-state: paused; }
+@keyframes li-marquesina { to { transform: translateX(-50%); } }
+/* Quien pidió menos movimiento en su sistema ve la tira quieta y deslizable. */
+@media (prefers-reduced-motion: reduce) { .li-brands__in { overflow-x: auto; scrollbar-width: none; } .li-brands__track { animation: none; } }
+.li-brands__item { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 36px; margin-right: 56px; text-decoration: none; }
+@media (max-width: 767px) { .li-brands__item { margin-right: 36px; } .li-brands__track { animation-duration: 40s; } }
 /* Logos de marca como silueta gris pareja (como los nombres del kit). */
 .li-body .li-brands__logo { display: block; height: 24px; width: auto; max-width: 96px; object-fit: contain; filter: brightness(0); opacity: 0.38; transition: opacity var(--li-dur-fast) var(--li-ease); }
 .li-brands__item:hover .li-brands__logo { opacity: 0.85; }
@@ -731,14 +738,35 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-pronto__pie { position: relative; margin: 40px 0 0; font-size: 12px; color: var(--li-fg-3); }
 
 /* ---------- Precio con transferencia y promo (Matias 08/10) ---------- */
-/* Tarjeta: píldora verde suave, texto oscuro (el verde de marca como texto chico no tiene contraste). */
-.li-transf { display: inline-block; align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: var(--li-radius-pill); background: var(--li-green-soft); color: var(--li-fg-1); font-size: 12px; line-height: 1.5; }
-.li-transf strong { font-weight: 700; }
-/* Ficha: recuadro debajo del precio. */
-.li-transf--ficha { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; padding: 10px 12px; border-radius: var(--li-radius); font-size: 14px; }
-.li-transf--ficha > div { display: flex; flex-direction: column; line-height: 1.25; }
-.li-transf__monto { font-family: var(--li-font-display); font-size: 20px; font-weight: 700; letter-spacing: var(--li-tracking-tight); }
-.li-transf--ficha span:not(.li-badge) { color: var(--li-fg-2); font-size: 13px; }
+/* Precios (Matias 08/10, como Venex y Space): el de transferencia es el
+   grande; el de lista (tarjeta o Mercado Pago) va chico. */
+.li-precios { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.li-precios__monto { font-family: var(--li-font-display); font-weight: 700; color: var(--li-price); letter-spacing: var(--li-tracking-tight); line-height: 1.1; font-size: 19px; }
+@media (min-width: 768px) { .li-precios__monto { font-size: 23px; } }
+/* "10% OFF" en verde oscuro: el verde de marca como texto chico no tiene contraste. */
+.li-precios__leyenda { font-size: 11px; line-height: 1.35; color: var(--li-fg-2); }
+@media (min-width: 768px) { .li-precios__leyenda { font-size: 12px; } }
+.li-precios__leyenda strong { color: var(--li-success); font-weight: 700; }
+.li-precios__lista { font-size: 12px; color: var(--li-fg-3); line-height: 1.35; }
+.li-precios__lista del { color: var(--li-fg-4); }
+/* Ficha: precio de lista arriba, chico; abajo el recuadro negro con el precio especial. */
+.li-precios--ficha { align-items: stretch; gap: 0; }
+.li-precios--ficha .li-precios__lista { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 14px; color: var(--li-fg-2); }
+.li-precios--ficha .li-precios__lista strong { font-size: 18px; font-weight: 600; color: var(--li-fg-1); }
+.li-precios--ficha .li-precios__lista span { flex-basis: 100%; font-size: 12px; color: var(--li-fg-3); }
+.li-precios__especial { margin-top: 12px; padding: 16px 18px; border-radius: var(--li-radius-lg); background: var(--li-black); color: #fff; display: flex; flex-direction: column; gap: 8px; }
+.li-precios--ficha .li-precios__monto { color: #fff; font-size: 40px; }
+@media (min-width: 768px) { .li-precios--ficha .li-precios__monto { font-size: 46px; } }
+.li-precios--ficha .li-precios__leyenda { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0; background: none; color: var(--li-fg-invert-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.li-precios--ficha .li-badge { white-space: nowrap; }
+/* Barra fija de compra (celular). */
+.li-buybar__precio { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.li-buybar__precio strong { font-family: var(--li-font-display); font-size: 20px; font-weight: 700; color: var(--li-price); letter-spacing: var(--li-tracking-tight); }
+.li-buybar__precio span { font-size: 11px; color: var(--li-fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* WhatsApp: logo oficial en verde WhatsApp; sobre botones de color, el del texto. */
+.li-ico--wa { color: var(--li-whatsapp); }
+.li-wafab .li-ico--wa, .li-btn--whatsapp .li-ico--wa, .li-btn--primary .li-ico--wa { color: currentColor; }
 
 /* Barra superior: la oferta. */
 .li-microbar__promo strong { font-weight: 700; }
@@ -756,21 +784,15 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-promo__puntos { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; font-size: 15px; color: var(--li-fg-invert-2); }
 .li-promo__puntos li { display: flex; align-items: center; gap: 8px; }
 .li-promo__puntos .li-ico { color: var(--li-green); flex-shrink: 0; }
-.li-promo__prods { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; margin: 0 -20px; padding: 0 20px 4px; }
-.li-promo__prods::-webkit-scrollbar { display: none; }
-@media (min-width: 1024px) { .li-promo__prods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; margin: 0; padding: 0; } }
-.li-promo__prod { flex: 0 0 160px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 4px; background: #fff; color: var(--li-fg-1); border-radius: var(--li-radius-lg); padding: 10px; text-decoration: none; transition: transform var(--li-dur) var(--li-ease); }
+/* Grilla (ya no fila deslizable: en celular quedaba cortada en el borde). */
+.li-promo__box > * { min-width: 0; }
+.li-promo__prods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 640px) { .li-promo__prods { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; } }
+.li-promo__prod { min-width: 0; display: flex; flex-direction: column; gap: 4px; background: #fff; color: var(--li-fg-1); border-radius: var(--li-radius-lg); padding: 10px; text-decoration: none; transition: transform var(--li-dur) var(--li-ease); }
 .li-promo__prod:hover { transform: translateY(-2px); color: var(--li-fg-1); }
 .li-promo__media { aspect-ratio: 1; background: var(--li-bg-alt, #F8F8F8); border-radius: var(--li-radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .li-body .li-promo__img { width: 100%; height: 100%; object-fit: contain; }
 .li-promo__nombre { font-size: 13px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
-.li-promo__lista { font-size: 12px; color: var(--li-fg-3); }
-.li-promo__transf { font-size: 12px; color: var(--li-fg-2); }
-.li-promo__transf strong { display: block; font-family: var(--li-font-display); font-size: 17px; color: var(--li-fg-1); }
-/* Ajustes 08/10: en celular el precio con transferencia va en dos líneas prolijas,
-   y la etiqueta de la ficha no se parte. */
-.li-transf--ficha .li-badge { white-space: nowrap; flex-shrink: 0; }
-@media (max-width: 767px) {
-  .li-card .li-transf { display: flex; flex-direction: column; border-radius: var(--li-radius); padding: 4px 8px; line-height: 1.3; }
-  .li-card .li-transf > span { font-size: 11px; color: var(--li-fg-2); }
-}
+.li-promo__transf { font-size: 11px; font-weight: 600; color: var(--li-fg-2); }
+.li-promo__transf strong { display: block; font-family: var(--li-font-display); font-size: 18px; color: var(--li-fg-1); letter-spacing: var(--li-tracking-tight); }
+.li-promo__lista { font-size: 11px; color: var(--li-fg-3); }
