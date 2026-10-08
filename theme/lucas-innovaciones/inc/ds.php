@@ -175,7 +175,7 @@ function li_ds_precios( WC_Product $p, string $tam = 'card' ): string {
 	}
 
 	return sprintf(
-		'<div class="li-precios li-precios--card"><span class="li-precios__monto">%1$s</span><span class="li-precios__leyenda"><strong>%2$s OFF</strong> con transferencia</span><span class="li-precios__lista">Precio de lista %3$s</span></div>',
+		'<div class="li-precios li-precios--card"><div class="li-precios__especial"><span class="li-precios__monto">%1$s</span><span class="li-precios__leyenda"><span class="li-badge li-badge--pixel li-badge--green">%2$s OFF</span> con transferencia</span></div><span class="li-precios__lista">Precio de lista %3$s</span></div>',
 		esc_html( li_precio_txt( $t ) ),
 		esc_html( $pct ),
 		$lista
