@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { calcularCobro, calcularTotales, type Descuento, type LineaCarrito } from '@/ventas/carrito';
 import type { ResultadoBusqueda } from '@/ventas/buscar';
-import { generarTicket } from '@/ventas/ticket';
+import { generarComprobantes } from '@/ventas/ticket';
 import { ventaEnDolares } from '@/ventas/carrito';
 import { cuotasDelPlan } from '@/fiado/plan';
 import { formatearARS, formatearUSD, pesosAUsdExacto } from '@/lib/dinero';
@@ -121,21 +121,6 @@ export default function PantallaVenta({
   const [aviso, setAviso] = useState<string | null>(null);
   /** Solo se usa si el navegador bloqueó la ventana del comprobante. */
   const [ultimoTicket, setUltimoTicket] = useState<{ id: string; numero: string } | null>(null);
-  /**
-   * La venta fiada que acaba de entrar, para imprimir el acuerdo de pago.
-   *
-   * El comprobante que se lleva el cliente no dice nada de la deuda: ni cuotas
-   * ni saldo. Lo que respalda el saldo es este otro papel, que firma y queda en
-   * el local, y que hay que acordarse de imprimir con el cliente todavía
-   * enfrente. Por eso el aviso queda fijo hasta que se lo cierra.
-   */
-  const [acuerdoPendiente, setAcuerdoPendiente] = useState<{
-    numero: string;
-    /** Con conexión: la venta ya tiene id y el papel se pide al servidor. */
-    id: string | null;
-    /** Sin conexión: no hay id ni servidor, así que el papel ya viene armado. */
-    html: string | null;
-  } | null>(null);
   /** Lo mismo, pero sin conexión: el comprobante ya armado, que no vive en ningún servidor. */
   const [ticketSinConexion, setTicketSinConexion] = useState<string | null>(null);
   /**
@@ -387,21 +372,13 @@ export default function PantallaVenta({
       provisional: true,
     };
 
-    const comprobante = generarTicket(datosDelPapel);
-
     /*
-     * Sin conexión el acuerdo también se arma acá: no hay id que pedirle al
-     * servidor, y el cliente se va del mostrador con el teléfono igual. Si el
-     * papel que respalda el saldo esperara a que vuelva internet, no lo firma
-     * nadie.
+     * Sin conexión el acuerdo se arma acá, en el mismo documento: no hay id que
+     * pedirle al servidor, y el cliente se va del mostrador con el teléfono
+     * igual. Si el papel que respalda el saldo esperara a que vuelva internet,
+     * no lo firma nadie.
      */
-    if (fiadoCentavos > 0) {
-      setAcuerdoPendiente({
-        numero: 'Pendiente',
-        id: null,
-        html: generarTicket(datosDelPapel, { copia: 'acuerdo' }),
-      });
-    }
+    const comprobante = generarComprobantes(datosDelPapel);
 
     if (ventana) {
       ventana.document.write(comprobante);
@@ -444,22 +421,20 @@ export default function PantallaVenta({
       return r;
     }
 
-    // El ticket se manda a imprimir solo. Si el navegador igual bloqueó la
-    // ventana, queda el enlace en pantalla: nunca se pierde el comprobante.
+    /*
+     * Los papeles se mandan a imprimir solos, los dos en el mismo documento.
+     *
+     * `/ticket/<id>` sin `?copia=` devuelve el comprobante del cliente y, si la
+     * venta quedó fiada, también el acuerdo de pago: dos hojas, un diálogo de
+     * impresión. Antes el acuerdo estaba detrás de un segundo botón y el papel
+     * que respalda la deuda dependía de que alguien se acordara con el cliente
+     * enfrente; después ya se fue y no hay quién firme.
+     *
+     * Si el navegador igual bloqueó la ventana, queda el enlace en pantalla:
+     * nunca se pierde el comprobante.
+     */
     if (ventana) ventana.location.href = `/ticket/${r.ventaId}`;
     else setUltimoTicket({ id: r.ventaId, numero: r.numero });
-
-    /*
-     * Toda venta fiada tiene un segundo papel, haya cuotas o no.
-     *
-     * Antes salía solo con plan, y el fiado «cuando pueda» —que es el más
-     * común— quedaba sin ningún papel firmado: el del cliente no habla de la
-     * deuda a propósito, así que no quedaba nada. El momento de imprimirlo es
-     * ahora, con el cliente enfrente; después ya se fue y no hay quién firme.
-     */
-    if (datos.pagos.some((p) => p.medio === 'cuenta_corriente')) {
-      setAcuerdoPendiente({ numero: r.numero, id: r.ventaId, html: null });
-    }
 
     vaciar();
     setCobrando(false);
@@ -526,55 +501,6 @@ export default function PantallaVenta({
           >
             {aviso}
           </p>
-        ) : null}
-
-        {acuerdoPendiente ? (
-          <div
-            role="alert"
-            className="mt-3 rounded-(--radius-caja) border-2 border-(--color-marca) bg-(--color-panel) p-3 text-sm"
-          >
-            <p className="font-semibold">
-              La venta {acuerdoPendiente.numero} quedó fiada: falta el acuerdo de pago
-            </p>
-            <p className="mt-0.5 text-(--color-tinta-media)">
-              El comprobante que se lleva el cliente no dice nada de la deuda. Imprimí el acuerdo,
-              que lo firme, y guardalo: es lo único que respalda el saldo.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              {acuerdoPendiente.id ? (
-                <a
-                  href={`/ticket/${acuerdoPendiente.id}?copia=acuerdo`}
-                  target="_blank"
-                  rel="noopener"
-                  onClick={() => setAcuerdoPendiente(null)}
-                  className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 leading-10 font-bold text-(--color-marca-texto)"
-                >
-                  Imprimir el acuerdo de pago
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const v = window.open('', '_blank', 'width=420,height=760');
-                    if (!v) return;
-                    v.document.write(acuerdoPendiente.html!);
-                    v.document.close();
-                    setAcuerdoPendiente(null);
-                  }}
-                  className="min-h-10 rounded-(--radius-caja) bg-(--color-marca) px-3 font-bold text-(--color-marca-texto)"
-                >
-                  Imprimir el acuerdo de pago
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setAcuerdoPendiente(null)}
-                className="text-(--color-tinta-suave) underline underline-offset-2"
-              >
-                Ahora no
-              </button>
-            </div>
-          </div>
         ) : null}
 
         {ultimoTicket ? (

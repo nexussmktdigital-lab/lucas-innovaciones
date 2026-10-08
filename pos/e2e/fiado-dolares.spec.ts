@@ -128,12 +128,17 @@ test('la boleta que firma el cliente dice dólares y nada más que dólares', as
   const fila = page.getByRole('listitem').first();
   await expect(fila).toContainText('iPhone 13');
 
+  /*
+   * Se pide la copia del cliente sola. Al cobrar salen las dos hojas en el
+   * mismo documento —el acuerdo no puede depender de un segundo botón— y acá lo
+   * que se mira es qué dice la del cliente.
+   */
   const [comprobante] = await Promise.all([
     context.waitForEvent('page'),
     fila.getByRole('link', { name: /Ver e imprimir/ }).click(),
   ]);
   await comprobante.waitForLoadState('domcontentloaded');
-  const papel = (await comprobante.locator('body').innerText()).replace(/\u00a0/g, ' ');
+  const papel = (await comprobante.locator('.hoja').first().innerText()).replace(/\u00a0/g, ' ');
 
   expect(papel).toContain(CLIENTE);
   expect(papel).toContain('iPhone 13');
@@ -174,7 +179,7 @@ test('el acuerdo de pago lleva las cuotas y queda en el local', async ({ page, c
 
   const [acuerdo] = await Promise.all([
     context.waitForEvent('page'),
-    page.getByRole('link', { name: 'Imprimir el acuerdo de pago' }).click(),
+    page.getByRole('link', { name: 'Solo el acuerdo de pago' }).click(),
   ]);
   await acuerdo.waitForLoadState('domcontentloaded');
   const papel = (await acuerdo.locator('body').innerText()).replace(/\u00a0/g, ' ');
@@ -205,6 +210,41 @@ test('el acuerdo de pago lleva las cuotas y queda en el local', async ({ page, c
 
   const suma = cuotas.reduce((n, c) => n + enCentavos(c[1]!, c[2]!), 0);
   expect(suma).toBe(enCentavos(saldo![1]!, saldo![2]!));
+});
+
+test('los dos papeles salen juntos, sin un segundo botón', async ({ page, context }) => {
+  /*
+   * Lo que el local pidió: «si hay fiado en la venta quiero que el plan de pago
+   * también se imprima automáticamente con la boleta, no que haya que hacer un
+   * paso extra». El acuerdo se firma con el cliente enfrente o no se firma: es
+   * el único papel que respalda el saldo.
+   */
+  await entrarComoDuenio(page);
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto(`/ventas?q=${encodeURIComponent(CLIENTE)}`);
+
+  const [papeles] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('listitem').first().getByRole('link', { name: /Ver e imprimir/ }).click(),
+  ]);
+  await papeles.waitForLoadState('domcontentloaded');
+
+  // Dos hojas, un solo documento: un solo diálogo de impresión.
+  await expect(papeles.locator('.hoja')).toHaveCount(2);
+
+  const primera = (await papeles.locator('.hoja').nth(0).innerText()).replace(/\u00a0/g, ' ');
+  const segunda = (await papeles.locator('.hoja').nth(1).innerText()).replace(/\u00a0/g, ' ');
+
+  expect(primera).toContain('COMPROBANTE DE VENTA');
+  expect(primera).toContain('GARANTÍA');
+  expect(primera).not.toContain('SALDO EN CUOTAS');
+
+  expect(segunda).toContain('ACUERDO DE PAGO');
+  expect(segunda).toContain('SALDO EN CUOTAS');
+  expect(segunda).toContain('Copia para el local');
 });
 
 test('la deuda en dólares se ve en Fiado, aunque no deba un peso', async ({ page }) => {

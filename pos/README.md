@@ -489,16 +489,26 @@ más común— dice el saldo y que no se pactaron fechas. Salía solo con cuotas
 ese era un agujero: el fiado de siempre quedaba sin ningún papel firmado,
 porque el del cliente no habla de la deuda a propósito.
 
-Al cobrar fiado, la pantalla de venta avisa que falta el acuerdo y lo ofrece ahí
-mismo, con el cliente todavía enfrente. Después también está en la
-ficha de la venta. Sin conexión el acuerdo se arma en la tablet, igual que el
-comprobante: el cliente se va con el teléfono igual, y el papel que respalda el
-saldo no puede esperar a que vuelva internet.
+**Los dos salen juntos, en un solo documento y un solo diálogo de impresión.**
+Al cobrar una venta fiada se imprimen las dos hojas de una: la del cliente y el
+acuerdo. Antes el acuerdo estaba detrás de un segundo botón —un aviso en la
+pantalla de venta— y el papel que respalda la deuda dependía de que alguien se
+acordara con el cliente enfrente; después ya se fue y no hay quién firme. Lo
+pidió el local así: «que se imprima con la boleta, no un paso extra».
+
+Una venta pagada sale con una sola hoja: un acuerdo de pago sin saldo no dice
+nada y gasta una hoja por venta.
+
+Desde la ficha de la venta se pueden reimprimir los dos juntos o uno solo,
+para cuando se perdió una de las dos hojas. Sin conexión el acuerdo se arma en
+la tablet, en el mismo documento que el comprobante: el cliente se va con el
+teléfono igual, y el papel que respalda el saldo no puede esperar a que vuelva
+internet.
 
 #### Cómo sale impreso
 
-Una hoja **A4**, una sola copia, la del cliente. Reemplazó al ticket de
-impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
+Hojas **A4**: una si la venta se pagó, dos si quedó algo fiado. Reemplazó al
+ticket de impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
 el cliente se lleva un papel que firma — una tira de 80 mm no sirve para eso. Lo
 que pasó queda en el sistema, que es mejor archivo que una hoja en un cajón.
 
@@ -1859,6 +1869,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un precio en dólares viaja a Woo **en dólares**, con su marca al lado | `src/woo/cola.test.ts`, `src/catalogo/publicar.test.ts` |
 | Un precio en pesos limpia la marca de dólares de la ficha | `src/woo/cola.test.ts` |
 | El alta en la tienda no le suma el recargo a un precio en dólares | `src/catalogo/publicar.test.ts` |
+| Una venta fiada imprime los dos papeles juntos, sin un segundo botón | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| Una venta pagada imprime una sola hoja | `src/ventas/ticket.test.ts` |
+| Un equipo sin categoría ni marca tiene piso por el nombre | `src/ventas/cordura.test.ts` |
+| Un cable de iPhone sin categorizar sigue sin piso | `src/ventas/cordura.test.ts` |
+| Un excedente que no se puede devolver **no** frena la venta | `src/ventas/carrito.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |

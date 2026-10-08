@@ -41,8 +41,44 @@ describe('pisoPara', () => {
     expect(pisoPara(producto({ categoria: 'Equipos varios' }))).toBe(20_000_00);
   });
 
-  it('un producto sin categoría ni marca no tiene piso', () => {
-    expect(pisoPara(producto({ categoria: null, marca: null }))).toBeNull();
+  it('un producto que no se parece a nada no tiene piso', () => {
+    expect(
+      pisoPara(producto({ nombre: 'Termo Rolan 750cc', categoria: null, marca: null })),
+    ).toBeNull();
+  });
+
+  /*
+   * El agujero por el que entró «iPhone 18 Pro (256gb)» a $1.510: cargado a
+   * mano, en «Sin categorizar» y sin marca. Sin categoría no había piso, sin
+   * marca tampoco, y para el sistema era un celular de mil quinientos pesos.
+   * El nombre es el único dato que siempre está.
+   */
+  it('un equipo sin categoría ni marca tiene piso por el nombre', () => {
+    for (const nombre of ['iPhone 18 Pro (256gb)', 'iPad A16 11 gen', 'Galaxy A06 128gb']) {
+      expect(pisoPara(producto({ nombre, categoria: 'Sin categorizar', marca: null })), nombre).toBe(
+        20_000_00,
+      );
+    }
+    expect(
+      pisoPara(producto({ nombre: 'MacBook Air M2', categoria: null, marca: null })),
+    ).toBe(100_000_00);
+  });
+
+  it('un accesorio sin categorizar sigue sin piso, aunque el nombre diga iPhone', () => {
+    // Las fichas nuevas llegan sin categoría, así que la palabra de accesorio
+    // tiene que leerse del nombre o el cartel sale en cada cable.
+    for (const nombre of [
+      'Cable iphone usb tipo c a lightning ORIGINAL',
+      'Fuente iphone 20w tipo C original',
+      'Funda iPad A16 10 gen',
+      'Adaptador Jack 3,5 a tipo C iphone',
+      'Microfono corbatero para iPhone lightning',
+      'Vidrio templado iPhone 14',
+      'Modulo iPhone 11 original',
+    ]) {
+      expect(pisoPara(producto({ nombre, categoria: 'Sin categorizar', marca: null })), nombre)
+        .toBeNull();
+    }
   });
 });
 

@@ -323,21 +323,31 @@ export default async function PaginaDetalleDeVenta({
           rel="noopener"
           className="min-h-11 rounded-(--radius-caja) bg-(--color-marca) px-4 leading-[44px] font-bold text-(--color-marca-texto)"
         >
-          Ver e imprimir el comprobante
+          {fiadoCentavos > 0 ? 'Imprimir los comprobantes' : 'Ver e imprimir el comprobante'}
         </a>
 
-        {/* El segundo papel de esta venta: el que lleva el saldo —con cuotas o
-            sin ellas— y queda firmado en el local. El del cliente no dice nada
-            de la deuda, así que sin este no hay nada firmado. */}
+        {/* Los dos papeles de esta venta salen juntos del botón de arriba. Acá
+            van por separado, para el caso de la reimpresión: alguien perdió una
+            de las dos hojas y quiere esa, no las dos. */}
         {fiadoCentavos > 0 ? (
-          <a
-            href={`/ticket/${venta.id}?copia=acuerdo`}
-            target="_blank"
-            rel="noopener"
-            className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) px-4 leading-[44px] font-medium"
-          >
-            Imprimir el acuerdo de pago
-          </a>
+          <>
+            <a
+              href={`/ticket/${venta.id}?copia=cliente`}
+              target="_blank"
+              rel="noopener"
+              className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) px-4 leading-[44px] font-medium"
+            >
+              Solo el del cliente
+            </a>
+            <a
+              href={`/ticket/${venta.id}?copia=acuerdo`}
+              target="_blank"
+              rel="noopener"
+              className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) px-4 leading-[44px] font-medium"
+            >
+              Solo el acuerdo de pago
+            </a>
+          </>
         ) : null}
 
         {/* Anular solo dentro del turno abierto: la plata volvió a ese cajón y

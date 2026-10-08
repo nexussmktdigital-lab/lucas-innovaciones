@@ -6,7 +6,13 @@
  * cuotas, y lo que no tiene que salir —los medios de pago, quién atendió—.
  */
 import { describe, expect, it } from 'vitest';
-import { fechaLarga, generarTicket, nombreDelMedio, type DatosDelTicket } from './ticket';
+import {
+  fechaLarga,
+  generarComprobantes,
+  generarTicket,
+  nombreDelMedio,
+  type DatosDelTicket,
+} from './ticket';
 
 const BASE: DatosDelTicket = {
   numero: 'T1-000123',
@@ -500,5 +506,83 @@ describe('nombreDelMedio', () => {
 
   it('ante un medio desconocido devuelve el código, sin romper', () => {
     expect(nombreDelMedio('cripto')).toBe('cripto');
+  });
+});
+
+describe('los dos papeles salen juntos', () => {
+  /** El iPhone de US$ 1.500, todo fiado en tres cuotas. */
+  const FIADO: DatosDelTicket = {
+    ...IPHONE,
+    fiadoCentavos: IPHONE.totalCentavos,
+    monedaDeLaDeuda: 'USD',
+    cuotas: [
+      { numero: 1, vencimiento: '2026-10-11', montoCentavos: 50_000 },
+      { numero: 2, vencimiento: '2026-11-11', montoCentavos: 50_000 },
+      { numero: 3, vencimiento: '2026-12-11', montoCentavos: 50_000 },
+    ],
+  };
+
+  /*
+   * Lo que esto cierra: el acuerdo de pago estaba detrás de un segundo botón y
+   * el papel que respalda la deuda dependía de que alguien se acordara con el
+   * cliente enfrente. El local lo pidió así: «que se imprima con la boleta, no
+   * un paso extra».
+   */
+  it('una venta fiada sale con las dos hojas y un solo diálogo de impresión', () => {
+    const papel = generarComprobantes(FIADO);
+
+    expect(papel.match(/class="hoja"/g)).toHaveLength(2);
+    expect(papel).toContain('COMPROBANTE DE VENTA');
+    expect(papel).toContain('ACUERDO DE PAGO');
+    // Un solo documento: un solo `window.print()`, una sola ventana.
+    expect(papel.match(/window\.print\(\)/g)).toHaveLength(1);
+    expect(papel.match(/<!doctype html>/gi)).toHaveLength(1);
+  });
+
+  it('la segunda hoja arranca en una página nueva', () => {
+    // Sin esto las dos hojas se imprimen encimadas en la misma página.
+    expect(generarComprobantes(FIADO)).toContain('page-break-before: always');
+  });
+
+  it('cada hoja dice lo suyo: el cliente sin deuda, el acuerdo con las cuotas', () => {
+    const [, delCliente, delAcuerdo] = generarComprobantes(FIADO).split('class="hoja"');
+
+    expect(leido(delCliente!)).toContain('GARANTÍA');
+    expect(leido(delCliente!)).not.toContain('11 de octubre de 2026');
+    expect(leido(delCliente!)).not.toContain('queda un saldo');
+
+    expect(leido(delAcuerdo!)).toContain('Vence el 11 de octubre de 2026');
+    expect(leido(delAcuerdo!)).toContain('queda un saldo de US$ 1.500,00');
+    expect(leido(delAcuerdo!)).toContain('Copia para el local');
+  });
+
+  it('una venta pagada sale con una sola hoja', () => {
+    // Un acuerdo de pago de una venta sin saldo no dice nada y gasta una hoja
+    // por venta.
+    const papel = generarComprobantes(BASE);
+
+    expect(papel.match(/class="hoja"/g)).toHaveLength(1);
+    expect(papel).not.toContain('ACUERDO DE PAGO');
+    expect(leido(papel)).toContain('Pagado en su totalidad');
+  });
+
+  it('el fiado sin fechas pactadas también lleva su segunda hoja', () => {
+    // Es el fiado más común del local: «cuando pueda», sin cuotas. Si la
+    // segunda hoja dependiera de que haya cuotas, no firmaría nada.
+    const papel = generarComprobantes({
+      ...BASE,
+      fiadoCentavos: 600_000,
+      cuotas: [],
+    });
+
+    expect(papel.match(/class="hoja"/g)).toHaveLength(2);
+    expect(leido(papel)).toContain('sin fechas pactadas');
+  });
+
+  it('reimprimir un papel suelto sigue dando una sola hoja', () => {
+    for (const copia of ['cliente', 'acuerdo'] as const) {
+      const papel = generarTicket(FIADO, { copia });
+      expect(papel.match(/class="hoja"/g), copia).toHaveLength(1);
+    }
   });
 });

@@ -198,12 +198,72 @@ function montosEnDolares(datos: DatosDelTicket): boolean {
  */
 export type CopiaDelComprobante = 'cliente' | 'acuerdo';
 
+/**
+ * Un papel suelto de una venta.
+ *
+ * Es lo que se usa al reimprimir desde la ficha, cuando se pide uno de los dos
+ * en particular. Al cobrar se usa `generarComprobantes`, que saca los dos
+ * juntos.
+ */
 export function generarTicket(
   datos: DatosDelTicket,
   opciones: { negocio?: DatosDelNegocio; copia?: CopiaDelComprobante } = {},
 ): string {
   const negocio = opciones.negocio ?? NEGOCIO_POR_DEFECTO;
-  const esAcuerdo = (opciones.copia ?? 'cliente') === 'acuerdo';
+  const copia = opciones.copia ?? 'cliente';
+  return documento(
+    `${copia === 'acuerdo' ? 'Acuerdo de pago' : 'Comprobante'} ${datos.numero}`,
+    [hojaDelComprobante(datos, negocio, copia)],
+  );
+}
+
+/**
+ * Todos los papeles que esta venta necesita, en un solo documento.
+ *
+ * **Una venta fiada sale con dos hojas y un solo diálogo de impresión.** Antes
+ * el acuerdo de pago quedaba detrás de un segundo botón, y el papel que
+ * respalda la deuda es justo el que no puede depender de que alguien se
+ * acuerde: el cliente se va con el teléfono igual. El local lo pidió así y
+ * tiene razón —«que se imprima con la boleta, no un paso extra»—: el acuerdo
+ * se firma con el cliente enfrente o no se firma nunca.
+ *
+ * Sin saldo sale una sola hoja: un acuerdo de pago de una venta pagada no dice
+ * nada y gasta una hoja por venta.
+ */
+export function generarComprobantes(
+  datos: DatosDelTicket,
+  opciones: { negocio?: DatosDelNegocio } = {},
+): string {
+  const negocio = opciones.negocio ?? NEGOCIO_POR_DEFECTO;
+  const hojas = [hojaDelComprobante(datos, negocio, 'cliente')];
+
+  /*
+   * Lo que decide si hay segunda hoja es lo fiado, no las cuotas: el fiado
+   * «cuando pueda» —sin fechas— es el más común en el local y también necesita
+   * su papel firmado. Es la misma condición que usa la pantalla de venta para
+   * saber que la venta quedó fiada.
+   */
+  if (datos.fiadoCentavos > 0) {
+    hojas.push(hojaDelComprobante(datos, negocio, 'acuerdo'));
+  }
+
+  return documento(`Comprobante ${datos.numero}`, hojas);
+}
+
+/**
+ * Arma UNA hoja. El documento que la envuelve lo pone `documento`.
+ *
+ * Se separó en dos para que un solo documento pueda llevar las dos hojas de
+ * una venta fiada: el comprobante del cliente y el acuerdo de pago salen del
+ * mismo diálogo de impresión, sin que nadie tenga que acordarse de un segundo
+ * botón con el cliente enfrente.
+ */
+function hojaDelComprobante(
+  datos: DatosDelTicket,
+  negocio: DatosDelNegocio,
+  copia: CopiaDelComprobante,
+): string {
+  const esAcuerdo = copia === 'acuerdo';
   const enDolares = montosEnDolares(datos);
   const cifra = enDolares ? formatearUSD : formatearARS;
 
@@ -369,141 +429,7 @@ export function generarTicket(
 
   const anulada = datos.nota === 'VENTA ANULADA';
 
-  return `<!doctype html>
-<html lang="es-AR">
-<head>
-<meta charset="utf-8">
-<title>${esAcuerdo ? 'Acuerdo de pago' : 'Comprobante'} ${escapar(datos.numero)}</title>
-<style>
-  @page { size: A4; margin: 0; }
-
-  * { box-sizing: border-box; }
-
-  body {
-    width: 210mm;
-    min-height: 297mm;
-    margin: 0;
-    padding: 18mm 20mm 15mm;
-    display: flex;
-    flex-direction: column;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 10.5pt;
-    line-height: 1.45;
-    color: #0a0a0a;
-    background: #fff;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  /* El acento se imprime en gris: la jerarquía la sostienen el tamaño y el
-     peso de la tipografía, no el color. */
-  .acento { color: #16305B; }
-
-  .membrete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12mm; }
-  .marca { height: 13mm; display: block; }
-  .rubro { font-size: 8pt; color: #6b6b6b; margin-top: 2mm; }
-  .domicilio { text-align: right; font-size: 8pt; color: #6b6b6b; line-height: 1.6; }
-  .domicilio strong { color: #0a0a0a; font-size: 9pt; }
-
-  .regla { height: 1mm; background: #0a0a0a; margin-top: 5mm; }
-  .regla-fina { height: 0.2mm; background: #d9d9d9; margin: 5mm 0 0; }
-
-  .titulo {
-    display: flex; align-items: baseline; justify-content: space-between;
-    padding-top: 3mm;
-  }
-  .titulo .tipo { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.14em; }
-  .titulo .numero { font-size: 12pt; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-  .datos {
-    display: flex; gap: 10mm; margin-top: 6mm;
-  }
-  .datos > div:nth-child(2) { flex: 1; }
-  .etiqueta {
-    display: block;
-    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; color: #6b6b6b;
-  }
-  .dato { font-size: 11pt; margin-top: 1mm; }
-
-  .encabezado-detalle {
-    display: flex; justify-content: space-between; padding: 4mm 0 2mm;
-  }
-
-  .renglon {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm;
-    padding: 2mm 0 3mm;
-  }
-  .producto { font-size: 12pt; font-weight: 600; line-height: 1.3; }
-  .detalle-chico { font-size: 8.5pt; color: #6b6b6b; margin-top: 1mm; }
-  .importe {
-    font-size: 12.5pt; font-weight: 700; white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .total {
-    display: flex; align-items: center; justify-content: space-between; gap: 10mm;
-    border-top: 0.6mm solid #16305B;
-    background: #f4f4f4;
-    margin-top: 6mm;
-    padding: 5mm 6mm;
-  }
-  .total .cifra {
-    font-size: 24pt; font-weight: 700; line-height: 1; white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .cuotas { border: 0.2mm solid #d9d9d9; margin-top: 5mm; padding: 4mm 5mm 4mm; }
-  .cuotas-encabezado { display: flex; align-items: baseline; justify-content: space-between; }
-  .cuotas-encabezado .etiqueta { display: inline; }
-  .cuota {
-    display: flex; align-items: baseline; gap: 5mm;
-    border-top: 0.2mm solid #ededed; padding: 2mm 0;
-    margin-top: 2mm;
-  }
-  .cuota:first-of-type { margin-top: 2mm; }
-  .cuota-n { width: 6mm; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .cuota-fecha { flex: 1; font-size: 10pt; }
-  .cuota-monto {
-    font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
-  }
-
-  .garantia { margin-top: 6mm; }
-  .garantia p { margin: 2mm 0 0; font-size: 9pt; line-height: 1.6; color: #3a3a3a; }
-  /* En blanco a propósito: el plazo cambia según el producto y lo escriben a
-     mano en el mostrador. */
-  .en-blanco {
-    display: inline-block; width: 28mm; border-bottom: 0.3mm solid #0a0a0a;
-    margin: 0 1mm;
-  }
-
-  .relleno { flex: 1; min-height: 10mm; }
-
-  .firmas { display: flex; gap: 14mm; margin-top: 10mm; }
-  .firmas > div { flex: 1; }
-  .linea-firma { height: 0.3mm; background: #0a0a0a; }
-  .firmas span { display: block; font-size: 8pt; color: #6b6b6b; margin-top: 1.5mm; }
-
-  .pie {
-    display: flex; justify-content: space-between; gap: 8mm;
-    border-top: 0.2mm solid #d9d9d9;
-    margin-top: 6mm; padding-top: 3mm;
-    font-size: 8pt; color: #6b6b6b;
-  }
-
-  .aviso {
-    border: 0.4mm solid #0a0a0a;
-    padding: 3mm 4mm;
-    margin-top: 5mm;
-    font-size: 9pt;
-  }
-  .aviso strong { display: block; letter-spacing: 0.08em; }
-
-  @media screen {
-    body { margin: 1rem auto; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18); }
-  }
-</style>
-</head>
-<body>
+  return `<section class="hoja">
   <header class="membrete">
     <div>
       <img class="marca" src="/marca/lucas-innovaciones-negro.png" alt="${escapar(negocio.nombre)}">
@@ -617,9 +543,169 @@ export function generarTicket(
     <span>Consultas y garantía: ${escapar(negocio.telefono ?? '')}</span>
   </footer>
 
+</section>`;
+}
+
+/**
+ * Envuelve una o dos hojas en un documento imprimible.
+ *
+ * Se imprime solo al abrir y se cierra al terminar: el mostrador no tiene que
+ * hacer nada más que retirar las hojas.
+ */
+function documento(titulo: string, hojas: readonly string[]): string {
+  return `<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<title>${escapar(titulo)}</title>
+<style>
+  @page { size: A4; margin: 0; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.45;
+    color: #0a0a0a;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /*
+   * Cada papel es una hoja. Un documento puede llevar dos —el comprobante del
+   * cliente y el acuerdo de pago— y entonces salen las dos del mismo diálogo
+   * de impresión, una por página. El salto va ANTES de la segunda y no después
+   * de la primera: un salto DESPUES de la ultima hoja le saca al navegador
+   * una página en blanco de regalo.
+   */
+  .hoja {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 20mm 15mm;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hoja + .hoja {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* El acento se imprime en gris: la jerarquía la sostienen el tamaño y el
+     peso de la tipografía, no el color. */
+  .acento { color: #16305B; }
+
+  .membrete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12mm; }
+  .marca { height: 13mm; display: block; }
+  .rubro { font-size: 8pt; color: #6b6b6b; margin-top: 2mm; }
+  .domicilio { text-align: right; font-size: 8pt; color: #6b6b6b; line-height: 1.6; }
+  .domicilio strong { color: #0a0a0a; font-size: 9pt; }
+
+  .regla { height: 1mm; background: #0a0a0a; margin-top: 5mm; }
+  .regla-fina { height: 0.2mm; background: #d9d9d9; margin: 5mm 0 0; }
+
+  .titulo {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-top: 3mm;
+  }
+  .titulo .tipo { font-size: 9.5pt; font-weight: 700; letter-spacing: 0.14em; }
+  .titulo .numero { font-size: 12pt; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .datos {
+    display: flex; gap: 10mm; margin-top: 6mm;
+  }
+  .datos > div:nth-child(2) { flex: 1; }
+  .etiqueta {
+    display: block;
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; color: #6b6b6b;
+  }
+  .dato { font-size: 11pt; margin-top: 1mm; }
+
+  .encabezado-detalle {
+    display: flex; justify-content: space-between; padding: 4mm 0 2mm;
+  }
+
+  .renglon {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10mm;
+    padding: 2mm 0 3mm;
+  }
+  .producto { font-size: 12pt; font-weight: 600; line-height: 1.3; }
+  .detalle-chico { font-size: 8.5pt; color: #6b6b6b; margin-top: 1mm; }
+  .importe {
+    font-size: 12.5pt; font-weight: 700; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .total {
+    display: flex; align-items: center; justify-content: space-between; gap: 10mm;
+    border-top: 0.6mm solid #16305B;
+    background: #f4f4f4;
+    margin-top: 6mm;
+    padding: 5mm 6mm;
+  }
+  .total .cifra {
+    font-size: 24pt; font-weight: 700; line-height: 1; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cuotas { border: 0.2mm solid #d9d9d9; margin-top: 5mm; padding: 4mm 5mm 4mm; }
+  .cuotas-encabezado { display: flex; align-items: baseline; justify-content: space-between; }
+  .cuotas-encabezado .etiqueta { display: inline; }
+  .cuota {
+    display: flex; align-items: baseline; gap: 5mm;
+    border-top: 0.2mm solid #ededed; padding: 2mm 0;
+    margin-top: 2mm;
+  }
+  .cuota:first-of-type { margin-top: 2mm; }
+  .cuota-n { width: 6mm; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cuota-fecha { flex: 1; font-size: 10pt; }
+  .cuota-monto {
+    font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+
+  .garantia { margin-top: 6mm; }
+  .garantia p { margin: 2mm 0 0; font-size: 9pt; line-height: 1.6; color: #3a3a3a; }
+  /* En blanco a propósito: el plazo cambia según el producto y lo escriben a
+     mano en el mostrador. */
+  .en-blanco {
+    display: inline-block; width: 28mm; border-bottom: 0.3mm solid #0a0a0a;
+    margin: 0 1mm;
+  }
+
+  .relleno { flex: 1; min-height: 10mm; }
+
+  .firmas { display: flex; gap: 14mm; margin-top: 10mm; }
+  .firmas > div { flex: 1; }
+  .linea-firma { height: 0.3mm; background: #0a0a0a; }
+  .firmas span { display: block; font-size: 8pt; color: #6b6b6b; margin-top: 1.5mm; }
+
+  .pie {
+    display: flex; justify-content: space-between; gap: 8mm;
+    border-top: 0.2mm solid #d9d9d9;
+    margin-top: 6mm; padding-top: 3mm;
+    font-size: 8pt; color: #6b6b6b;
+  }
+
+  .aviso {
+    border: 0.4mm solid #0a0a0a;
+    padding: 3mm 4mm;
+    margin-top: 5mm;
+    font-size: 9pt;
+  }
+  .aviso strong { display: block; letter-spacing: 0.08em; }
+
+  @media screen {
+    body { padding: 1rem 0; }
+    .hoja { margin: 0 auto 1rem; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18); }
+  }
+</style>
+</head>
+<body>
+${hojas.join('\n')}
   <script>
-    // Se imprime solo al abrir y se cierra al terminar: el mostrador no tiene
-    // que hacer nada más que retirar la hoja.
     window.addEventListener('load', () => window.print());
     window.addEventListener('afterprint', () => window.close());
   </script>

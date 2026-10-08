@@ -108,22 +108,21 @@ test('fiar deja la deuda registrada y no mueve plata', async ({ page, context })
   await expect(cobro.getByText(/Le vas a fiar/)).toBeVisible();
   await expect(cobro.getByText(/Es la primera vez que le fiás/)).toBeVisible();
 
-  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
-  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
-
   /*
    * Fiado «cuando pueda», sin cuotas: el papel del cliente no habla de la
-   * deuda —a propósito— así que el acuerdo es lo único firmado que queda. Si
-   * no sale acá, el cliente se va con el teléfono sin firmar nada.
+   * deuda —a propósito— así que el acuerdo es lo único firmado que queda. Sale
+   * en el mismo documento que la boleta, sin un segundo botón: si dependiera de
+   * que alguien se acuerde, el cliente se iría con el teléfono sin firmar nada.
    */
-  await expect(page.getByText(/falta el acuerdo de pago/)).toBeVisible();
-
-  const [acuerdo] = await Promise.all([
+  const [papeles] = await Promise.all([
     context.waitForEvent('page'),
-    page.getByRole('link', { name: 'Imprimir el acuerdo de pago' }).click(),
+    cobro.getByRole('button', { name: /Confirmar venta/ }).click(),
   ]);
-  await acuerdo.waitForLoadState('domcontentloaded');
-  const papel = (await acuerdo.locator('body').innerText()).replace(/\u00a0/g, ' ');
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await papeles.waitForLoadState('domcontentloaded');
+  await expect(papeles.locator('.hoja')).toHaveCount(2);
+  const papel = (await papeles.locator('.hoja').nth(1).innerText()).replace(/\u00a0/g, ' ');
 
   expect(papel).toContain('ACUERDO DE PAGO');
   expect(papel).toContain('sin fechas pactadas');

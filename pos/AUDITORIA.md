@@ -2395,3 +2395,91 @@ observable, y hay que ir a mirarlo. Los tests no lo iban a encontrar —los del
 POS verificaban la convención del POS, y pasaban todos— porque un test prueba
 que el código hace lo que el código dice. Lo que la otra punta hace de verdad
 solo lo dice la otra punta.
+
+## El papel más importante dependía de que alguien se acordara
+
+La boleta de Emilse Sánchez: un iPhone fiado, una sola hoja, en pesos. Dos
+problemas distintos en el mismo papel, y ninguno de los dos era del papel.
+
+**Los pesos.** El iPhone estaba bien cargado en Woo —marcado en dólares, como
+los otros 53— y el POS lo leía como un producto en pesos, porque producción
+todavía no tenía el arreglo de la convención (ver «Dos convenciones sobre el
+mismo campo»). Entonces alguien hizo la cuenta del dólar en la cabeza y escribió
+$1.108.000 a mano en el mostrador. El comprobante hizo lo correcto con lo que
+tenía: una venta sin nada en dólares se imprime en pesos.
+
+Lo caro no es el papel: **la deuda quedó en pesos.** Debía US$ 705 y el sistema
+anotó $1.108.000 congelados. Con el dólar a 1.700, el local pierde noventa mil
+pesos en esa venta, y pasaba en cada venta fiada de los 54 equipos. Un bug de
+lectura que parecía de pantalla terminó escribiendo deuda en la moneda
+equivocada: es el mismo patrón de siempre —leer mal muestra un número raro,
+escribir mal mueve plata— y tardé en verlo porque el síntoma que me mostraron
+era un papel.
+
+**El segundo papel.** El acuerdo de pago existía, con sus tests y su e2e, y
+estaba detrás de un botón: al cobrar fiado aparecía un aviso en la pantalla de
+venta con «Imprimir el acuerdo de pago». Yo lo diseñé así —dos papeles, dos
+acciones— y era un error de criterio. El acuerdo es el único documento firmado
+que respalda el saldo, y se firma con el cliente enfrente o no se firma nunca:
+hacerlo depender de que el cajero vea un cartel y apriete un botón, en el minuto
+en que el cliente se está yendo con el teléfono, es ponerle una condición humana
+al papel que menos puede tenerla. El local lo dijo en una línea: «que se imprima
+con la boleta, no un paso extra».
+
+Ahora los dos salen en **un documento y un diálogo de impresión**: dos
+`<section class="hoja">` con un salto de página en el medio. Eso también resolvió
+lo que me había hecho elegir el botón en su momento —abrir una segunda ventana
+la bloquea Safari, que es el navegador de la caja—: no hay segunda ventana.
+
+**La lección.** Un paso manual no es una decisión de diseño neutra: es una
+apuesta a que alguien se acuerde, siempre, en el peor momento. Cuando lo que
+está en juego es el único papel firmado de una deuda, la apuesta está mal hecha
+aunque el botón esté a la vista y tenga un cartel al lado.
+
+## El cartel que explicaba el problema y no dejaba salir de él
+
+En la pantalla de cobro: «Hay un excedente que no se puede devolver: solo se da
+vuelto del efectivo». Es cierto —el vuelto sale del efectivo y de ningún otro
+medio— y apagaba el botón de confirmar.
+
+El caso real: el cliente paga **US$ 400 en billetes** por algo que vale un poco
+menos. El excedente no se puede devolver en dólares, así que el cobro quedaba
+trabado, con el cliente enfrente, y la única salida era desarmarlo y empezarlo
+de nuevo. Lo mismo con cien pesos de más en una cuenta corriente.
+
+Es la segunda vez en este proyecto que escribo una guarda que diagnostica bien y
+deja al cajero sin salida. La primera fue la alerta de precio sospechoso, que
+frenaba al vendedor y había que ir a buscar al dueño. **Un control que describe
+el problema y no ofrece camino no es un control: es una pared**, y la pared la
+paga alguien que está atendiendo.
+
+Lo que quedó: la venta pasa, lo cobrado se registra tal como se cargó, el vuelto
+sigue saliendo solo del efectivo y la diferencia aparece en el arqueo del turno,
+que es donde se mira y se explica. Lo que falta para llegar al total **sigue
+frenando**, y eso no se toca: cobrar de menos es regalar mercadería y nadie lo
+cuenta después. La asimetría es a propósito —de más se explica, de menos se
+pierde—.
+
+## El piso de precios no miraba el nombre
+
+Buscando los iPhones que no estuvieran en dólares apareció **«iPhone 18 Pro
+(256gb)» a 1.510**, en «Sin categorizar», sin marca y sin la meta del plugin.
+Para el POS: un celular de mil quinientos diez pesos.
+
+La guarda de cordura —la que se escribió justo para esto, después de los nueve
+iPhones de agosto— no lo veía. Mira la **categoría** y la **marca**, y esta
+ficha no tenía ninguna de las dos. El piso de «Smartphones nuevos» no se aplica
+a un producto que nadie categorizó, y las fichas nuevas llegan sin categorizar:
+la guarda protegía exactamente el catálogo viejo y dejaba pasar lo que entra
+hoy.
+
+Ahora también mira el **nombre**, que es el único dato que siempre está —nadie
+carga un teléfono sin escribir el modelo—, con las palabras de accesorio
+leyéndose del nombre además de la categoría, para que «Cable iPhone original»
+siga sin piso.
+
+Vale la pena anotar por qué no apareció antes: los tests de `pisoPara` tenían
+uno que decía «un producto sin categoría ni marca no tiene piso» y pasaba en
+verde. **El agujero estaba escrito como comportamiento esperado.** No era un
+caso olvidado: era un caso decidido mal, y revisarlo requería mirar el catálogo
+real, no los tests.
