@@ -102,25 +102,46 @@ cambió**, así que no se rompió ninguna URL ni enlace de la tienda.
 
 En 6480 se corrigió además el «Aole» que quedaba dentro de la descripción.
 
+## 6. El cargador que es réplica — 6534
+
+Lucas aclaró que «AAA» quiere decir réplica en algunos productos y calidad en
+otros —en un vidrio templado, durabilidad—. En el joystick 8283 el nombre ya
+decía «Replica»; en este cargador no, y un cliente de la web leía «Samsung» y
+entendía original.
+
+| ID | Antes | Ahora |
+|---|---|---|
+| 6534 | Fuente Samsung 25W Tipo C **AAA** | Fuente Samsung 25W Tipo C **Replica** AAA |
+
+## 7. Micrófono duplicado consolidado — 6323 / 6480
+
+El mismo producto cargado dos veces con SKU distinto (249 y 516) y el stock
+repartido. Se unificó en uno solo:
+
+| ID | Qué se hizo | Estado final |
+|---|---|---|
+| 6323 | +1 unidad | publicado, **stock 3** |
+| 6480 | −1 unidad y baja | **borrador**, stock 0 |
+
+**El stock se movió por diferencia, no por escritura absoluta.** Se llamó
+`li_tienda_ajustar_stock()` —la misma función del plugin `li-tienda` que usa la
+cola del POS— con `delta +1` y `delta −1` y la referencia
+`duplicado-am188-2026-10-08`. Usa `wc_update_product_stock()`, que es atómico
+igual que un pedido web, y deja su marca de idempotencia: repetir el ajuste con
+esa referencia no vuelve a mover nada.
+
+*(El endpoint REST `wc-li/v1/stock/ajustar` rechaza la credencial de Novamira
+—solo acepta la clave del POS—, así que se llamó la función directamente. Misma
+lógica, mismo movimiento.)*
+
+**La baja es `status = draft`**, que es exactamente lo que hace el POS en
+`empujarBaja`. No se borró nada: la ficha sigue existiendo, pegada a cualquier
+venta vieja, y se revierte poniéndola de vuelta en publicado.
+
 ## Lo que NO se aplicó
 
-- **6440 «Matepa alpaca».** Es el único nombre sin confirmar. Puede ser
-  «Mate de alpaca» o «Mate pampa alpaca» —existe un 6433 «Mate pampa XL»—, y
-  son dos productos distintos. Queda como está hasta que Lucas lo diga.
-- **6534 «Fuente Samsung 25W Tipo C AAA».** Lucas aclaró que «AAA» significa
-  réplica en algunos productos y calidad en otros. En 8283 el nombre ya dice
-  «Replica», así que está claro; en este cargador no. Si es réplica, conviene
-  que el nombre lo diga antes de publicarlo en la web.
+- **6440 «Matepa alpaca» queda como está.** Lucas confirmó que el nombre es
+  correcto.
 - **Stock a 0 de los 23 equipos.** Lo corrige Matías a mano; ver
-  `stock-a-cero-07-10.md`.
-
-## Duplicados confirmados, sin resolver
-
-Son decisiones de catálogo, no correcciones de dato:
-
-- **6323 y 6480 — Micrófono Aloe AM-188.** El mismo producto cargado dos veces:
-  mismo nombre, mismo precio ($18.000), misma fecha de alta, SKU distinto
-  (249 y 516) y stock 2 y 1. Lo razonable es dejar uno con stock 3 y dar de
-  baja el otro, pero eso lo decide el local.
-- **6713 y 6707 — iPhone 12 128gb 75% (45039).** Lucas confirmó que **quedan
-  los dos**: no se da de baja ninguno. Los dos van a stock 0.
+  `stock-a-cero-07-10.md`. **6713 y 6707** (mismo IMEI): Lucas confirmó que
+  quedan los dos, así que ninguno se da de baja y los dos van a 0.
