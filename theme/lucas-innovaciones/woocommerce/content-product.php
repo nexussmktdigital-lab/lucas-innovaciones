@@ -52,8 +52,7 @@ if ( $product->is_on_sale() ) {
 
 		<span class="li-card__name"><?php echo esc_html( li_nombre_web( $product ) ); ?></span>
 
-		<?php echo li_ds_precio( $product, 'md' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-		<?php echo li_ds_transferencia( $product ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+		<?php echo li_ds_precios( $product ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
 		<?php echo li_ds_stock( $product ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 	</a>
