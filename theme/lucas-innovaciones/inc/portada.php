@@ -124,9 +124,41 @@ function li_datos_portada(): array {
 		 ORDER BY " . li_sql_precio_ars( 'l', 'max_price' ) . " DESC LIMIT 1"
 	) : 0;
 
+	// --- Banner de promoción: un producto por rubro, de los más caros ----
+	// Variedad antes que precio: el más caro de cada categoría principal, sin
+	// repetir rubro ni el destacado del hero. Seis entran en una fila.
+	$promo = array();
+	if ( $ids ) {
+		$caros = array_map(
+			'intval',
+			$wpdb->get_col(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"SELECT p.ID FROM {$wpdb->posts} p
+				 JOIN {$wpdb->wc_product_meta_lookup} l ON l.product_id = p.ID
+				 WHERE p.ID <> " . (int) $destacado . " {$en_lista}
+				 ORDER BY " . li_sql_precio_ars( 'l', 'max_price' ) . ' DESC LIMIT 120'
+			)
+		);
+		$rubros = array();
+		foreach ( $caros as $id ) {
+			$cats = wp_get_post_terms( $id, 'product_cat', array( 'fields' => 'ids' ) );
+			$cat  = $cats ? (int) $cats[0] : 0;
+			$anc  = $cat ? get_ancestors( $cat, 'product_cat' ) : array();
+			$raiz = $anc ? (int) end( $anc ) : $cat;
+			if ( isset( $rubros[ $raiz ] ) ) {
+				continue;
+			}
+			$rubros[ $raiz ] = true;
+			$promo[]         = $id;
+			if ( count( $promo ) >= 6 ) {
+				break;
+			}
+		}
+	}
+
 	$productos = count( $ids );
 
-	$datos = compact( 'huella', 'productos', 'categorias_top', 'marcas_top', 'mas_vendidos', 'ultimos', 'destacado' );
+	$datos = compact( 'huella', 'productos', 'categorias_top', 'marcas_top', 'mas_vendidos', 'ultimos', 'destacado', 'promo' );
 
 	set_transient( 'li_portada', $datos, 6 * HOUR_IN_SECONDS );
 

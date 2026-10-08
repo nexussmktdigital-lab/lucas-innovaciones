@@ -107,6 +107,7 @@ if ( li_es_usado( $li_id ) ) {
 
 			<div class="li-pdp__box">
 				<?php echo li_ds_precio( $product, 'xl' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+				<?php echo li_ds_transferencia( $product, 'ficha' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
 				<?php if ( $li_compra ) : ?>
 					<div class="li-pdp__sep"></div>
@@ -120,7 +121,8 @@ if ( li_es_usado( $li_id ) ) {
 				</a>
 
 				<div class="li-pdp__perks">
-					<span><?php echo li_ds_icono( 'truck', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envío gratis desde $ 100.000</span>
+					<?php // Desde $ 100.000 el envío es gratis: si este producto ya llega solo, se dice así. ?>
+					<span><?php echo li_ds_icono( 'truck', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> <?php echo (float) wc_get_price_to_display( $product ) >= 100000 ? '<strong>Envío gratis</strong> a todo el país' : 'Envío gratis desde $ 100.000'; // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
 					<span><?php echo li_ds_icono( 'check', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Retiro en el local</span>
 				</div>
 			</div>

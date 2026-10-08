@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Lucas Innovaciones — Dólar
- * Description: Muestra en pesos, solo en la web, los productos cargados en dólares (meta _li_moneda = USD). Toma el dólar blue de Córdoba (venta) de InfoDolar cada 30 minutos. No escribe precios: el POS y el admin siguen viendo el valor en dólares.
- * Version: 1.0.0
+ * Description: Precios de la web. Muestra en pesos los productos cargados en dólares (meta _li_moneda = USD, dólar blue de Córdoba de InfoDolar cada 30 minutos), suma el recargo de la tienda online (comisión de Mercado Pago y envío gratis) y descuenta el pago por transferencia en el checkout. No escribe precios: el POS y el admin siguen viendo el precio del local.
+ * Version: 1.1.0
  * Requires PHP: 8.1
  * Author: Lucas Innovaciones
  * Text Domain: li-dolar
@@ -22,11 +22,33 @@ defined( 'ABSPATH' ) || exit;
  *    el precio unitario: el total del pedido es la suma de precios redondos.
  *  - Sin cotización de menos de 24 h, los productos USD no se venden y piden
  *    consulta por WhatsApp.
+ *
+ * Precios web (08/10, Matias): la web cobra el precio del local + 10% (cubre
+ * la comisión de Mercado Pago al instante, 7,6%, y el envío gratis desde
+ * $ 100.000), en todos los productos, iPhones incluidos. Pagando por
+ * transferencia hay 10% de descuento sobre los productos. Los dos porcentajes
+ * se cambian en WooCommerce → Dólar. Igual que la conversión: solo en la web,
+ * nunca en el admin ni en /wc/v3. El recargo del POS queda en 0.
  */
 
 final class Li_Dolar {
 
-	public const VERSION = '1.0.0';
+	public const VERSION = '1.1.0';
+
+	/** Recargo de la web sobre el precio del local, en puntos básicos (10% = 1000). */
+	private const OPT_RECARGO = 'li_web_recargo_bp';
+
+	/** Descuento por transferencia sobre los productos, en puntos básicos. */
+	private const OPT_DESCUENTO = 'li_web_descuento_transferencia_bp';
+
+	/** Nombre del renglón de descuento en el carrito y el pedido. */
+	public const ETIQUETA_DESCUENTO = 'Descuento por transferencia';
+
+	/** Pasarela de transferencia de WooCommerce. */
+	public const PASARELA_TRANSFERENCIA = 'bacs';
+
+	/** Precios ya llevados a la web, por producto: no se recargan dos veces. */
+	private static array $salidas = array();
 
 	/** Meta que marca un producto como cargado en dólares. Única escritura de datos permitida. */
 	public const META_MONEDA = '_li_moneda';
@@ -79,6 +101,13 @@ final class Li_Dolar {
 		add_filter( 'woocommerce_variation_is_purchasable', array( __CLASS__, 'comprable' ), 50, 2 );
 		add_filter( 'woocommerce_get_price_html', array( __CLASS__, 'precio_html' ), 50, 2 );
 		add_filter( 'woocommerce_product_get_purchase_note', array( __CLASS__, 'nota_compra' ), 50, 2 );
+
+		// Descuento por transferencia: renglón negativo en el carrito, y en el
+		// pedido se recalcula según el medio de pago elegido de verdad.
+		add_action( 'woocommerce_cart_calculate_fees', array( __CLASS__, 'descuento_en_carrito' ) );
+		add_action( 'woocommerce_blocks_loaded', array( __CLASS__, 'registrar_medio_de_pago' ) );
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( __CLASS__, 'descuento_en_pedido_bloques' ), 20, 2 );
+		add_action( 'woocommerce_checkout_create_order', array( __CLASS__, 'descuento_en_pedido_clasico' ), 20, 2 );
 
 		// Rastro en el pedido: con qué dólar se vendió cada renglón.
 		add_action( 'woocommerce_checkout_create_order_line_item', array( __CLASS__, 'rastro_renglon' ), 10, 3 );
@@ -193,6 +222,34 @@ final class Li_Dolar {
 		return in_array( $m, self::MULTIPLOS, true ) ? $m : 1000;
 	}
 
+	/** Recargo de la web en puntos básicos. */
+	public static function recargo_bp(): int {
+		$bp = (int) get_option( self::OPT_RECARGO, 1000 );
+		return $bp >= 0 && $bp <= 5000 ? $bp : 1000;
+	}
+
+	/** Descuento por transferencia en puntos básicos. */
+	public static function descuento_bp(): int {
+		$bp = (int) get_option( self::OPT_DESCUENTO, 1000 );
+		return $bp >= 0 && $bp <= 5000 ? $bp : 1000;
+	}
+
+	/**
+	 * Precio de la web para un precio del local en pesos: + recargo, redondeado
+	 * hacia arriba. Abajo de $ 100.000, a los $ 100; arriba, a los $ 1.000 (o al
+	 * múltiplo elegido para los productos en dólares).
+	 */
+	public static function precio_web( float $ars, bool $usd = false ): int {
+		$con = round( $ars * ( 10000 + self::recargo_bp() ) / 10000, 2 );
+		$paso = $usd ? self::multiplo() : ( $con >= 100000 ? 1000 : 100 );
+		return (int) ( ceil( $con / $paso - 1e-9 ) * $paso );
+	}
+
+	/** Lo que paga quien elige transferencia por un precio web. */
+	public static function precio_transferencia( float $precio_web ): int {
+		return (int) round( $precio_web * ( 10000 - self::descuento_bp() ) / 10000 );
+	}
+
 	/** Pesos para un monto en dólares, redondeado hacia arriba. Null si no hay cotización vigente. */
 	public static function a_pesos( float $usd, ?float $cotizacion = null ): ?int {
 		$cotizacion ??= self::vigente();
@@ -216,21 +273,44 @@ final class Li_Dolar {
 		if ( '' === $valor || null === $valor || ! $producto instanceof WC_Product ) {
 			return $valor;
 		}
-		if ( ! self::es_web() || ! self::es_usd( $producto ) ) {
+		if ( ! self::es_web() ) {
 			return $valor;
 		}
-		$usd = (float) $valor;
-		if ( $usd <= 0 || $usd > self::TOPE_USD ) {
-			return $valor; // Ya está en pesos (o vacío): no se convierte dos veces.
+		$v = (float) $valor;
+		if ( $v <= 0 ) {
+			return $valor;
 		}
-		$ars = self::a_pesos( $usd );
-		return null === $ars ? $valor : (string) $ars;
+		$id = $producto->get_id();
+		// Si este valor ya es un precio web de este producto (alguien hizo
+		// set_price() con lo que devolvió este filtro), no se recarga otra vez.
+		if ( isset( self::$salidas[ $id ][ (string) $valor ] ) ) {
+			return $valor;
+		}
+
+		$usd = self::es_usd( $producto );
+		if ( $usd ) {
+			if ( $v > self::TOPE_USD ) {
+				return $valor; // Ya está en pesos: no se convierte dos veces.
+			}
+			$cot = self::vigente();
+			if ( ! $cot ) {
+				return $valor;
+			}
+			$ars = round( $v * $cot, 2 );
+		} else {
+			$ars = $v;
+		}
+
+		$web = (string) self::precio_web( $ars, $usd );
+		self::$salidas[ $id ][ $web ] = true;
+		return $web;
 	}
 
 	public static function hash_variaciones( array $hash, $producto ): array {
 		if ( self::es_usd( $producto ) ) {
 			$hash[] = self::es_web() ? 'li-ars-' . self::vigente() . '-' . self::multiplo() : 'li-usd';
 		}
+		$hash[] = self::es_web() ? 'li-web-' . self::recargo_bp() : 'li-local';
 		return $hash;
 	}
 
@@ -277,6 +357,94 @@ final class Li_Dolar {
 			$item->add_meta_data( '_li_precio_usd', $usd, true );
 			$item->add_meta_data( '_li_cotizacion', self::vigente(), true );
 		}
+	}
+
+	/* ------------------------------------------------------------------
+	 * Descuento por transferencia
+	 * ---------------------------------------------------------------- */
+
+	/** Medio de pago elegido en esta sesión. */
+	private static function medio_elegido(): string {
+		return ( function_exists( 'WC' ) && WC()->session ) ? (string) WC()->session->get( 'chosen_payment_method' ) : '';
+	}
+
+	/** Renglón negativo en el carrito cuando el medio elegido es transferencia. */
+	public static function descuento_en_carrito( $cart ): void {
+		if ( ! self::es_web() || ! $cart instanceof WC_Cart || self::descuento_bp() <= 0 ) {
+			return;
+		}
+		if ( self::PASARELA_TRANSFERENCIA !== self::medio_elegido() ) {
+			return;
+		}
+		$monto = round( (float) $cart->get_subtotal() * self::descuento_bp() / 10000 );
+		if ( $monto > 0 ) {
+			$cart->add_fee( self::ETIQUETA_DESCUENTO . ' (' . self::porcentaje( self::descuento_bp() ) . ')', -$monto, false );
+		}
+	}
+
+	/**
+	 * El checkout por bloques no le avisa al servidor cuando cambia el medio de
+	 * pago: el tema lo manda con extensionCartUpdate (espacio li-transferencia)
+	 * y acá se guarda, así el total se recalcula con o sin descuento.
+	 */
+	public static function registrar_medio_de_pago(): void {
+		if ( ! function_exists( 'woocommerce_store_api_register_update_callback' ) ) {
+			return;
+		}
+		woocommerce_store_api_register_update_callback(
+			array(
+				'namespace' => 'li-transferencia',
+				'callback'  => static function ( $datos ): void {
+					$m = sanitize_key( (string) ( $datos['metodo'] ?? '' ) );
+					if ( WC()->session ) {
+						WC()->session->set( 'chosen_payment_method', $m );
+					}
+				},
+			)
+		);
+	}
+
+	/** @param WC_Order $order Pedido. @param WP_REST_Request $req Petición. */
+	public static function descuento_en_pedido_bloques( $order, $req ): void {
+		self::ajustar_descuento_pedido( $order, (string) ( $req['payment_method'] ?? $order->get_payment_method() ) );
+	}
+
+	/** @param WC_Order $order Pedido. @param array $datos Datos del checkout clásico. */
+	public static function descuento_en_pedido_clasico( $order, $datos ): void {
+		self::ajustar_descuento_pedido( $order, (string) ( $datos['payment_method'] ?? $order->get_payment_method() ) );
+	}
+
+	/**
+	 * Deja el pedido con el descuento correcto para el medio de pago con el que
+	 * se confirma, pase lo que pase en el carrito: con transferencia, -10% de
+	 * los productos; con cualquier otro, ninguno.
+	 */
+	public static function ajustar_descuento_pedido( $order, string $metodo ): void {
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+		foreach ( $order->get_fees() as $item_id => $fee ) {
+			if ( str_starts_with( $fee->get_name(), self::ETIQUETA_DESCUENTO ) ) {
+				$order->remove_item( $item_id );
+			}
+		}
+		if ( self::PASARELA_TRANSFERENCIA === $metodo && self::descuento_bp() > 0 ) {
+			$monto = round( (float) $order->get_subtotal() * self::descuento_bp() / 10000 );
+			if ( $monto > 0 ) {
+				$fee = new WC_Order_Item_Fee();
+				$fee->set_name( self::ETIQUETA_DESCUENTO . ' (' . self::porcentaje( self::descuento_bp() ) . ')' );
+				$fee->set_amount( (string) -$monto );
+				$fee->set_total( (string) -$monto );
+				$fee->set_tax_status( 'none' );
+				$order->add_item( $fee );
+			}
+		}
+		$order->calculate_totals( false );
+	}
+
+	/** 1000 → "10%". */
+	public static function porcentaje( int $bp ): string {
+		return rtrim( rtrim( number_format( $bp / 100, 2, ',', '' ), '0' ), ',' ) . '%';
 	}
 
 	/* ------------------------------------------------------------------
@@ -497,6 +665,16 @@ final class Li_Dolar {
 			$nonce // phpcs:ignore WordPress.Security.EscapeOutput
 		);
 
+		// Precios web.
+		echo '<h2>Precios de la web</h2>';
+		printf(
+			'<form method="post" action="%s"><input type="hidden" name="action" value="li_dolar"><input type="hidden" name="op" value="precios_web">%s<p><label>Recargo de la web sobre el precio del local: <input type="number" name="recargo" step="0.01" min="0" max="50" value="%s" style="width:6em"> %%</label></p><p><label>Descuento pagando por transferencia: <input type="number" name="descuento" step="0.01" min="0" max="50" value="%s" style="width:6em"> %%</label></p><p><button class="button button-primary">Guardar</button></p><p class="description">El recargo cubre la comisión de Mercado Pago y el envío gratis. Se aplica solo en la web (catálogo, carrito y checkout); el POS y el admin siguen con el precio del local. Al guardar se vacía la caché de páginas.</p></form>',
+			esc_url( $url ),
+			$nonce, // phpcs:ignore WordPress.Security.EscapeOutput
+			esc_attr( (string) ( self::recargo_bp() / 100 ) ),
+			esc_attr( (string) ( self::descuento_bp() / 100 ) )
+		);
+
 		// Redondeo.
 		$m = self::multiplo();
 		echo '<h2>Redondeo</h2>';
@@ -520,8 +698,8 @@ final class Li_Dolar {
 			if ( $usd > self::TOPE_USD ) {
 				$web = '<strong style="color:#b32d2e">El precio parece estar en pesos: se muestra tal cual</strong>';
 			} else {
-				$ars = self::a_pesos( $usd );
-				$web = null === $ars ? 'Consultar por WhatsApp' : '$ ' . number_format( $ars, 0, ',', '.' );
+				$cot = self::vigente();
+				$web = null === $cot ? 'Consultar por WhatsApp' : '$ ' . number_format( self::precio_web( round( $usd * $cot, 2 ), true ), 0, ',', '.' );
 			}
 			$filas[] = array( $usd, sprintf(
 				'<tr><td><a href="%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td></tr>',
@@ -568,6 +746,18 @@ final class Li_Dolar {
 				$v = isset( $_POST['venta'] ) ? self::numero( sanitize_text_field( wp_unslash( $_POST['venta'] ) ) ) : 0;
 				// "1561" o "1561,50" llegan bien; "1.561" se lee como 1561 por la regla de miles.
 				$r = self::aplicar( $v, 0, 'manual (' . wp_get_current_user()->user_login . ')', true );
+				break;
+			case 'precios_web':
+				$rec = isset( $_POST['recargo'] ) ? (int) round( (float) str_replace( ',', '.', sanitize_text_field( wp_unslash( $_POST['recargo'] ) ) ) * 100 ) : -1;
+				$des = isset( $_POST['descuento'] ) ? (int) round( (float) str_replace( ',', '.', sanitize_text_field( wp_unslash( $_POST['descuento'] ) ) ) * 100 ) : -1;
+				if ( $rec >= 0 && $rec <= 5000 && $des >= 0 && $des <= 5000 ) {
+					update_option( self::OPT_RECARGO, $rec, true );
+					update_option( self::OPT_DESCUENTO, $des, true );
+					do_action( 'litespeed_purge_all' );
+					$r = array( 'ok' => true, 'mensaje' => sprintf( 'Guardado: recargo %s, descuento por transferencia %s.', self::porcentaje( $rec ), self::porcentaje( $des ) ) );
+				} else {
+					$r = array( 'ok' => false, 'mensaje' => 'Los porcentajes tienen que estar entre 0 y 50.' );
+				}
 				break;
 			case 'multiplo':
 				$m = isset( $_POST['multiplo'] ) ? (int) $_POST['multiplo'] : 1000;

@@ -263,25 +263,33 @@ function li_reglas_clausulas( array $c, WP_Query $q ): array {
 }
 
 /**
- * Expresión SQL con el precio en pesos de una fila de la tabla de consulta.
- * Para un producto USD aplica la cotización y el redondeo del plugin, igual
- * que la ficha; para el resto devuelve la columna tal cual.
+ * Expresión SQL con el precio web de una fila de la tabla de consulta: la
+ * misma cuenta que Li_Dolar::precio_web() (recargo de la web + redondeo
+ * hacia arriba) y, en los productos USD, la cotización antes. Así el filtro
+ * y el orden por precio coinciden con lo que muestra la tarjeta.
  *
  * @param string $alias   Alias de wc_product_meta_lookup en la consulta.
  * @param string $columna min_price o max_price.
  */
 function li_sql_precio_ars( string $alias, string $columna ): string {
-	$c = li_cotizacion();
-	if ( ! $c ) {
-		return "{$alias}.{$columna}";
-	}
 	global $wpdb;
-	$m   = class_exists( 'Li_Dolar' ) ? Li_Dolar::multiplo() : 1000;
+	$col  = "{$alias}.{$columna}";
+	$f    = class_exists( 'Li_Dolar' ) ? ( 10000 + Li_Dolar::recargo_bp() ) / 10000 : 1;
+	$m    = class_exists( 'Li_Dolar' ) ? Li_Dolar::multiplo() : 1000;
 	$tope = class_exists( 'Li_Dolar' ) ? Li_Dolar::TOPE_USD : 10000;
-	$c   = (float) $c;
 
-	return "( CASE WHEN {$alias}.{$columna} <= {$tope} AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} lim WHERE lim.post_id = {$alias}.product_id AND lim.meta_key = '_li_moneda' AND lim.meta_value = 'USD' )"
-		. " THEN CEIL( ROUND( {$alias}.{$columna} * {$c}, 2 ) / {$m} ) * {$m} ELSE {$alias}.{$columna} END )";
+	$ars   = "ROUND( {$col} * {$f}, 2 )";
+	$paso  = "( CASE WHEN {$ars} >= 100000 THEN 1000 ELSE 100 END )";
+	$pesos = "( CEIL( {$ars} / {$paso} - 0.000000001 ) * {$paso} )";
+
+	$c = (float) li_cotizacion();
+	if ( ! $c ) {
+		return $pesos; // Sin cotización, los productos USD no se publican.
+	}
+	$usd = "ROUND( {$col} * {$c} * {$f}, 2 )";
+
+	return "( CASE WHEN {$col} <= {$tope} AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} lim WHERE lim.post_id = {$alias}.product_id AND lim.meta_key = '_li_moneda' AND lim.meta_value = 'USD' )"
+		. " THEN CEIL( {$usd} / {$m} - 0.000000001 ) * {$m} ELSE {$pesos} END )";
 }
 
 add_filter( 'woocommerce_related_products', 'li_reglas_ids', 20 );

@@ -34,6 +34,12 @@ $li_cat = ( $li_obj instanceof WP_Term && 'product_cat' === $li_obj->taxonomy ) 
 		?>
 	</h1>
 
+	<?php // Recordatorio de la oferta arriba del listado: es donde se decide la compra. ?>
+	<p class="li-shop__promo">
+		<span class="li-badge li-badge--pixel li-badge--green"><?php echo esc_html( class_exists( 'Li_Dolar' ) ? Li_Dolar::porcentaje( Li_Dolar::descuento_bp() ) : '10%' ); ?> OFF</span>
+		<span>pagando con transferencia · <strong>envío gratis</strong> a todo el país desde $ 100.000</span>
+	</p>
+
 	<?php if ( $li_obj && ! empty( $li_obj->description ) ) : ?>
 		<div class="li-shop__desc"><?php echo wp_kses_post( wpautop( $li_obj->description ) ); ?></div>
 	<?php endif; ?>
