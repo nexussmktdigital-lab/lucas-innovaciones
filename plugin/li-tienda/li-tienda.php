@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lucas Innovaciones — Tienda
  * Description: Reglas chicas de la tienda que no dependen del tema: el slug de un producto nuevo se arma sin el IMEI del final del nombre, y peso y medidas por defecto por categoría para cotizar envíos; y un ajuste de stock por diferencia para el POS (atómico y sin duplicar en los reintentos).
- * Version: 1.3.0
+ * Version: 1.4.0
  * Requires PHP: 8.1
  * Author: Lucas Innovaciones
  *
@@ -316,3 +316,25 @@ function li_tienda_limpiar_marcas_stock(): void {
 		)
 	);
 }
+
+/*
+ * Caché de páginas (LiteSpeed Cache).
+ *
+ * Los iPhones se cargan en dólares y la web los muestra en pesos con la
+ * cotización del momento. Una página cacheada mostraría el precio viejo: se
+ * purga toda la caché cuando cambia el valor del dólar o el múltiplo de
+ * redondeo. No en cada lectura (cada 30 min se reescribe la fecha aunque el
+ * valor sea el mismo), porque vaciarla todo el tiempo la vuelve inútil.
+ * Si LiteSpeed Cache no está, la acción no hace nada.
+ */
+add_action(
+	'update_option_li_dolar_cotizacion',
+	static function ( $viejo, $nuevo ): void {
+		if ( (float) ( $viejo['venta'] ?? 0 ) !== (float) ( $nuevo['venta'] ?? 0 ) ) {
+			do_action( 'litespeed_purge_all' );
+		}
+	},
+	10,
+	2
+);
+add_action( 'update_option_li_dolar_multiplo', static fn() => do_action( 'litespeed_purge_all' ) );
