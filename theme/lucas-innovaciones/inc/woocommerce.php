@@ -360,6 +360,9 @@ function li_campos_argentina( $locale ) {
 }
 
 add_filter( 'gettext_woocommerce', 'li_textos_checkout', 10, 2 );
+// El plugin de Correo Argentino rearma el renglón del envío del pedido con su
+// propio "Shipping:" sin traducir.
+add_filter( 'gettext_correo-argentino-for-woocommerce', 'li_textos_checkout', 10, 2 );
 /**
  * Textos sueltos del checkout y del pedido que la traducción deja en
  * castellano de España o sin traducir.
@@ -374,6 +377,7 @@ function li_textos_checkout( $traduccion, $original ) {
 		'Add a note to your order'                    => 'Agregá una nota a tu pedido',
 		'Thank you. Your order has been received.'    => 'Gracias. Recibimos tu pedido.',
 		'Notes about your order, e.g. special notes for delivery.' => 'Notas sobre tu pedido, por ejemplo, para la entrega.',
+		'Collection from <strong>%s</strong>:'       => 'Retiro en <strong>%s</strong>:',
 	);
 	return $mapa[ $original ] ?? $traduccion;
 }

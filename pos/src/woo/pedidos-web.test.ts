@@ -210,6 +210,25 @@ describe('importarPedidosWeb', () => {
   });
 });
 
+describe('descuento por transferencia', () => {
+  it('el cargo negativo de la tienda entra como descuento y el total es lo cobrado', async () => {
+    const conDescuento = pedido({
+      total: '10800.00',
+      fee_lines: [{ name: 'Descuento por transferencia (10%)', total: '-1200.00' }],
+    } as Partial<PedidoWeb>);
+    await importarPedidosWeb(db, wooConPedidos([conDescuento]).cliente, { ahora });
+
+    const [venta] = await db.select().from(sales);
+    expect(venta!.subtotalCentavos).toBe(1_200_000);
+    expect(venta!.descuentoCentavos).toBe(120_000);
+    expect(venta!.totalCentavos).toBe(1_080_000);
+    expect(venta!.nota).toContain('descuento $ 1200');
+
+    const [pago] = await db.select().from(salePayments);
+    expect(pago!.montoCentavos).toBe(1_080_000);
+  });
+});
+
 describe('la lista de ventas', () => {
   it('marca como web lo que vino de la tienda, para pintarlo distinto', async () => {
     await importarPedidosWeb(db, wooConPedidos([pedido()]).cliente, { ahora });

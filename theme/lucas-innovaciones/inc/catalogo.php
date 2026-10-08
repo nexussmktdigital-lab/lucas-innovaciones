@@ -31,11 +31,11 @@ const LI_CATS_SOLO_MOSTRADOR = array( 'solo-mostrador', 'vapers' );
  * Lucas, 07/10). Se ocultan de la web hasta que el stock se corrija en el POS,
  * que es quien lo manda; después se saca cada ID de acá. Es código, no datos:
  * el stock de Woo no se toca.
+ *
+ * 08/10: Lucas puso en 0 los otros 21 en el POS. Quedan los dos avisos del
+ * mismo iPhone 12 (IMEI 45039), que siguen con stock 1.
  */
-const LI_IDS_SIN_STOCK_REAL = array(
-	6713, 6707, 6876, 7163, 6801, 6800, 7348, 6905, 6904, 6968, 7280, 6972,
-	6931, 6870, 6835, 6845, 6846, 6791, 6286, 6685, 6885, 6290, 6273,
-);
+const LI_IDS_SIN_STOCK_REAL = array( 6713, 6707 );
 
 /* -------------------------------------------------------------------------
    Contexto
@@ -263,25 +263,33 @@ function li_reglas_clausulas( array $c, WP_Query $q ): array {
 }
 
 /**
- * Expresión SQL con el precio en pesos de una fila de la tabla de consulta.
- * Para un producto USD aplica la cotización y el redondeo del plugin, igual
- * que la ficha; para el resto devuelve la columna tal cual.
+ * Expresión SQL con el precio web de una fila de la tabla de consulta: la
+ * misma cuenta que Li_Dolar::precio_web() (recargo de la web + redondeo
+ * hacia arriba) y, en los productos USD, la cotización antes. Así el filtro
+ * y el orden por precio coinciden con lo que muestra la tarjeta.
  *
  * @param string $alias   Alias de wc_product_meta_lookup en la consulta.
  * @param string $columna min_price o max_price.
  */
 function li_sql_precio_ars( string $alias, string $columna ): string {
-	$c = li_cotizacion();
-	if ( ! $c ) {
-		return "{$alias}.{$columna}";
-	}
 	global $wpdb;
-	$m   = class_exists( 'Li_Dolar' ) ? Li_Dolar::multiplo() : 1000;
+	$col  = "{$alias}.{$columna}";
+	$f    = class_exists( 'Li_Dolar' ) ? ( 10000 + Li_Dolar::recargo_bp() ) / 10000 : 1;
+	$m    = class_exists( 'Li_Dolar' ) ? Li_Dolar::multiplo() : 1000;
 	$tope = class_exists( 'Li_Dolar' ) ? Li_Dolar::TOPE_USD : 10000;
-	$c   = (float) $c;
 
-	return "( CASE WHEN {$alias}.{$columna} <= {$tope} AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} lim WHERE lim.post_id = {$alias}.product_id AND lim.meta_key = '_li_moneda' AND lim.meta_value = 'USD' )"
-		. " THEN CEIL( ROUND( {$alias}.{$columna} * {$c}, 2 ) / {$m} ) * {$m} ELSE {$alias}.{$columna} END )";
+	$ars   = "ROUND( {$col} * {$f}, 2 )";
+	$paso  = "( CASE WHEN {$ars} >= 100000 THEN 1000 ELSE 100 END )";
+	$pesos = "( CEIL( {$ars} / {$paso} - 0.000000001 ) * {$paso} )";
+
+	$c = (float) li_cotizacion();
+	if ( ! $c ) {
+		return $pesos; // Sin cotización, los productos USD no se publican.
+	}
+	$usd = "ROUND( {$col} * {$c} * {$f}, 2 )";
+
+	return "( CASE WHEN {$col} <= {$tope} AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} lim WHERE lim.post_id = {$alias}.product_id AND lim.meta_key = '_li_moneda' AND lim.meta_value = 'USD' )"
+		. " THEN CEIL( {$usd} / {$m} - 0.000000001 ) * {$m} ELSE {$pesos} END )";
 }
 
 add_filter( 'woocommerce_related_products', 'li_reglas_ids', 20 );
@@ -425,5 +433,12 @@ add_filter( 'the_title', 'li_titulo_producto', 20, 2 );
  * @param int    $id     Post.
  */
 function li_titulo_producto( $titulo, $id = 0 ) {
-	return ( $id && 'product' === get_post_type( $id ) ) ? li_filtrar_nombre( $titulo ) : $titulo;
+	if ( ! $id || 'product' !== get_post_type( $id ) ) {
+		return $titulo;
+	}
+	// En la web, el nombre SEO (migas, búsquedas, cualquier the_title).
+	if ( li_es_web() && ! li_mail_al_local() && function_exists( 'li_nombre_web' ) ) {
+		return li_nombre_web( (int) $id );
+	}
+	return li_filtrar_nombre( $titulo );
 }

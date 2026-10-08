@@ -43,16 +43,17 @@ if ( $product->is_on_sale() ) {
 		<?php endif; ?>
 
 		<span class="li-card__media">
-			<?php echo $product->get_image( 'li-card', array( 'class' => 'li-card__img', 'loading' => 'lazy', 'alt' => esc_attr( li_nombre_publico( $product->get_name() ) ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+			<?php echo $product->get_image( 'li-card', array( 'class' => 'li-card__img', 'loading' => 'lazy', 'alt' => esc_attr( li_nombre_web( $product ) ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 		</span>
 
 		<?php if ( $li_marca ) : ?>
 			<span class="li-card__brand"><?php echo esc_html( $li_marca ); ?></span>
 		<?php endif; ?>
 
-		<span class="li-card__name"><?php echo esc_html( li_nombre_publico( $product->get_name() ) ); ?></span>
+		<span class="li-card__name"><?php echo esc_html( li_nombre_web( $product ) ); ?></span>
 
 		<?php echo li_ds_precio( $product, 'md' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+		<?php echo li_ds_transferencia( $product ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
 		<?php echo li_ds_stock( $product ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 	</a>

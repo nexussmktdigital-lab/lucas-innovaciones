@@ -26,7 +26,7 @@ if ( post_password_required() ) {
 }
 
 $li_id     = $product->get_id();
-$li_nombre = li_nombre_publico( $product->get_name() );
+$li_nombre = li_nombre_web( $product );
 $li_marca  = li_marca_producto( $li_id );
 $li_sku    = $product->get_sku();
 $li_imgs   = array_values( array_filter( array_merge( array( $product->get_image_id() ), $product->get_gallery_image_ids() ) ) );
@@ -107,6 +107,7 @@ if ( li_es_usado( $li_id ) ) {
 
 			<div class="li-pdp__box">
 				<?php echo li_ds_precio( $product, 'xl' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+				<?php echo li_ds_transferencia( $product, 'ficha' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 
 				<?php if ( $li_compra ) : ?>
 					<div class="li-pdp__sep"></div>
@@ -120,7 +121,8 @@ if ( li_es_usado( $li_id ) ) {
 				</a>
 
 				<div class="li-pdp__perks">
-					<span><?php echo li_ds_icono( 'truck', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envío gratis desde $ 100.000</span>
+					<?php // Desde $ 100.000 el envío es gratis: si este producto ya llega solo, se dice así. ?>
+					<span><?php echo li_ds_icono( 'truck', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> <?php echo (float) wc_get_price_to_display( $product ) >= 100000 ? '<strong>Envío gratis</strong> a todo el país' : 'Envío gratis desde $ 100.000'; // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
 					<span><?php echo li_ds_icono( 'check', 16 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Retiro en el local</span>
 				</div>
 			</div>
@@ -145,7 +147,16 @@ if ( li_es_usado( $li_id ) ) {
 					</details>
 				<?php endif; ?>
 
-				<?php if ( $li_desc_ok && ( $product->get_description() || $product->get_short_description() ) ) : ?>
+				<?php $li_seo = li_seo_producto( $li_id ); ?>
+				<?php if ( $li_seo && ! empty( $li_seo['descripcion'] ) ) : ?>
+					<?php // Descripción curada (seo/productos): manda sobre la cargada, que en varios productos es de otro. ?>
+					<details class="li-acc__item"<?php echo $li_specs ? '' : ' open'; ?>>
+						<summary>Descripción <?php echo li_ds_icono( 'chevron-d', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></summary>
+						<div class="li-acc__text">
+							<?php echo wp_kses_post( $li_seo['descripcion'] ); ?>
+						</div>
+					</details>
+				<?php elseif ( $li_desc_ok && ( $product->get_description() || $product->get_short_description() ) ) : ?>
 					<details class="li-acc__item"<?php echo $li_specs ? '' : ' open'; ?>>
 						<summary>Descripción <?php echo li_ds_icono( 'chevron-d', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></summary>
 						<div class="li-acc__text">

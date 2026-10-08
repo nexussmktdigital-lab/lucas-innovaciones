@@ -118,6 +118,48 @@ function li_ds_precio( WC_Product $p, string $tam = 'md' ): string {
 	return sprintf( '<div class="li-price li-price--%s">%s</div>', esc_attr( $tam ), $html );
 }
 
+/** $ 1.234.567, como el resto de la web. */
+function li_precio_txt( float $v ): string {
+	return '$ ' . number_format( $v, 0, ',', '.' );
+}
+
+/**
+ * Lo que paga quien elige transferencia (precio web menos el descuento), o 0
+ * si no aplica: sin descuento configurado o producto que no se puede comprar.
+ *
+ * @param WC_Product $p Producto.
+ */
+function li_precio_transferencia( WC_Product $p ): int {
+	if ( ! class_exists( 'Li_Dolar' ) || Li_Dolar::descuento_bp() <= 0 || ! $p->is_purchasable() ) {
+		return 0;
+	}
+	$precio = (float) wc_get_price_to_display( $p );
+	return $precio > 1 ? Li_Dolar::precio_transferencia( $precio ) : 0;
+}
+
+/**
+ * Precio pagando por transferencia: una línea en la tarjeta, o el recuadro
+ * de la ficha. Es el gancho de venta de la web (10% OFF, Matias 08/10).
+ *
+ * @param WC_Product $p   Producto.
+ * @param string     $tam card | ficha.
+ */
+function li_ds_transferencia( WC_Product $p, string $tam = 'card' ): string {
+	$t = li_precio_transferencia( $p );
+	if ( ! $t ) {
+		return '';
+	}
+	$pct = Li_Dolar::porcentaje( Li_Dolar::descuento_bp() );
+	if ( 'ficha' === $tam ) {
+		return sprintf(
+			'<div class="li-transf li-transf--ficha"><span class="li-badge li-badge--pixel li-badge--green">%s OFF</span><div><strong class="li-transf__monto">%s</strong><span>pagando con transferencia bancaria</span></div></div>',
+			esc_html( $pct ),
+			esc_html( li_precio_txt( $t ) )
+		);
+	}
+	return sprintf( '<span class="li-transf"><strong>%s</strong> <span>con transferencia</span></span>', esc_html( li_precio_txt( $t ) ) );
+}
+
 /**
  * Punto de stock (StockDot).
  *

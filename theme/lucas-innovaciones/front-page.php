@@ -56,7 +56,7 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 						<?php if ( $li_m ) : ?>
 							<span class="li-card__brand"><?php echo esc_html( $li_m ); ?></span>
 						<?php endif; ?>
-						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_publico( $li_dest->get_name() ) ); ?></span>
+						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_web( $li_dest ) ); ?></span>
 						<?php echo li_ds_precio( $li_dest, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 					</a>
 				<?php endif; ?>
@@ -78,6 +78,41 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 		</div>
 	</section>
 	<?php endif; ?>
+
+	<?php
+	// Banner de promoción: 10% OFF con transferencia y envío gratis desde $ 100.000
+	// (Matias 08/10), con productos de varios rubros y su precio con transferencia.
+	$li_promo = array_filter( array_map( 'wc_get_product', $li_datos['promo'] ?? array() ) );
+	$li_pct   = class_exists( 'Li_Dolar' ) ? Li_Dolar::porcentaje( Li_Dolar::descuento_bp() ) : '10%';
+	?>
+	<section class="li-wrap li-promo" aria-labelledby="li-promo-titulo">
+		<div class="li-promo__box">
+			<div class="li-promo__txt">
+				<span class="li-badge li-badge--pixel li-badge--green">[ <?php echo esc_html( $li_pct ); ?>_OFF ]</span>
+				<h2 class="li-promo__title" id="li-promo-titulo"><?php echo esc_html( $li_pct ); ?> OFF en toda la web <span class="li-green">pagando con transferencia</span></h2>
+				<ul class="li-promo__puntos">
+					<li><?php echo li_ds_icono( 'truck', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envío gratis a todo el país desde $&nbsp;100.000</li>
+					<li><?php echo li_ds_icono( 'store', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Retiro sin costo en <?php echo esc_html( LI_DIRECCION ); ?></li>
+				</ul>
+				<a class="li-btn li-btn--primary" href="<?php echo esc_url( $li_shop ); ?>">Ver productos <?php echo li_ds_icono( 'chevron-r', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></a>
+			</div>
+			<?php if ( $li_promo ) : ?>
+				<div class="li-promo__prods">
+					<?php foreach ( $li_promo as $li_p ) : ?>
+						<?php $li_t = li_precio_transferencia( $li_p ); ?>
+						<a class="li-promo__prod" href="<?php echo esc_url( $li_p->get_permalink() ); ?>">
+							<span class="li-promo__media"><?php echo $li_p->get_image( 'li-card', array( 'class' => 'li-promo__img', 'loading' => 'lazy', 'alt' => esc_attr( li_nombre_web( $li_p ) ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput ?></span>
+							<span class="li-promo__nombre"><?php echo esc_html( li_nombre_web( $li_p ) ); ?></span>
+							<?php if ( $li_t ) : ?>
+								<span class="li-promo__lista"><?php echo esc_html( li_precio_txt( (float) wc_get_price_to_display( $li_p ) ) ); ?></span>
+								<span class="li-promo__transf"><strong><?php echo esc_html( li_precio_txt( $li_t ) ); ?></strong> con transferencia</span>
+							<?php endif; ?>
+						</a>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+		</div>
+	</section>
 
 	<?php if ( $li_datos['categorias_top'] ) : ?>
 	<section class="li-wrap li-section li-section--first">
