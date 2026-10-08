@@ -163,6 +163,28 @@
 		};
 		window.wp.data.subscribe(limpiarEnvio);
 		limpiarEnvio(); // El error pudo quedar registrado antes de este momento.
+
+		/*
+		 * Descuento por transferencia: el checkout por bloques no le avisa al
+		 * servidor cuando cambia el medio de pago, así que el total no se
+		 * recalcularía. Se lo manda el tema (plugin li-dolar, espacio
+		 * li-transferencia) y el carrito vuelve con o sin el descuento. El
+		 * pedido igual se corrige del lado del servidor al confirmarlo.
+		 */
+		var ultimoMedio = null;
+		var avisarMedio = function () {
+			try {
+				var pago = window.wp.data.select('wc/store/payment');
+				var medio = pago && pago.getActivePaymentMethod ? pago.getActivePaymentMethod() : '';
+				if (!medio || medio === ultimoMedio || !window.wc || !window.wc.blocksCheckout || !window.wc.blocksCheckout.extensionCartUpdate) return;
+				ultimoMedio = medio;
+				window.wc.blocksCheckout.extensionCartUpdate({ namespace: 'li-transferencia', data: { metodo: medio } });
+			} catch (e) {
+				// Sin la API de bloques, el total se corrige al confirmar el pedido.
+			}
+		};
+		window.wp.data.subscribe(avisarMedio);
+		avisarMedio();
 	});
 
 	/* Fila de categorías de la cabecera: flechas solo si no entra. */

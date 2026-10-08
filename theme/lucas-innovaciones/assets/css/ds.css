@@ -727,3 +727,41 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-pronto__datos a:hover { color: var(--li-green); }
 .li-pronto__checks { justify-content: center; margin-top: 24px; }
 .li-pronto__pie { position: relative; margin: 40px 0 0; font-size: 12px; color: var(--li-fg-3); }
+
+/* ---------- Precio con transferencia y promo (Matias 08/10) ---------- */
+/* Tarjeta: píldora verde suave, texto oscuro (el verde de marca como texto chico no tiene contraste). */
+.li-transf { display: inline-block; align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: var(--li-radius-pill); background: var(--li-green-soft); color: var(--li-fg-1); font-size: 12px; line-height: 1.5; }
+.li-transf strong { font-weight: 700; }
+/* Ficha: recuadro debajo del precio. */
+.li-transf--ficha { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; padding: 10px 12px; border-radius: var(--li-radius); font-size: 14px; }
+.li-transf--ficha > div { display: flex; flex-direction: column; line-height: 1.25; }
+.li-transf__monto { font-family: var(--li-font-display); font-size: 20px; font-weight: 700; letter-spacing: var(--li-tracking-tight); }
+.li-transf--ficha span:not(.li-badge) { color: var(--li-fg-2); font-size: 13px; }
+
+/* Barra superior: la oferta. */
+.li-microbar__promo strong { font-weight: 700; }
+
+/* Listado: recordatorio arriba de los productos. */
+.li-shop__promo { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; font-size: 14px; color: var(--li-fg-2); }
+.li-shop__promo strong { color: var(--li-fg-1); }
+
+/* Portada: banner de promoción con productos. */
+.li-promo { margin-top: 32px; }
+.li-promo__box { background: var(--li-black); color: #fff; border-radius: var(--li-radius-xl, 20px); padding: 24px 20px; display: grid; gap: 20px; overflow: hidden; }
+@media (min-width: 1024px) { .li-promo__box { grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); align-items: center; padding: 32px; gap: 32px; } }
+.li-promo__title { font-family: var(--li-font-display); font-size: 1.75rem; line-height: var(--li-lh-tight); letter-spacing: var(--li-tracking-tight); font-weight: 700; margin: 12px 0 14px; color: #fff; }
+@media (min-width: 768px) { .li-promo__title { font-size: 2.25rem; } }
+.li-promo__puntos { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; font-size: 15px; color: var(--li-fg-invert-2); }
+.li-promo__puntos li { display: flex; align-items: center; gap: 8px; }
+.li-promo__puntos .li-ico { color: var(--li-green); flex-shrink: 0; }
+.li-promo__prods { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; margin: 0 -20px; padding: 0 20px 4px; }
+.li-promo__prods::-webkit-scrollbar { display: none; }
+@media (min-width: 1024px) { .li-promo__prods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; margin: 0; padding: 0; } }
+.li-promo__prod { flex: 0 0 160px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 4px; background: #fff; color: var(--li-fg-1); border-radius: var(--li-radius-lg); padding: 10px; text-decoration: none; transition: transform var(--li-dur) var(--li-ease); }
+.li-promo__prod:hover { transform: translateY(-2px); color: var(--li-fg-1); }
+.li-promo__media { aspect-ratio: 1; background: var(--li-bg-alt, #F8F8F8); border-radius: var(--li-radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.li-body .li-promo__img { width: 100%; height: 100%; object-fit: contain; }
+.li-promo__nombre { font-size: 13px; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+.li-promo__lista { font-size: 12px; color: var(--li-fg-3); }
+.li-promo__transf { font-size: 12px; color: var(--li-fg-2); }
+.li-promo__transf strong { display: block; font-family: var(--li-font-display); font-size: 17px; color: var(--li-fg-1); }
