@@ -98,6 +98,13 @@ export const pedidoWeb = z
       .loose()
       .nullish(),
     line_items: z.array(lineaWeb).default([]),
+    /**
+     * Cargos sueltos del pedido. La tienda descuenta el pago por transferencia
+     * como un cargo negativo ("Descuento por transferencia (10%)").
+     */
+    fee_lines: z
+      .array(z.object({ name: z.string().default(''), total: z.union([z.string(), z.number()]).nullish() }).loose())
+      .default([]),
   })
   .loose();
 
@@ -339,15 +346,26 @@ async function registrarVenta(
   );
   const numero = `${TERMINAL_WEB}-${String(Number(contador!.ultimo)).padStart(6, '0')}`;
 
-  // Total de la venta = suma de renglones (el auditor lo exige). El envío no es
-  // venta de producto: queda anotado en la nota.
-  const totalCentavos = renglones.reduce((n, r) => n + r.totalCentavos, 0);
+  // Subtotal = suma de renglones (el auditor lo exige). Los cargos negativos de
+  // la tienda —el descuento por transferencia— van como descuento de la venta,
+  // así el total es lo que de verdad se cobró. El envío no es venta de
+  // producto: queda anotado en la nota.
+  const subtotalCentavos = renglones.reduce((n, r) => n + r.totalCentavos, 0);
+  const descuentoCentavos = Math.min(
+    subtotalCentavos,
+    pedido.fee_lines.reduce((n, fl) => {
+      const v = Math.round(Number(String(fl.total ?? '0').replace(',', '.')) * 100);
+      return Number.isFinite(v) && v < 0 ? n - v : n;
+    }, 0),
+  );
+  const totalCentavos = subtotalCentavos - descuentoCentavos;
   const envioCentavos = precioACentavos(pedido.shipping_total);
   const cliente = [pedido.billing?.first_name, pedido.billing?.last_name].filter(Boolean).join(' ');
   const nota = [
     `Pedido web #${String(pedido.number ?? pedido.id)}`,
     pedido.payment_method_title ?? null,
     envioCentavos > 0 ? `envío $ ${(envioCentavos / 100).toFixed(0)}` : null,
+    descuentoCentavos > 0 ? `descuento $ ${(descuentoCentavos / 100).toFixed(0)}` : null,
     cliente || null,
   ]
     .filter(Boolean)
@@ -363,8 +381,8 @@ async function registrarVenta(
       canal: 'web',
       estado: 'completed',
       tipo: 'contado',
-      subtotalCentavos: totalCentavos,
-      descuentoCentavos: 0,
+      subtotalCentavos,
+      descuentoCentavos,
       totalCentavos,
       idempotencyKey: `woo-order:${pedido.id}`,
       // Woo ya tiene este stock descontado: no hay nada que mandarle.
