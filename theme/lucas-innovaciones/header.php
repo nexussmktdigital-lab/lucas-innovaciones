@@ -38,7 +38,7 @@ $li_n_cart = ( function_exists( 'WC' ) && WC()->cart ) ? WC()->cart->get_cart_co
 		<div class="li-wrap li-microbar__in">
 			<?php // La oferta de la web en todas las páginas (Matias 08/10). ?>
 			<span class="li-microbar__loc li-microbar__promo">
-				<span><strong class="li-green"><?php echo esc_html( class_exists( 'Li_Dolar' ) ? Li_Dolar::porcentaje( Li_Dolar::descuento_bp() ) : '10%' ); ?> OFF</strong> pagando con transferencia <span class="li-hide-sm">· Envío gratis a todo el país desde $ 100.000 · Retiro en <?php echo esc_html( LI_DIRECCION ); ?></span></span>
+				<span><strong class="li-green"><?php echo esc_html( class_exists( 'Li_Dolar' ) ? Li_Dolar::porcentaje( Li_Dolar::descuento_bp() ) : '10%' ); ?> OFF</strong> <span class="li-hide-sm">pagando</span> con transferencia <span class="li-hide-sm">· Envío gratis a todo el país desde $&nbsp;100.000 · Retiro en <?php echo esc_html( LI_DIRECCION ); ?></span></span>
 			</span>
 			<span class="li-microbar__right">
 				<a class="li-microbar__wa" href="<?php echo esc_url( li_whatsapp_url() ); ?>" target="_blank" rel="noopener">

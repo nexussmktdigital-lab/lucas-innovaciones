@@ -620,6 +620,8 @@ body.li-filtros-abiertos { overflow: hidden; }
 .li-pdp .quantity { display: inline-flex; align-items: center; border: 1px solid var(--li-border-strong); border-radius: var(--li-radius); overflow: hidden; background: #fff; margin: 0; }
 .li-pdp .quantity input.qty { width: 44px; height: 52px; border: 0; text-align: center; font: inherit; font-weight: 600; font-size: 16px; -moz-appearance: textfield; background: transparent; padding: 0; }
 .li-pdp .quantity input.qty::-webkit-outer-spin-button, .li-pdp .quantity input.qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* Unidad única: WooCommerce deja la caja sin campo visible; no se muestra. */
+.li-pdp .quantity:not(:has(input.qty:not([type="hidden"]))) { display: none; }
 .li-qty__btn { width: 40px; height: 52px; background: transparent; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--li-fg-1); padding: 0; }
 .li-qty__btn:hover { background: var(--li-bg); }
 .li-pdp .single_add_to_cart_button, .li-pdp .single_add_to_cart_button.button { flex: 1; min-width: 160px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 28px; font-family: var(--li-font-sans); font-size: 17px; font-weight: 600; line-height: 1.2; border-radius: var(--li-radius); border: 0; background: var(--li-green); color: var(--li-black); box-shadow: var(--li-shadow-green); cursor: pointer; transition: background-color var(--li-dur) var(--li-ease), box-shadow var(--li-dur) var(--li-ease), transform 80ms var(--li-ease); }
@@ -765,3 +767,10 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-promo__lista { font-size: 12px; color: var(--li-fg-3); }
 .li-promo__transf { font-size: 12px; color: var(--li-fg-2); }
 .li-promo__transf strong { display: block; font-family: var(--li-font-display); font-size: 17px; color: var(--li-fg-1); }
+/* Ajustes 08/10: en celular el precio con transferencia va en dos líneas prolijas,
+   y la etiqueta de la ficha no se parte. */
+.li-transf--ficha .li-badge { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 767px) {
+  .li-card .li-transf { display: flex; flex-direction: column; border-radius: var(--li-radius); padding: 4px 8px; line-height: 1.3; }
+  .li-card .li-transf > span { font-size: 11px; color: var(--li-fg-2); }
+}

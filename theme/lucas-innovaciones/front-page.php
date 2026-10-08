@@ -91,7 +91,7 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 				<span class="li-badge li-badge--pixel li-badge--green">[ <?php echo esc_html( $li_pct ); ?>_OFF ]</span>
 				<h2 class="li-promo__title" id="li-promo-titulo"><?php echo esc_html( $li_pct ); ?> OFF en toda la web <span class="li-green">pagando con transferencia</span></h2>
 				<ul class="li-promo__puntos">
-					<li><?php echo li_ds_icono( 'truck', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envío gratis a todo el país desde $ 100.000</li>
+					<li><?php echo li_ds_icono( 'truck', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Envío gratis a todo el país desde $&nbsp;100.000</li>
 					<li><?php echo li_ds_icono( 'store', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?> Retiro sin costo en <?php echo esc_html( LI_DIRECCION ); ?></li>
 				</ul>
 				<a class="li-btn li-btn--primary" href="<?php echo esc_url( $li_shop ); ?>">Ver productos <?php echo li_ds_icono( 'chevron-r', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></a>

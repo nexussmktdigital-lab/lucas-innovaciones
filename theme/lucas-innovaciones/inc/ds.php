@@ -157,7 +157,7 @@ function li_ds_transferencia( WC_Product $p, string $tam = 'card' ): string {
 			esc_html( li_precio_txt( $t ) )
 		);
 	}
-	return sprintf( '<span class="li-transf"><strong>%s</strong> con transferencia</span>', esc_html( li_precio_txt( $t ) ) );
+	return sprintf( '<span class="li-transf"><strong>%s</strong> <span>con transferencia</span></span>', esc_html( li_precio_txt( $t ) ) );
 }
 
 /**
