@@ -83,11 +83,44 @@ Dos criterios que tomé y conviene revisar:
 - **7537 tenía dos categorías** y quedó con una sola. Si tiene que seguir en
   «Accesorios Vehículo», se le agrega.
 
+## 5. Nombres corregidos — 9
+
+Aplicados después de las confirmaciones de Lucas del 08/10. **Ningún slug
+cambió**, así que no se rompió ninguna URL ni enlace de la tienda.
+
+| ID | Antes | Ahora |
+|---|---|---|
+| 6775 | Redmi 15C 256gb **4gb** | Redmi 15C 256gb 8gb |
+| 6315 | Router **Linsys** e900 | Router Linksys E900 |
+| 6687 | Parlante **stormberg** force | Parlante Stromberg Force |
+| 6281 | Auricular c/cable **Netmark** UR90 | Auricular c/cable Netmak UR90 |
+| 6291 | Tablet Horizon pro **Netmark** 7" | Tablet Horizon pro Netmak 7" |
+| 6372 | **Humificador** | Humidificador |
+| 8271 | Perfume ODYSSEY Homme **Withe** | Perfume ODYSSEY Homme White |
+| 6579 | BOTELLA TERMITO ROLAN SPORT **7500 CC** | …750 CC |
+| 6480 | Micrófono **Aole** AM-188 | Micrófono Aloe AM-188 |
+
+En 6480 se corrigió además el «Aole» que quedaba dentro de la descripción.
+
 ## Lo que NO se aplicó
 
-- **Nombres (8 correcciones).** Esperan que Lucas confirme cuatro cosas:
-  cuál iPhone 12 queda (6713 / 6707), si el termo Rolan es de 750 cc y no 7500,
-  si «AAA» quiere decir réplica (6534, 8283), y si los micrófonos AM-188
-  6323 «Aloe» y 6480 «Aole» son el mismo producto.
+- **6440 «Matepa alpaca».** Es el único nombre sin confirmar. Puede ser
+  «Mate de alpaca» o «Mate pampa alpaca» —existe un 6433 «Mate pampa XL»—, y
+  son dos productos distintos. Queda como está hasta que Lucas lo diga.
+- **6534 «Fuente Samsung 25W Tipo C AAA».** Lucas aclaró que «AAA» significa
+  réplica en algunos productos y calidad en otros. En 8283 el nombre ya dice
+  «Replica», así que está claro; en este cargador no. Si es réplica, conviene
+  que el nombre lo diga antes de publicarlo en la web.
 - **Stock a 0 de los 23 equipos.** Lo corrige Matías a mano; ver
   `stock-a-cero-07-10.md`.
+
+## Duplicados confirmados, sin resolver
+
+Son decisiones de catálogo, no correcciones de dato:
+
+- **6323 y 6480 — Micrófono Aloe AM-188.** El mismo producto cargado dos veces:
+  mismo nombre, mismo precio ($18.000), misma fecha de alta, SKU distinto
+  (249 y 516) y stock 2 y 1. Lo razonable es dejar uno con stock 3 y dar de
+  baja el otro, pero eso lo decide el local.
+- **6713 y 6707 — iPhone 12 128gb 75% (45039).** Lucas confirmó que **quedan
+  los dos**: no se da de baja ninguno. Los dos van a stock 0.

@@ -39,10 +39,9 @@ No dar de baja: solo stock 0.
 **6791 — iPhone 17 256gb (78274).** Está duplicado con **6880 «iPhone 17 256gb SELLADO (78274)»**,
 mismo IMEI. 6880 **no** está en esta lista, así que queda él con stock 1. Coherente.
 
-**6713 y 6707 — iPhone 12 128gb 75% (45039).** Son el mismo equipo cargado dos veces
-(mismo IMEI) y **los dos están en esta lista**. Si el teléfono existe y está en el local,
-uno de los dos tiene que quedar en 1. Si no está, los dos van a 0 y hay que decidir
-cuál se da de baja para que no vuelva a aparecer duplicado.
+**6713 y 6707 — iPhone 12 128gb 75% (45039).** Mismo IMEI, cargado dos veces.
+Lucas confirmó el 08/10 que **quedan los dos**: no se da de baja ninguno.
+Los dos van a stock 0, como el resto de la lista.
 
 ---
 
