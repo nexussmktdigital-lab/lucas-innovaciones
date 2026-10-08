@@ -507,8 +507,13 @@ internet.
 
 #### Cómo sale impreso
 
-Hojas **A4**: una si la venta se pagó, dos si quedó algo fiado. Reemplazó al
-ticket de impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
+Hojas **A4**: una si la venta se pagó, dos si quedó algo fiado. Cada papel
+entra en **una** hoja: el acuerdo va más compacto que el comprobante —detalle y
+total más chicos, y la tabla de cuotas en dos columnas con la fecha corta a
+partir de cinco—, porque con un plan de doce cuotas se pasaba y salía una
+página más con el pie solo. Nada se recorta: en un papel que se firma, perder
+la cuota doce en silencio es peor que la hoja de más. Reemplazó al ticket de
+impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
 el cliente se lleva un papel que firma — una tira de 80 mm no sirve para eso. Lo
 que pasó queda en el sistema, que es mejor archivo que una hoja en un cajón.
 
@@ -524,9 +529,10 @@ Tres reglas sobre qué sale impreso, las tres pedidas por el local:
   mismo carrito haya una funda en pesos y aunque la venta lleve descuento. El
   cliente firma el número que acordó, no el que da el dólar de hoy. El **total**
   es otra pregunta —no se suman dos monedas— y ahí sí: con un carrito mezclado o
-  con descuento sale en pesos, que es lo que de verdad se cobró, y cada renglón
-  en dólares lleva su equivalente en chiquito para que el total salga de sumar
-  lo que se ve. Una venta toda en dólares no tiene un solo número en pesos.
+  con descuento sale en pesos, que es lo que de verdad se cobró. **Ninguna
+  equivalencia al lado del precio**: se probó poner los pesos en chiquito para
+  que el total saliera de sumar lo impreso, y el local lo sacó —dos cifras al
+  lado de un mismo producto son la discusión que el papel tiene que evitar—.
   Antes el papel era todo o nada: alcanzaba una funda de $15.000 para que el
   iPhone también saliera convertido.
 - **Los medios de pago no se imprimen.** Cómo se compuso el pago es asunto

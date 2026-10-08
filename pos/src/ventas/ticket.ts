@@ -160,6 +160,19 @@ export function fechaLarga(iso: string): string {
 }
 
 /**
+ * La misma fecha, corta, para la tabla de vencimientos de dos columnas.
+ *
+ * «9/11/26» y no «9 de noviembre de 2026»: en dos columnas no entra la larga,
+ * y una lista de doce vencimientos se lee mejor en números alineados que en
+ * doce renglones de prosa.
+ */
+export function fechaCorta(iso: string): string {
+  const [a, m, d] = iso.split('-');
+  if (!a || !m || !d) return iso;
+  return `${Number(d)}/${Number(m)}/${a.slice(2)}`;
+}
+
+/**
  * ¿El comprobante va en dólares?
  *
  * Solo cuando **todo** lo vendido está cotizado en dólares y no hubo ningún
@@ -363,18 +376,18 @@ function hojaDelComprobante(
       const cifraAca = cifraDeLinea(l);
       const unitario = enUsd ? l.precioUsdCentavos! : l.precioUnitarioCentavos;
 
-      const partes: string[] = [];
-      if (l.cantidad > 1) partes.push(`${l.cantidad} × ${cifraAca(unitario)}`);
-      else if (l.sku) partes.push(l.sku);
       /*
+       * Nada de equivalencias en pesos al lado del precio.
+       *
        * En una venta mixta el total va en pesos y este renglón en dólares, así
-       * que sin esto el papel tendría un total que no sale de sumar lo que se
-       * ve. El equivalente va chico y al costado: el precio, el que manda, es
-       * el de arriba.
+       * que el total no sale de sumar lo impreso. Se probó poner el
+       * equivalente en chiquito y el local lo sacó: «no me sirve». Tiene
+       * razón para lo que el papel tiene que hacer —el cliente firma el precio
+       * que pactó, y dos cifras al lado de un mismo producto es justo la
+       * discusión que se quiere evitar—.
        */
-      if (enUsd && !enDolares) partes.push(`${formatearARS(l.totalCentavos)} al cambio`);
-
-      const porUnidad = partes.join(' · ');
+      const porUnidad =
+        l.cantidad > 1 ? `${l.cantidad} × ${cifraAca(unitario)}` : (l.sku ?? '');
 
       return `
       <div class="renglon">
@@ -435,6 +448,18 @@ function hojaDelComprobante(
   </section>`
       : '';
 
+  /*
+   * A partir de cinco cuotas la lista va en dos columnas.
+   *
+   * Con doce cuotas —el plan más largo que ofrece la pantalla— y tres o cuatro
+   * renglones, el acuerdo se pasaba de A4 y salía una hoja más con el pie
+   * solo. Recortarlo no es opción: en un papel que se firma, perder la cuota
+   * doce en silencio es peor que la hoja de más. En dos columnas entra, y la
+   * fecha se escribe corta —«9/11/26»— que es como se lee una tabla de
+   * vencimientos.
+   */
+  const enDosColumnas = cuotas.length >= 5;
+
   const bloqueDeCuotas =
     esAcuerdo && cuotas.length > 0
       ? `
@@ -444,22 +469,28 @@ function hojaDelComprobante(
       <span class="detalle-chico">${cuotas.length} ${cuotas.length === 1 ? 'cuota' : 'cuotas'}</span>
     </div>
     ${bloqueDeRecargo}
+    <div class="cuotas-lista${enDosColumnas ? ' en-dos' : ''}">
     ${cuotas
       .map(
         (c) => `
-    <div class="cuota">
-      <span class="cuota-n">${c.numero}</span>
-      <span class="cuota-fecha">Vence el ${escapar(fechaLarga(c.vencimiento))}</span>
-      <span class="cuota-monto">${escapar(cifraDeLaDeuda(c.montoCentavos))}</span>
-    </div>`,
+      <div class="cuota">
+        <span class="cuota-n">${c.numero}</span>
+        <span class="cuota-fecha">${
+          enDosColumnas
+            ? `Vence ${escapar(fechaCorta(c.vencimiento))}`
+            : `Vence el ${escapar(fechaLarga(c.vencimiento))}`
+        }</span>
+        <span class="cuota-monto">${escapar(cifraDeLaDeuda(c.montoCentavos))}</span>
+      </div>`,
       )
       .join('')}
+    </div>
   </section>`
       : '';
 
   const anulada = datos.nota === 'VENTA ANULADA';
 
-  return `<section class="hoja">
+  return `<section class="hoja${esAcuerdo ? ' acuerdo' : ''}">
   <header class="membrete">
     <div>
       <img class="marca" src="/marca/lucas-innovaciones-negro.png" alt="${escapar(negocio.nombre)}">
@@ -613,8 +644,13 @@ function documento(titulo: string, hojas: readonly string[]): string {
    */
   .hoja {
     width: 210mm;
-    min-height: 297mm;
-    padding: 18mm 20mm 15mm;
+    /*
+     * 296 y no 297: con la hoja justo en el alto de la página, un milímetro de
+     * redondeo del navegador la parte en dos y el pie sale solo en la
+     * siguiente. Un milímetro de aire no se nota y evita la hoja fantasma.
+     */
+    min-height: 296mm;
+    padding: 16mm 20mm 12mm;
     display: flex;
     flex-direction: column;
   }
@@ -681,14 +717,41 @@ function documento(titulo: string, hojas: readonly string[]): string {
     font-variant-numeric: tabular-nums;
   }
 
+  /*
+   * El acuerdo va más compacto que el comprobante del cliente.
+   *
+   * Lleva lo mismo y además la tabla de cuotas: con un plan de doce y cuatro
+   * renglones se pasaba treinta milímetros de la hoja, y salía una página más
+   * con el pie solo. Lo que se achica es el tamaño del detalle y del total
+   * —acá están para identificar la venta, no para que el cliente los lea desde
+   * la otra punta del mostrador—. Lo que se firma no se toca.
+   */
+  .acuerdo .datos { margin-top: 4mm; }
+  .acuerdo .renglon { padding: 1mm 0 1.5mm; }
+  .acuerdo .producto { font-size: 10.5pt; }
+  .acuerdo .importe { font-size: 11pt; }
+  .acuerdo .total { margin-top: 4mm; padding: 3mm 6mm; }
+  .acuerdo .total .cifra { font-size: 17pt; }
+  .acuerdo .garantia { margin-top: 4mm; }
+  .acuerdo .garantia p { margin-top: 1mm; }
+  .acuerdo .firmas { margin-top: 5mm; }
+  .acuerdo .pie { margin-top: 4mm; padding-top: 2mm; }
+  .acuerdo .cuotas { margin-top: 4mm; padding: 3mm 5mm; }
+
   .cuotas { border: 0.2mm solid #d9d9d9; margin-top: 5mm; padding: 4mm 5mm 4mm; }
   .cuotas-encabezado { display: flex; align-items: baseline; justify-content: space-between; }
   .cuotas-encabezado .etiqueta { display: inline; }
+
+  /* Dos columnas a partir de cinco cuotas: es lo que hace que un plan de doce
+     entre en la hoja sin recortar nada. */
+  .cuotas-lista.en-dos { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; }
+
   .cuota {
     display: flex; align-items: baseline; gap: 5mm;
     border-top: 0.2mm solid #ededed; padding: 2mm 0;
     margin-top: 2mm;
   }
+  .cuotas-lista.en-dos .cuota { padding: 1.4mm 0; margin-top: 1mm; }
   .cuota:first-of-type { margin-top: 2mm; }
   .cuota-n { width: 6mm; font-weight: 700; font-variant-numeric: tabular-nums; }
   .cuota-fecha { flex: 1; font-size: 10pt; }
@@ -705,7 +768,14 @@ function documento(titulo: string, hojas: readonly string[]): string {
     margin: 0 1mm;
   }
 
-  .relleno { flex: 1; min-height: 10mm; }
+  /*
+   * Empuja las firmas al pie de la hoja. El alto minimo va en cero y no en diez
+   * milímetros: con seis cuotas y tres renglones, esos diez milímetros eran
+   * los que hacían que la hoja se pasara de A4 y el pie saliera solo en una
+   * página de más. El aire está bien cuando sobra lugar; cuando no sobra, lo
+   * que importa es que el papel entre en una hoja.
+   */
+  .relleno { flex: 1; min-height: 0; }
 
   .firmas { display: flex; gap: 14mm; margin-top: 10mm; }
   .firmas > div { flex: 1; }

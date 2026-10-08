@@ -2515,3 +2515,31 @@ explicar.
 Lo que me hizo verlo fue que el local insistiera tres veces sobre el mismo
 papel. Las dos primeras arreglé lo que me mostraban; esta vez fui a mirar la
 condición y era demasiado estricta desde el día que la escribí.
+
+## La hoja fantasma del acuerdo de pago
+
+Al generar las boletas de prueba para mostrárselas al local apareció algo que
+ningún test iba a encontrar: **el acuerdo de un plan de doce cuotas salía en
+tres hojas**, la tercera con el pie solo. El contenido medía 325mm contra los
+297 de un A4.
+
+Los tests leen el HTML, no el papel. Verifican que las doce cuotas estén
+impresas —y lo están— pero no que entren. **Un comprobante tiene una dimensión
+física y la prueba de que anda es ponerlo en una hoja**, así que lo medí con el
+navegador: `getBoundingClientRect().height` de cada hoja, contra 297mm.
+
+El primer arreglo que escribí fue `max-height: 297mm; overflow: hidden`. Lo
+saqué a los dos minutos: eso no hace entrar nada, **recorta en silencio**. En
+un papel que el cliente firma, perder la cuota doce sin que nadie se entere es
+infinitamente peor que una hoja de más. Un control que oculta el problema en
+vez de resolverlo es el mismo error que la pared del excedente, con otra cara.
+
+Lo que entró de verdad: la tabla de cuotas en **dos columnas** a partir de
+cinco, con la fecha corta («9/11/26») porque la larga no entra en media hoja; y
+el acuerdo más compacto que el comprobante del cliente —detalle y total en
+cuerpo menor—, que es defendible porque en el acuerdo esos datos están para
+identificar la venta, no para leerse desde la otra punta del mostrador. Lo que
+se firma —las cuotas, el saldo, la conformidad— no se tocó.
+
+Quedó medido: seis casos, del iPhone pagado al peor caso de doce cuotas con
+cuatro renglones y recargo, todos en 296mm.

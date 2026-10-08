@@ -7,6 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  fechaCorta,
   fechaLarga,
   generarComprobantes,
   generarTicket,
@@ -203,11 +204,12 @@ describe('la moneda', () => {
     expect(t).toContain('$ 2.366.500,00'); // el total, que no suma dos monedas
   });
 
-  it('el total en pesos sale de sumar lo que se ve', () => {
+  it('el renglón en dólares no lleva su equivalente en pesos al lado', () => {
     /*
-     * Con el renglón en dólares y el total en pesos, el papel tendría un total
-     * que no cierra con nada de lo impreso. El equivalente va chico y al lado
-     * del precio, que es el que manda.
+     * Se probó ponerlo en chiquito, para que el total de una venta mixta
+     * saliera de sumar lo impreso, y el local lo sacó: «no me sirve». Dos
+     * cifras al lado de un mismo producto son la discusión que el papel
+     * tiene que evitar.
      */
     const t = txt(
       generarTicket({
@@ -216,14 +218,13 @@ describe('la moneda', () => {
         totalCentavos: 236_650_000,
       }),
     );
-    expect(leido(t)).toContain('US$ 1.500,00');
-    expect(t).toContain('$ 2.356.500,00 al cambio');
+    expect(t).toContain('US$ 1.500,00');
+    expect(t).not.toContain('al cambio');
+    expect(t).not.toContain('$ 2.356.500,00');
   });
 
   it('una venta toda en dólares no lleva ni un número en pesos', () => {
-    // Acá no hay nada que explicar: el total también es en dólares.
     const t = txt(generarTicket(IPHONE));
-    expect(t).not.toContain('al cambio');
     expect(t.replace(/US\$/g, 'USD')).not.toContain('$ 2.356.500,00');
   });
 
@@ -564,7 +565,7 @@ describe('los dos papeles salen juntos', () => {
   it('una venta fiada sale con las dos hojas y un solo diálogo de impresión', () => {
     const papel = generarComprobantes(FIADO);
 
-    expect(papel.match(/class="hoja"/g)).toHaveLength(2);
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(2);
     expect(papel).toContain('COMPROBANTE DE VENTA');
     expect(papel).toContain('ACUERDO DE PAGO');
     // Un solo documento: un solo `window.print()`, una sola ventana.
@@ -578,7 +579,7 @@ describe('los dos papeles salen juntos', () => {
   });
 
   it('cada hoja dice lo suyo: el cliente sin deuda, el acuerdo con las cuotas', () => {
-    const [, delCliente, delAcuerdo] = generarComprobantes(FIADO).split('class="hoja"');
+    const [, delCliente, delAcuerdo] = generarComprobantes(FIADO).split('<section class="hoja');
 
     expect(leido(delCliente!)).toContain('GARANTÍA');
     expect(leido(delCliente!)).not.toContain('11 de octubre de 2026');
@@ -594,7 +595,7 @@ describe('los dos papeles salen juntos', () => {
     // por venta.
     const papel = generarComprobantes(BASE);
 
-    expect(papel.match(/class="hoja"/g)).toHaveLength(1);
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(1);
     expect(papel).not.toContain('ACUERDO DE PAGO');
     expect(leido(papel)).toContain('Pagado en su totalidad');
   });
@@ -608,14 +609,64 @@ describe('los dos papeles salen juntos', () => {
       cuotas: [],
     });
 
-    expect(papel.match(/class="hoja"/g)).toHaveLength(2);
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(2);
     expect(leido(papel)).toContain('sin fechas pactadas');
   });
 
   it('reimprimir un papel suelto sigue dando una sola hoja', () => {
     for (const copia of ['cliente', 'acuerdo'] as const) {
       const papel = generarTicket(FIADO, { copia });
-      expect(papel.match(/class="hoja"/g), copia).toHaveLength(1);
+      expect(papel.match(/class="hoja[ "]/g), copia).toHaveLength(1);
     }
+  });
+});
+
+describe('la fecha corta de la tabla de cuotas', () => {
+  it('se escribe en números, que es como se lee una tabla', () => {
+    expect(fechaCorta('2026-11-09')).toBe('9/11/26');
+    expect(fechaCorta('2027-01-31')).toBe('31/1/27');
+  });
+
+  it('con pocas cuotas la fecha va larga, que se lee de un vistazo', () => {
+    const papel = leido(
+      generarTicket(
+        {
+          ...BASE,
+          fiadoCentavos: 1_000_000,
+          cuotas: [
+            { numero: 1, vencimiento: '2026-11-09', montoCentavos: 500_000 },
+            { numero: 2, vencimiento: '2026-12-09', montoCentavos: 500_000 },
+          ],
+        },
+        { copia: 'acuerdo' },
+      ),
+    );
+    expect(papel).toContain('Vence el 9 de noviembre de 2026');
+  });
+
+  /*
+   * A partir de cinco la tabla va en dos columnas y la fecha larga no entra.
+   * Es lo que hace que un plan de doce cuotas quepa en la hoja: sin esto el
+   * acuerdo se pasaba de A4 y salía una página más con el pie solo, y
+   * recortarlo no es opción en un papel que se firma.
+   */
+  it('con cinco o más la tabla va en dos columnas y la fecha corta', () => {
+    const papel = generarTicket(
+      {
+        ...BASE,
+        fiadoCentavos: 5_000_000,
+        cuotas: Array.from({ length: 6 }, (_, i) => ({
+          numero: i + 1,
+          vencimiento: `2026-1${i >= 2 ? '2' : '1'}-09`,
+          montoCentavos: 500_000,
+        })),
+      },
+      { copia: 'acuerdo' },
+    );
+    expect(papel).toContain('cuotas-lista en-dos');
+    expect(leido(papel)).toContain('Vence 9/11/26');
+    expect(leido(papel)).not.toContain('Vence el 9 de noviembre de 2026');
+    // Las doce siguen impresas: lo que se achica es cómo, no cuántas.
+    expect([...papel.matchAll(/class="cuota-n"/g)]).toHaveLength(6);
   });
 });
