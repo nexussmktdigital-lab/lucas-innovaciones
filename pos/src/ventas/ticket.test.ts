@@ -6,7 +6,14 @@
  * cuotas, y lo que no tiene que salir —los medios de pago, quién atendió—.
  */
 import { describe, expect, it } from 'vitest';
-import { fechaLarga, generarTicket, nombreDelMedio, type DatosDelTicket } from './ticket';
+import {
+  fechaCorta,
+  fechaLarga,
+  generarComprobantes,
+  generarTicket,
+  nombreDelMedio,
+  type DatosDelTicket,
+} from './ticket';
 
 const BASE: DatosDelTicket = {
   numero: 'T1-000123',
@@ -174,9 +181,16 @@ describe('la moneda', () => {
     expect(txt(generarTicket(BASE))).toContain('$ 10.000,00');
   });
 
-  it('un carrito mezclado sale en pesos, entero', () => {
-    // No hay forma de poner una funda cotizada en pesos en un papel en dólares
-    // sin convertirla, y convertir es justo lo que no se hace acá.
+  /*
+   * El renglón del teléfono dice dólares aunque el total vaya en pesos.
+   *
+   * Antes el papel era todo en dólares o todo en pesos, así que alcanzaba con
+   * una funda de $10.000 en el mismo carrito para que el iPhone también
+   * saliera convertido: el cliente firmaba «$ 2.356.500» por algo que había
+   * pactado en US$ 1.500. Lo pidió el local: el renglón del teléfono dice
+   * dólares, sí o sí.
+   */
+  it('en un carrito mezclado, el iPhone sigue diciendo dólares', () => {
     const t = txt(
       generarTicket({
         ...IPHONE,
@@ -184,21 +198,47 @@ describe('la moneda', () => {
         totalCentavos: 236_650_000,
       }),
     );
-    expect(t).toContain('$ 2.366.500,00');
-    expect(t).not.toContain('US$ 1.500,00');
+
+    expect(t).toContain('US$ 1.500,00'); // el teléfono, en su moneda
+    expect(t).toContain('$ 10.000,00'); // la funda, en la suya
+    expect(t).toContain('$ 2.366.500,00'); // el total, que no suma dos monedas
   });
 
-  it('con descuento sale en pesos, aunque se haya vendido en dólares', () => {
+  it('el renglón en dólares no lleva su equivalente en pesos al lado', () => {
+    /*
+     * Se probó ponerlo en chiquito, para que el total de una venta mixta
+     * saliera de sumar lo impreso, y el local lo sacó: «no me sirve». Dos
+     * cifras al lado de un mismo producto son la discusión que el papel
+     * tiene que evitar.
+     */
+    const t = txt(
+      generarTicket({
+        ...IPHONE,
+        lineas: [...IPHONE.lineas, ...BASE.lineas],
+        totalCentavos: 236_650_000,
+      }),
+    );
+    expect(t).toContain('US$ 1.500,00');
+    expect(t).not.toContain('al cambio');
+    expect(t).not.toContain('$ 2.356.500,00');
+  });
+
+  it('una venta toda en dólares no lleva ni un número en pesos', () => {
+    const t = txt(generarTicket(IPHONE));
+    expect(t.replace(/US\$/g, 'USD')).not.toContain('$ 2.356.500,00');
+  });
+
+  it('con descuento el total sale en pesos, pero el renglón sigue en dólares', () => {
     /*
      * El descuento se carga en pesos. Restarlo de un precio en dólares exige
-     * una conversión, y el papel no convierte: sale en la moneda en la que de
-     * verdad se cobró.
+     * una conversión, y el total no convierte: sale en la moneda en la que de
+     * verdad se cobró. El teléfono, en cambio, vale lo que se pactó.
      */
     const t = txt(
       generarTicket({ ...IPHONE, descuentoCentavos: 5_000_000, totalCentavos: 230_650_000 }),
     );
     expect(t).toContain('$ 2.306.500,00');
-    expect(t).not.toContain('US$');
+    expect(t).toContain('US$ 1.500,00');
   });
 });
 
@@ -500,5 +540,133 @@ describe('nombreDelMedio', () => {
 
   it('ante un medio desconocido devuelve el código, sin romper', () => {
     expect(nombreDelMedio('cripto')).toBe('cripto');
+  });
+});
+
+describe('los dos papeles salen juntos', () => {
+  /** El iPhone de US$ 1.500, todo fiado en tres cuotas. */
+  const FIADO: DatosDelTicket = {
+    ...IPHONE,
+    fiadoCentavos: IPHONE.totalCentavos,
+    monedaDeLaDeuda: 'USD',
+    cuotas: [
+      { numero: 1, vencimiento: '2026-10-11', montoCentavos: 50_000 },
+      { numero: 2, vencimiento: '2026-11-11', montoCentavos: 50_000 },
+      { numero: 3, vencimiento: '2026-12-11', montoCentavos: 50_000 },
+    ],
+  };
+
+  /*
+   * Lo que esto cierra: el acuerdo de pago estaba detrás de un segundo botón y
+   * el papel que respalda la deuda dependía de que alguien se acordara con el
+   * cliente enfrente. El local lo pidió así: «que se imprima con la boleta, no
+   * un paso extra».
+   */
+  it('una venta fiada sale con las dos hojas y un solo diálogo de impresión', () => {
+    const papel = generarComprobantes(FIADO);
+
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(2);
+    expect(papel).toContain('COMPROBANTE DE VENTA');
+    expect(papel).toContain('ACUERDO DE PAGO');
+    // Un solo documento: un solo `window.print()`, una sola ventana.
+    expect(papel.match(/window\.print\(\)/g)).toHaveLength(1);
+    expect(papel.match(/<!doctype html>/gi)).toHaveLength(1);
+  });
+
+  it('la segunda hoja arranca en una página nueva', () => {
+    // Sin esto las dos hojas se imprimen encimadas en la misma página.
+    expect(generarComprobantes(FIADO)).toContain('page-break-before: always');
+  });
+
+  it('cada hoja dice lo suyo: el cliente sin deuda, el acuerdo con las cuotas', () => {
+    const [, delCliente, delAcuerdo] = generarComprobantes(FIADO).split('<section class="hoja');
+
+    expect(leido(delCliente!)).toContain('GARANTÍA');
+    expect(leido(delCliente!)).not.toContain('11 de octubre de 2026');
+    expect(leido(delCliente!)).not.toContain('queda un saldo');
+
+    expect(leido(delAcuerdo!)).toContain('Vence el 11 de octubre de 2026');
+    expect(leido(delAcuerdo!)).toContain('queda un saldo de US$ 1.500,00');
+    expect(leido(delAcuerdo!)).toContain('Copia para el local');
+  });
+
+  it('una venta pagada sale con una sola hoja', () => {
+    // Un acuerdo de pago de una venta sin saldo no dice nada y gasta una hoja
+    // por venta.
+    const papel = generarComprobantes(BASE);
+
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(1);
+    expect(papel).not.toContain('ACUERDO DE PAGO');
+    expect(leido(papel)).toContain('Pagado en su totalidad');
+  });
+
+  it('el fiado sin fechas pactadas también lleva su segunda hoja', () => {
+    // Es el fiado más común del local: «cuando pueda», sin cuotas. Si la
+    // segunda hoja dependiera de que haya cuotas, no firmaría nada.
+    const papel = generarComprobantes({
+      ...BASE,
+      fiadoCentavos: 600_000,
+      cuotas: [],
+    });
+
+    expect(papel.match(/class="hoja[ "]/g)).toHaveLength(2);
+    expect(leido(papel)).toContain('sin fechas pactadas');
+  });
+
+  it('reimprimir un papel suelto sigue dando una sola hoja', () => {
+    for (const copia of ['cliente', 'acuerdo'] as const) {
+      const papel = generarTicket(FIADO, { copia });
+      expect(papel.match(/class="hoja[ "]/g), copia).toHaveLength(1);
+    }
+  });
+});
+
+describe('la fecha corta de la tabla de cuotas', () => {
+  it('se escribe en números, que es como se lee una tabla', () => {
+    expect(fechaCorta('2026-11-09')).toBe('9/11/26');
+    expect(fechaCorta('2027-01-31')).toBe('31/1/27');
+  });
+
+  it('con pocas cuotas la fecha va larga, que se lee de un vistazo', () => {
+    const papel = leido(
+      generarTicket(
+        {
+          ...BASE,
+          fiadoCentavos: 1_000_000,
+          cuotas: [
+            { numero: 1, vencimiento: '2026-11-09', montoCentavos: 500_000 },
+            { numero: 2, vencimiento: '2026-12-09', montoCentavos: 500_000 },
+          ],
+        },
+        { copia: 'acuerdo' },
+      ),
+    );
+    expect(papel).toContain('Vence el 9 de noviembre de 2026');
+  });
+
+  /*
+   * A partir de cinco la tabla va en dos columnas y la fecha larga no entra.
+   * Es lo que hace que un plan de doce cuotas quepa en la hoja: sin esto el
+   * acuerdo se pasaba de A4 y salía una página más con el pie solo, y
+   * recortarlo no es opción en un papel que se firma.
+   */
+  it('con cinco o más la tabla va en dos columnas y la fecha corta', () => {
+    const papel = generarTicket(
+      {
+        ...BASE,
+        fiadoCentavos: 5_000_000,
+        cuotas: Array.from({ length: 6 }, (_, i) => ({
+          numero: i + 1,
+          vencimiento: `2026-1${i >= 2 ? '2' : '1'}-09`,
+          montoCentavos: 500_000,
+        })),
+      },
+      { copia: 'acuerdo' },
+    );
+    expect(papel).toContain('cuotas-lista en-dos');
+    expect(leido(papel)).toContain('Vence 9/11/26');
+    expect(leido(papel)).not.toContain('Vence el 9 de noviembre de 2026');
+    // Las doce siguen impresas: lo que se achica es cómo, no cuántas.
+    expect([...papel.matchAll(/class="cuota-n"/g)]).toHaveLength(6);
   });
 });

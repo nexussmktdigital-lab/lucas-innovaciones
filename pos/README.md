@@ -18,7 +18,7 @@ mandan sobre este código:
 | # | Decisión |
 |---|---|
 | **D4** | **WooCommerce es la fuente de verdad del catálogo, el precio y el stock.** El POS mantiene un espejo local para que el buscador responda rápido, pero el espejo no autoriza nada: al confirmar una venta, quien descuenta stock es Woo. *El mostrador sí puede sumar stock y corregir un precio, y en los dos casos lo empuja a Woo por la cola: la fuente de verdad sigue siendo una sola, lo que cambió es que el mostrador también le escribe.* |
-| **D22** | **El precio en dólares se guarda en dólares y el de pesos se calcula con la cotización**, que se **congela en cada venta**: una venta vieja nunca se recalcula. *El valor lo traía el plugin `lucas-cotizacion`; desde que dejó de contestar lo trae el POS solo, cada dos horas, del blue de Córdoba de infodolar.com.* |
+| **D22** | **El precio en dólares se guarda en dólares y el de pesos se calcula con la cotización**, que se **congela en cada venta**: una venta vieja nunca se recalcula. En WooCommerce ese precio en dólares es el propio `_price` de la ficha, marcada con la meta `_li_moneda = USD`, y la web le aplica la cotización al renderizar: hay **un** número y una sola fuente. *El valor lo traía el plugin `lucas-cotizacion`; desde que dejó de contestar lo trae el POS solo, cada dos horas, del blue de Córdoba de infodolar.com.* |
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
@@ -489,15 +489,30 @@ más común— dice el saldo y que no se pactaron fechas. Salía solo con cuotas
 ese era un agujero: el fiado de siempre quedaba sin ningún papel firmado,
 porque el del cliente no habla de la deuda a propósito.
 
-Al cobrar fiado, la pantalla de venta avisa que falta el acuerdo y lo ofrece ahí
-mismo, con el cliente todavía enfrente. Después también está en la
-ficha de la venta. Sin conexión el acuerdo se arma en la tablet, igual que el
-comprobante: el cliente se va con el teléfono igual, y el papel que respalda el
-saldo no puede esperar a que vuelva internet.
+**Los dos salen juntos, en un solo documento y un solo diálogo de impresión.**
+Al cobrar una venta fiada se imprimen las dos hojas de una: la del cliente y el
+acuerdo. Antes el acuerdo estaba detrás de un segundo botón —un aviso en la
+pantalla de venta— y el papel que respalda la deuda dependía de que alguien se
+acordara con el cliente enfrente; después ya se fue y no hay quién firme. Lo
+pidió el local así: «que se imprima con la boleta, no un paso extra».
+
+Una venta pagada sale con una sola hoja: un acuerdo de pago sin saldo no dice
+nada y gasta una hoja por venta.
+
+Desde la ficha de la venta se pueden reimprimir los dos juntos o uno solo,
+para cuando se perdió una de las dos hojas. Sin conexión el acuerdo se arma en
+la tablet, en el mismo documento que el comprobante: el cliente se va con el
+teléfono igual, y el papel que respalda el saldo no puede esperar a que vuelva
+internet.
 
 #### Cómo sale impreso
 
-Una hoja **A4**, una sola copia, la del cliente. Reemplazó al ticket de
+Hojas **A4**: una si la venta se pagó, dos si quedó algo fiado. Cada papel
+entra en **una** hoja: el acuerdo va más compacto que el comprobante —detalle y
+total más chicos, y la tabla de cuotas en dos columnas con la fecha corta a
+partir de cinco—, porque con un plan de doce cuotas se pasaba y salía una
+página más con el pie solo. Nada se recorta: en un papel que se firma, perder
+la cuota doce en silencio es peor que la hoja de más. Reemplazó al ticket de
 impresora térmica: el local vende iPhones de mil quinientos dólares en cuotas y
 el cliente se lleva un papel que firma — una tira de 80 mm no sirve para eso. Lo
 que pasó queda en el sistema, que es mejor archivo que una hoja en un cajón.
@@ -509,11 +524,17 @@ garantía y dos renglones para firmar. **No es una factura** y el pie lo dice
 
 Tres reglas sobre qué sale impreso, las tres pedidas por el local:
 
-- **El precio del sistema, en su moneda.** Un iPhone se pacta en dólares y el
-  papel dice dólares (D62). Nada de conversiones: el cliente firma el número que
-  acordó, no el que da el dólar de hoy. Un carrito mezclado, o cualquier venta
-  con descuento, sale en pesos — restar un descuento cargado en pesos de un
-  precio en dólares exigiría convertir, que es justo lo que no se hace acá.
+- **El precio del sistema, en su moneda, renglón por renglón.** Un iPhone se
+  pacta en dólares y su renglón dice dólares (D62), **siempre**: aunque en el
+  mismo carrito haya una funda en pesos y aunque la venta lleve descuento. El
+  cliente firma el número que acordó, no el que da el dólar de hoy. El **total**
+  es otra pregunta —no se suman dos monedas— y ahí sí: con un carrito mezclado o
+  con descuento sale en pesos, que es lo que de verdad se cobró. **Ninguna
+  equivalencia al lado del precio**: se probó poner los pesos en chiquito para
+  que el total saliera de sumar lo impreso, y el local lo sacó —dos cifras al
+  lado de un mismo producto son la discusión que el papel tiene que evitar—.
+  Antes el papel era todo o nada: alcanzaba una funda de $15.000 para que el
+  iPhone también saliera convertido.
 - **Los medios de pago no se imprimen.** Cómo se compuso el pago es asunto
   interno; en el papel va lo que entregó y lo que queda debiendo. Con cuotas, va
   además cada vencimiento con su monto: sin eso el cliente no sabe cuándo tiene
@@ -1501,11 +1522,21 @@ tiene el precio en pesos guardado: la venta lo calcula en el momento, `precio
 USD × dólar` (ver `carrito.ts`). Apenas entra una cotización nueva, el mostrador
 ya cobra bien sin tocar una sola ficha.
 
-**La web sí.** WooCommerce guarda un número en pesos, y ese número lo
-recalculaba el plugin caído. Sin hacer nada, el POS cobraría el precio nuevo y
-la tienda seguiría publicando el viejo: con el dólar subiendo, se vende por la
-web a pérdida. Así que la tarea recalcula el precio de ficha de cada producto en
-dólares y lo manda a la tienda por la cola de siempre (`precio.empujar`).
+**La web tampoco.** Su ficha en dólares guarda dólares y el plugin `li-dolar`
+le aplica la cotización al renderizar, así que el precio que publica se
+recalcula solo.
+
+**Lo que se reprecia es el espejo del POS.** `products.precio_centavos` de un
+producto en dólares es un valor calculado —dólares × cotización— y lo usan las
+pantallas, el buscador, los listados y el orden por precio. Sin esta corrida ese
+número se queda viejo hasta la próxima sincronización, y la pantalla de calidad
+lo marca.
+
+**Y a la web no se le empuja nada.** Mandarle los pesos a una ficha marcada en
+dólares la publicaría multiplicada otra vez por la cotización: $1.280.000
+leídos como US$ 1.280.000. Esta tarea encolaba un `precio.empujar` por producto
+cambiado, con la convención vieja —en la que el POS creía que Woo guardaba
+pesos—; ahora no encola ninguno.
 
 Solo se toca lo que de verdad cambió, así que una corrida con el dólar quieto no
 escribe una fila.
@@ -1515,8 +1546,8 @@ escribe una fila.
 `/catalogo` evalúa las fichas y las lista **ordenadas por gravedad, no por
 cantidad**. Hay 781 fichas sin foto y una con precio sospechoso; la que hay que
 mirar primero es la última. Separa lo que impide vender bien (precio sospechoso,
-dólar incoherente, precio sin cargar) de lo que solo afea la ficha (sin SKU, sin
-foto), y linkea a editar cada una en WooCommerce.
+pesos sin recalcular, precio sin cargar) de lo que solo afea la ficha (sin SKU,
+sin foto), y linkea a editar cada una en WooCommerce.
 
 ### El marcador de facturación con producto real
 
@@ -1844,7 +1875,16 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una cotización más vieja que el umbral se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | Se lee el blue de Córdoba y **no** el oficial, que es el primero de la página | `src/cotizacion/infodolar.test.ts` |
 | Si infodólar cambia el diseño no se guarda nada | `src/cotizacion/infodolar.test.ts` |
-| Un cambio de cotización reprecia lo que está en dólares y lo manda a la tienda | `src/cotizacion/repreciar.test.ts` |
+| Un cambio de cotización reprecia el espejo y **no** le empuja pesos a la web | `src/cotizacion/repreciar.test.ts` |
+| Un iPhone de US$ 630 en Woo se lee como US$ 630, no como $630 | `src/woo/mapear.test.ts` |
+| Un precio en dólares viaja a Woo **en dólares**, con su marca al lado | `src/woo/cola.test.ts`, `src/catalogo/publicar.test.ts` |
+| Un precio en pesos limpia la marca de dólares de la ficha | `src/woo/cola.test.ts` |
+| El alta en la tienda no le suma el recargo a un precio en dólares | `src/catalogo/publicar.test.ts` |
+| Una venta fiada imprime los dos papeles juntos, sin un segundo botón | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| Una venta pagada imprime una sola hoja | `src/ventas/ticket.test.ts` |
+| Un equipo sin categoría ni marca tiene piso por el nombre | `src/ventas/cordura.test.ts` |
+| Un cable de iPhone sin categorizar sigue sin piso | `src/ventas/cordura.test.ts` |
+| Un excedente que no se puede devolver **no** frena la venta | `src/ventas/carrito.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |

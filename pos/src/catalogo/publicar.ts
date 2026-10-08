@@ -18,6 +18,9 @@
  * WooCommerce guarda lo que la web cobra de verdad, con el recargo que cubre la
  * comisión de Mercado Pago. El precio de mostrador queda guardado aparte, en
  * `precioLocalCentavos`, que la sincronización no pisa.
+ *
+ * **Salvo en dólares**: ahí el precio viaja en dólares y sin recargo, con la
+ * marca del plugin al lado (ver `cuerpoDePrecioParaWoo`).
  */
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -25,6 +28,7 @@ import { auditLog, products, syncQueue } from '@/db/schema';
 import type { BaseDatos } from '@/db/tipos';
 import type { ClienteWoo } from '@/woo/cliente';
 import { precioDeTienda } from '@/precios/mostrador';
+import { cuerpoDePrecioParaWoo } from '@/woo/mapear';
 import { normalizar } from '@/lib/texto';
 
 export class ErrorPublicar extends Error {}
@@ -119,14 +123,27 @@ export async function publicarProducto(
   if (p.wooId !== null) return;
 
   const mostradorCentavos = p.precioLocalCentavos ?? p.precioCentavos;
-  const tiendaCentavos = precioDeTienda(mostradorCentavos, recargoTiendaBp);
+  /*
+   * En dólares no se aplica el recargo de tienda y el precio no se recalcula:
+   * lo que se publica es el precio pactado en dólares, igual que en el
+   * mostrador. La web le suma la cotización al renderizar, y el recargo sobre
+   * un precio en dólares lo decide el dueño cuando carga el número.
+   */
+  const enDolares = p.moneda === 'USD' && (p.precioUsdCentavos ?? 0) > 0;
+  const tiendaCentavos = enDolares
+    ? p.precioCentavos
+    : precioDeTienda(mostradorCentavos, recargoTiendaBp);
 
   const cuerpo: Record<string, unknown> = {
     name: p.nombre,
     type: 'simple',
     status: 'publish',
     catalog_visibility: 'visible',
-    regular_price: (tiendaCentavos / 100).toFixed(2),
+    ...cuerpoDePrecioParaWoo({
+      moneda: p.moneda,
+      precioCentavos: tiendaCentavos,
+      precioUsdCentavos: p.precioUsdCentavos,
+    }),
     manage_stock: p.gestionaStock,
     sku: p.sku ?? '',
   };

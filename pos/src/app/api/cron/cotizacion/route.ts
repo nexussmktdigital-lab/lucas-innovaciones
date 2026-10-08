@@ -28,7 +28,6 @@ import {
 } from '@/cotizacion/cotizacion';
 import { ErrorInfodolar, obtenerBlueCordoba } from '@/cotizacion/infodolar';
 import { repreciarEnDolares } from '@/cotizacion/repreciar';
-import { drenarEnSegundoPlano } from '@/woo/cola';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -107,8 +106,9 @@ export async function GET(request: Request) {
       usuarioId: null,
     });
 
+    // Reprecia el espejo del POS. A la web no se le empuja nada: su ficha en
+    // dólares guarda dólares y el plugin le aplica la cotización al renderizar.
     const repreciado = await repreciarEnDolares(db, nueva.valorCentavos);
-    if (repreciado.encolados > 0) await drenarEnSegundoPlano(db);
 
     return NextResponse.json({
       ok: true,

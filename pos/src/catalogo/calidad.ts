@@ -43,7 +43,7 @@ export const GRAVEDAD: Record<TipoDeProblema, number> = {
 
 export const ETIQUETA: Record<TipoDeProblema, string> = {
   precio_sospechoso: 'Precio sospechoso',
-  usd_incoherente: 'Dólar incoherente',
+  usd_incoherente: 'Pesos sin recalcular',
   sin_precio: 'Precio sin cargar',
   stock_ficticio: 'Stock imposible',
   sin_sku: 'Sin SKU',
@@ -157,10 +157,22 @@ export async function evaluarCatalogo(
       anotar('precio_sospechoso', sospecha.motivo);
     }
 
+    /*
+     * El precio en pesos de un producto en dólares es un número **calculado**:
+     * dólares × cotización, igual que lo hace la web al renderizar. Que esté
+     * lejos del cálculo de hoy quiere decir que el espejo quedó viejo —la tarea
+     * de la cotización no corrió, o se sincronizó el catálogo sin cotización
+     * cargada— y el mostrador está mostrando un precio que no es el que cobra.
+     */
     if (precioUsdCentavos && tcCentavos) {
       const esperado = usdAPesos(precioUsdCentavos, tcCentavos);
-      const razon = precioCentavos > 0 ? esperado / precioCentavos : Number.POSITIVE_INFINITY;
-      if (razon > 1.5 || razon < 0.66) {
+      if (precioCentavos === 0) {
+        anotar(
+          'usd_incoherente',
+          `US$ ${(precioUsdCentavos / 100).toLocaleString('es-AR')} y el precio en pesos ` +
+            `todavía no se calculó: se sincronizó el catálogo sin cotización cargada.`,
+        );
+      } else if (esperado / precioCentavos > 1.5 || esperado / precioCentavos < 0.66) {
         anotar(
           'usd_incoherente',
           `US$ ${(precioUsdCentavos / 100).toLocaleString('es-AR')} al dólar de hoy deberían ser ` +

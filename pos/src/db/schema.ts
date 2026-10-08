@@ -205,7 +205,13 @@ export const products = pgTable(
     /** Precio de lista en ARS. En productos USD lo calcula el sistema, no se tipea. */
     precioCentavos: bigint({ mode: 'number' }).notNull().default(0),
     moneda: monedaEnum().notNull().default('ARS'),
-    /** Fuente de verdad del precio cuando `moneda = USD` (meta `_li_precio_usd`). */
+    /**
+     * Fuente de verdad del precio cuando `moneda = USD`.
+     *
+     * En WooCommerce es el propio `_price` de la ficha: las que llevan la meta
+     * `_li_moneda = USD` guardan el número en dólares y el plugin `li-dolar` le
+     * aplica la cotización al renderizar.
+     */
     precioUsdCentavos: bigint({ mode: 'number' }),
     costoCentavos: bigint({ mode: 'number' }),
     stock: integer().notNull().default(0),

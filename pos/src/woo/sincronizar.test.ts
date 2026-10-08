@@ -34,13 +34,14 @@ const CATALOGO = [
     type: 'simple',
     status: 'publish',
     sku: 'IP14P256',
-    price: '2152000',
+    // En dolares el numero de la ficha son dolares (meta `_li_moneda`).
+    price: '1370',
     manage_stock: true,
     stock_quantity: 1,
     categories: [{ name: 'Smartphones nuevos' }],
     brands: [{ name: 'Apple' }],
     images: [{ src: 'https://ejemplo/iphone.jpg' }],
-    meta_data: [{ key: '_li_precio_usd', value: '1370' }],
+    meta_data: [{ key: '_li_moneda', value: 'USD' }],
   },
   {
     id: 6378,
@@ -153,7 +154,7 @@ describe('sincronizarCatalogo', () => {
     await sincronizarCatalogo(db, clienteDePrueba(), { tcCentavos: TC });
 
     const conCambio = structuredClone(CATALOGO);
-    conCambio[1]!.price = '2200000';
+    conCambio[1]!.price = '1400';
     conCambio[1]!.stock_quantity = 4;
 
     const segundo = await sincronizarCatalogo(db, clienteDePrueba(conCambio), { tcCentavos: TC });
@@ -163,7 +164,8 @@ describe('sincronizarCatalogo', () => {
     const filas = await db.select().from(products);
     expect(filas).toHaveLength(3);
     const iphone = filas.find((f) => f.wooId === 7001)!;
-    expect(iphone.precioCentavos).toBe(220_000_000);
+    // 1400 x 1571 = 2.199.400, redondeado al millar.
+    expect(iphone.precioCentavos).toBe(219_900_000);
     expect(iphone.stock).toBe(4);
   });
 

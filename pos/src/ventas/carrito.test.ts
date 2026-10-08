@@ -300,11 +300,31 @@ describe('problemasDelCobro', () => {
     ).toEqual([]);
   });
 
-  it('detecta un excedente que no se puede devolver', () => {
-    const p = problemasDelCobro(totales, [
-      { medio: 'transferencia', montoCentavos: 9_000_000 },
-    ]);
-    expect(p.some((x) => x.includes('excedente'))).toBe(true);
+  /*
+   * Un excedente que no se puede devolver no frena la venta. Antes apagaba el
+   * botón de confirmar y, con el cliente enfrente, la única salida era
+   * desarmar el cobro y empezarlo de nuevo. Lo pidió el local: la plata la
+   * cuenta el que atiende, y la diferencia se ve en el arqueo del turno.
+   */
+  it('un excedente que no se puede devolver no frena la venta', () => {
+    // Cobrado de más por transferencia: no hay efectivo del que dar vuelto.
+    expect(problemasDelCobro(totales, [{ medio: 'transferencia', montoCentavos: 9_000_000 }]))
+      .toEqual([]);
+
+    // Y el caso del mostrador: US$ 400 en billetes por algo que vale menos.
+    expect(
+      problemasDelCobro(totales, [
+        { medio: 'dolares', montoCentavos: 9_000_000, montoUsdCentavos: 40_000, cotizacionCentavos: 1_571_00 },
+        { medio: 'cuenta_corriente', montoCentavos: 10_000 },
+      ], { hayCliente: true }),
+    ).toEqual([]);
+  });
+
+  it('lo que falta para llegar al total sí frena', () => {
+    // Lo contrario del excedente, y esto no se toca: cobrar de menos es
+    // regalar mercadería, y nadie lo cuenta después.
+    expect(problemasDelCobro(totales, [{ medio: 'efectivo', montoCentavos: 1_000_000 }]))
+      .toContain('El pago no cubre el total.');
   });
 
   it('exige la marca en pagos con tarjeta', () => {

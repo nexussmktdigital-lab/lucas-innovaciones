@@ -4,10 +4,16 @@
  * Devuelve HTML suelto, fuera del layout del POS: se abre en una ventana aparte
  * que se manda a imprimir sola y se cierra.
  *
- * Son dos papeles de la misma venta, según `?copia=`:
+ * **Sin `?copia=` salen todos los papeles que la venta necesita**, en un solo
+ * documento y un solo diálogo de impresión: el comprobante del cliente y, si
+ * quedó algo fiado, el acuerdo de pago. Es lo que se abre al cobrar, y el
+ * acuerdo no puede depender de que alguien apriete un segundo botón con el
+ * cliente enfrente.
  *
- *  - sin nada (o `cliente`): el que se lleva el cliente. Producto, precio y
- *    garantía; **nada de la deuda**.
+ * Con `?copia=` sale uno solo, que es lo que hace falta al reimprimir:
+ *
+ *  - `cliente`: el que se lleva el cliente. Producto, precio y garantía;
+ *    **nada de la deuda**.
  *  - `acuerdo`: el plan de cuotas, para que lo firme y quede en el local.
  */
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -22,7 +28,7 @@ import {
   sales,
 } from '@/db/schema';
 import { aFechaISO } from '@/fiado/plan';
-import { generarTicket } from '@/ventas/ticket';
+import { generarComprobantes, generarTicket } from '@/ventas/ticket';
 import { ventaEnDolares } from '@/ventas/carrito';
 
 export const runtime = 'nodejs';
@@ -40,14 +46,14 @@ export async function GET(
   const { id } = await params;
 
   /*
-   * Cuál de los dos papeles de esta venta.
+   * Qué papeles salen.
    *
-   * Por defecto el del cliente, que es el que se imprime solo al cobrar. El
-   * acuerdo de pago —el que lleva las cuotas y queda firmado en el local— se
-   * pide a mano, desde la pantalla de venta o desde la ficha.
+   * Sin `?copia=` salen los dos —es el caso del cobro—. Con `?copia=` sale el
+   * que se pidió, que es el caso de la reimpresión desde la ficha: alguien
+   * perdió una de las dos hojas y quiere esa, no las dos.
    */
-  const copia =
-    new URL(request.url).searchParams.get('copia') === 'acuerdo' ? 'acuerdo' : 'cliente';
+  const pedida = new URL(request.url).searchParams.get('copia');
+  const copia = pedida === 'acuerdo' ? 'acuerdo' : pedida === 'cliente' ? 'cliente' : null;
 
   const [venta] = await db
     .select({
@@ -128,7 +134,7 @@ export async function GET(
    */
   const monedaDeLaDeuda = cuotas[0]?.moneda ?? (ventaEnDolares(lineas) ? 'USD' : 'ARS');
 
-  const html = generarTicket({
+  const datos = {
     numero: venta.numero,
     fecha: venta.fecha,
     cliente: venta.cliente,
@@ -146,7 +152,9 @@ export async function GET(
     monedaDeLaDeuda,
     recargoCentavos: cuotas[0]?.recargoCentavos ?? 0,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
-  }, { copia });
+  };
+
+  const html = copia ? generarTicket(datos, { copia }) : generarComprobantes(datos);
 
   return new Response(html, {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },

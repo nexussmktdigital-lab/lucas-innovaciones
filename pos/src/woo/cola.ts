@@ -30,6 +30,7 @@ import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 // escrita a mano, aunque PGlite —el de los tests— lo acepte. Va como ISO.
 import { instante } from '@/reportes/periodo';
 import { ClienteWoo, ErrorWoo } from './cliente';
+import { cuerpoDePrecioParaWoo } from './mapear';
 
 /** Cuántas veces se reintenta antes de dar la operación por fallida. */
 export const MAXIMO_DE_INTENTOS = 6;
@@ -473,6 +474,10 @@ async function empujarStock(
  * payload: si el precio cambió dos veces antes de que la cola corriera, lo que
  * llega a la web es el último, que es el correcto. Por eso también es
  * idempotente —reintentar escribe el mismo número— igual que el stock.
+ *
+ * Un producto en dólares viaja **en dólares**, con su marca al lado: es la
+ * convención del plugin, y la arma `cuerpoDePrecioParaWoo` en un solo lugar
+ * para que leer y escribir no puedan discrepar.
  */
 async function empujarPrecio(
   db: BaseDatos,
@@ -482,7 +487,11 @@ async function empujarPrecio(
   const payload = payloadDeProducto.parse(payloadCrudo);
 
   const [local] = await db
-    .select({ precioCentavos: products.precioCentavos })
+    .select({
+      precioCentavos: products.precioCentavos,
+      moneda: products.moneda,
+      precioUsdCentavos: products.precioUsdCentavos,
+    })
     .from(products)
     .where(eq(products.id, payload.productId))
     .limit(1);
@@ -494,10 +503,7 @@ async function empujarPrecio(
   await cliente.enviar(
     'PUT',
     `products/${payload.wooId}`,
-    // `regular_price` y no `price`: `price` es de solo lectura en la API de
-    // WooCommerce —lo calcula ella según haya oferta o no— y escribirlo no
-    // cambia nada. Es el mismo campo que usa el alta al publicar.
-    { regular_price: (local.precioCentavos / 100).toFixed(2) },
+    cuerpoDePrecioParaWoo(local),
     respuestaDeProducto,
   );
 }

@@ -412,12 +412,21 @@ export function problemasDelCobro(
     problemas.push('Para cobrar en cuenta corriente hace falta elegir un cliente.');
   }
 
-  // El sobrante solo puede volver como vuelto en efectivo. Si alguien cargó de
-  // más en transferencia, es un error de carga y no un vuelto.
-  const sobrante = cobro.pagadoCentavos - totales.totalCentavos;
-  if (sobrante > cobro.vueltoCentavos) {
-    problemas.push('Hay un excedente que no se puede devolver: solo se da vuelto del efectivo.');
-  }
+  /*
+   * Un excedente que no se puede devolver **no frena la venta**.
+   *
+   * Antes sí: si lo pagado superaba el total y el vuelto no salía del efectivo
+   * —el cliente paga US$ 400 en billetes por algo de $ 627.900, o quedan cien
+   * pesos de más en una cuenta corriente— el botón de confirmar quedaba
+   * apagado y no había forma de seguir. Con el cliente enfrente, un cartel que
+   * explica el problema y no deja salir de él es peor que el problema: lo
+   * único que se puede hacer es desarmar el cobro y empezarlo de nuevo.
+   *
+   * Lo pidió el local y la razón es buena: la plata la cuenta el que atiende,
+   * no la pantalla. Lo que entró queda registrado tal como se cargó, el vuelto
+   * sigue saliendo solo del efectivo (`calcularCobro`), y la diferencia aparece
+   * en el arqueo del turno, que es donde se mira y se explica.
+   */
 
   for (const p of pagos) {
     if ((p.medio === 'credito' || p.medio === 'debito') && !p.marcaTarjeta) {

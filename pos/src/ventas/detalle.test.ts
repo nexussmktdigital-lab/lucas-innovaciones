@@ -376,10 +376,10 @@ describe('anular o devolver, según el turno', () => {
 
 describe('el vuelto, deducido de los pagos', () => {
   /*
-   * Se deduce porque no se guarda. El cobro no deja pasar un excedente que no
-   * se pueda devolver en efectivo, así que estos casos no llegan desde el
-   * mostrador; se prueban igual porque la cuenta es la que decide qué dice la
-   * pantalla y tiene que coincidir con la del carrito.
+   * Se deduce porque no se guarda. El vuelto sale solo del efectivo: un
+   * excedente cobrado por transferencia o en dólares no se devuelve, aunque el
+   * cobro sí lo deje pasar. La cuenta es la que decide qué dice la pantalla y
+   * tiene que coincidir con la del carrito.
    */
   function detalle(pagos: DetalleDeVenta['pagos'], totalCentavos: number): DetalleDeVenta {
     return { totalCentavos, pagos } as DetalleDeVenta;

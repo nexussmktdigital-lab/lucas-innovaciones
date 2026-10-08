@@ -73,6 +73,62 @@ export const PISO_POR_MARCA: { marca: string; pisoCentavos: number }[] = [
 ];
 
 /**
+ * Equipos que se reconocen por el **nombre**, cuando la ficha no dice más nada.
+ *
+ * El piso por categoría y por marca tapa el catálogo viejo, que está
+ * categorizado. No tapa el agujero por donde entró «iPhone 18 Pro (256gb)» a
+ * $1.510: cargado a mano, en «Sin categorizar» y sin marca. Sin categoría no
+ * hay piso, sin marca tampoco, y para el sistema era un celular de mil
+ * quinientos pesos sin nada de raro —el mismo error de agosto, por la puerta
+ * que quedaba abierta—.
+ *
+ * El nombre de un equipo es el dato que **siempre** está: nadie carga un
+ * teléfono sin escribir el modelo. Las palabras de accesorio de abajo ganan
+ * sobre estas, así que «Cable iPhone original» sigue sin piso.
+ */
+export const PISO_POR_NOMBRE: { patron: string; pisoCentavos: number }[] = [
+  { patron: 'iphone', pisoCentavos: 20_000_00 },
+  { patron: 'ipad', pisoCentavos: 20_000_00 },
+  { patron: 'macbook', pisoCentavos: 100_000_00 },
+  { patron: 'galaxy', pisoCentavos: 20_000_00 },
+  { patron: 'redmi', pisoCentavos: 20_000_00 },
+  { patron: 'moto g', pisoCentavos: 20_000_00 },
+  { patron: 'moto e', pisoCentavos: 20_000_00 },
+];
+
+/**
+ * Palabras que delatan un accesorio, para que el piso por nombre no lo toque.
+ *
+ * Es la misma idea que las categorías sin piso, aplicada al nombre: hace falta
+ * porque las fichas nuevas llegan sin categorizar, y ahí la categoría no
+ * protege a nadie. «Cable iphone usb tipo c a lightning» en «Sin categorizar»
+ * es un cable, lo diga la categoría o no.
+ */
+export const NOMBRES_SIN_PISO = [
+  'cable',
+  'cargador',
+  'fuente',
+  'funda',
+  'vidrio',
+  'hidrogel',
+  'auricular',
+  'adaptador',
+  'microfono',
+  'soporte',
+  'protector',
+  'template',
+  'lightning',
+  'repuesto',
+  'modulo',
+  'bateria',
+  'pantalla',
+  'tapa',
+  'conector',
+  'pin de carga',
+  'flex',
+];
+
+/**
  * Categorías donde ningún precio es sospechoso, pase lo que pase.
  *
  * Es la mayoría del catálogo: cables, fundas, vidrios, cargadores. Un cable
@@ -108,15 +164,20 @@ export const CATEGORIAS_SIN_PISO = [
 export function pisoPara(p: ProductoAValidar): number | null {
   const categoria = normalizar(p.categoria ?? '');
   const marca = normalizar(p.marca ?? '');
+  const nombre = normalizar(p.nombre);
 
-  // Un accesorio no tiene piso ni siquiera si la marca es cara.
+  // Un accesorio no tiene piso ni siquiera si la marca es cara. Se mira la
+  // categoría y también el nombre: una ficha nueva llega sin categorizar, y
+  // ahí la categoría no dice nada.
   if (CATEGORIAS_SIN_PISO.some((patron) => categoria.includes(patron))) return null;
+  if (NOMBRES_SIN_PISO.some((patron) => nombre.includes(patron))) return null;
 
   const porCategoria = PISOS_POR_CATEGORIA.find((x) => categoria.includes(x.patron));
   const porMarca = PISO_POR_MARCA.find((x) => marca === x.marca);
+  const porNombre = PISO_POR_NOMBRE.find((x) => nombre.includes(x.patron));
 
-  // Si aplican los dos, manda el más alto: es el que mejor describe al producto.
-  const pisos = [porCategoria?.pisoCentavos, porMarca?.pisoCentavos].filter(
+  // Si aplican varios, manda el más alto: es el que mejor describe al producto.
+  const pisos = [porCategoria?.pisoCentavos, porMarca?.pisoCentavos, porNombre?.pisoCentavos].filter(
     (x): x is number => x !== undefined,
   );
 

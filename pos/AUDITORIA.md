@@ -2328,3 +2328,218 @@ Lo que estoy empezando a hacer, y conviene dejarlo escrito: cuando una decisión
 parte algo en dos —dos monedas, dos planes, dos turnos—, hay que ir a buscar
 **todos** los lugares que leían el entero y revisarlos de a uno. La 0017 cambió
 la forma de la deuda; la anulación la leía y no estaba en la lista.
+
+## Dos convenciones sobre el mismo campo: el iPhone de US$ 630 que el POS leía $630
+
+Este es el hallazgo más caro del proyecto, y no fue un bug: fueron dos códigos
+que acordaron distinto sobre el mismo número y nunca se hablaron.
+
+En WooCommerce hay 54 productos cargados en dólares —los usados, casi todos
+iPhones—. El plugin de la web, `li-dolar`, los marca con la meta
+`_li_moneda = USD` y guarda el precio **en dólares** dentro de `_price`: un
+iPhone de US$ 630 tiene `_price = 630`, y la web lo multiplica por la cotización
+al renderizar. Es la convención que está en producción.
+
+El POS esperaba otra: una meta propia, `_li_precio_usd`, con el precio en
+dólares, y `_price` **en pesos**. Esa convención la cumplen **cero** fichas.
+Nadie la escribió nunca.
+
+El resultado: el POS leía `_price = 630`, no encontraba su meta, y guardaba
+$630. Un iPhone de casi un millón de pesos aparecía en el mostrador a
+seiscientos treinta pesos.
+
+**Lo que esto explica hacia atrás.** Una semana entera se trabajó sobre la
+hipótesis de que había fichas mal cargadas: la guarda de cordura, la alerta de
+«precio sospechoso», el editor de precios en dólares. Todo eso sirve, pero la
+ficha que lo disparó estaba bien. La leía mal el que la leía. Dicho de otro
+modo: **se construyeron tres defensas contra un síntoma sin haber mirado nunca
+el dato en producción.** Una sola consulta —cuántos productos tienen
+`_li_precio_usd`— habría devuelto cero y ahorrado la semana.
+
+**Lo que esto rompió hacia adelante.** Peor que leer mal: el editor de precios
+en dólares que escribí **escribía** con la convención del POS. Le puso al
+producto 6845 `_price = 990000` dejándole la marca `_li_moneda = USD`, o sea una
+ficha que la web publica a mil quinientos millones de pesos. No se vio porque
+ese producto está en stock 0 y la tienda está en modo «próximamente». Es el modo
+de falla que importa: **leer mal muestra un número raro en una pantalla;
+escribir mal publica un precio.**
+
+**El arreglo.** El POS adopta la convención del plugin, que es la que tiene los
+54 productos:
+
+- Al **leer** (`mapear.ts`): la marca `_li_moneda` dice que el número de la
+  ficha son dólares. Los pesos no se leen, se calculan, con la misma cuenta que
+  hace la web. Sin cotización quedan en **cero** y la ficha se marca, porque
+  poner el número de dólares como pesos es exactamente el error que esto vino a
+  cerrar.
+- Al **escribir** (`cola.ts`, `publicar.ts`): un producto en dólares viaja en
+  dólares, y el precio y la marca van **siempre en el mismo PUT**, armados por
+  una sola función (`cuerpoDePrecioParaWoo`). No existe un instante en que la
+  ficha tenga el número de una moneda y la marca de la otra. En pesos, la marca
+  se limpia, aunque nunca haya estado puesta: es lo que arregla una ficha que
+  quedó marcada de antes.
+- El **repreciado** por cotización dejó de empujarle el precio a la web. La web
+  convierte sola; esas 54 escrituras por corrida no solo eran al vacío, eran el
+  camino por el que un día salía un precio multiplicado dos veces.
+
+**Lo que se tira.** El aviso `usd_incoherente` del mapeo cruzaba dos cifras
+—los pesos de la ficha contra el USD por la cotización— y ya no hay dos cifras
+que cruzar: hay un número y una fuente. En la pantalla de calidad el mismo aviso
+sobrevive con otro significado, el único que le queda: **el espejo del POS quedó
+viejo** respecto del dólar de hoy. Se llama «Pesos sin recalcular», que es lo
+que es.
+
+**La lección, que es la misma de siempre con otra cara.** Cuando dos sistemas
+comparten un campo, la convención no es una decisión de diseño: es un dato
+observable, y hay que ir a mirarlo. Los tests no lo iban a encontrar —los del
+POS verificaban la convención del POS, y pasaban todos— porque un test prueba
+que el código hace lo que el código dice. Lo que la otra punta hace de verdad
+solo lo dice la otra punta.
+
+## El papel más importante dependía de que alguien se acordara
+
+La boleta de Emilse Sánchez: un iPhone fiado, una sola hoja, en pesos. Dos
+problemas distintos en el mismo papel, y ninguno de los dos era del papel.
+
+**Los pesos.** El iPhone estaba bien cargado en Woo —marcado en dólares, como
+los otros 53— y el POS lo leía como un producto en pesos, porque producción
+todavía no tenía el arreglo de la convención (ver «Dos convenciones sobre el
+mismo campo»). Entonces alguien hizo la cuenta del dólar en la cabeza y escribió
+$1.108.000 a mano en el mostrador. El comprobante hizo lo correcto con lo que
+tenía: una venta sin nada en dólares se imprime en pesos.
+
+Lo caro no es el papel: **la deuda quedó en pesos.** Debía US$ 705 y el sistema
+anotó $1.108.000 congelados. Con el dólar a 1.700, el local pierde noventa mil
+pesos en esa venta, y pasaba en cada venta fiada de los 54 equipos. Un bug de
+lectura que parecía de pantalla terminó escribiendo deuda en la moneda
+equivocada: es el mismo patrón de siempre —leer mal muestra un número raro,
+escribir mal mueve plata— y tardé en verlo porque el síntoma que me mostraron
+era un papel.
+
+**El segundo papel.** El acuerdo de pago existía, con sus tests y su e2e, y
+estaba detrás de un botón: al cobrar fiado aparecía un aviso en la pantalla de
+venta con «Imprimir el acuerdo de pago». Yo lo diseñé así —dos papeles, dos
+acciones— y era un error de criterio. El acuerdo es el único documento firmado
+que respalda el saldo, y se firma con el cliente enfrente o no se firma nunca:
+hacerlo depender de que el cajero vea un cartel y apriete un botón, en el minuto
+en que el cliente se está yendo con el teléfono, es ponerle una condición humana
+al papel que menos puede tenerla. El local lo dijo en una línea: «que se imprima
+con la boleta, no un paso extra».
+
+Ahora los dos salen en **un documento y un diálogo de impresión**: dos
+`<section class="hoja">` con un salto de página en el medio. Eso también resolvió
+lo que me había hecho elegir el botón en su momento —abrir una segunda ventana
+la bloquea Safari, que es el navegador de la caja—: no hay segunda ventana.
+
+**La lección.** Un paso manual no es una decisión de diseño neutra: es una
+apuesta a que alguien se acuerde, siempre, en el peor momento. Cuando lo que
+está en juego es el único papel firmado de una deuda, la apuesta está mal hecha
+aunque el botón esté a la vista y tenga un cartel al lado.
+
+## El cartel que explicaba el problema y no dejaba salir de él
+
+En la pantalla de cobro: «Hay un excedente que no se puede devolver: solo se da
+vuelto del efectivo». Es cierto —el vuelto sale del efectivo y de ningún otro
+medio— y apagaba el botón de confirmar.
+
+El caso real: el cliente paga **US$ 400 en billetes** por algo que vale un poco
+menos. El excedente no se puede devolver en dólares, así que el cobro quedaba
+trabado, con el cliente enfrente, y la única salida era desarmarlo y empezarlo
+de nuevo. Lo mismo con cien pesos de más en una cuenta corriente.
+
+Es la segunda vez en este proyecto que escribo una guarda que diagnostica bien y
+deja al cajero sin salida. La primera fue la alerta de precio sospechoso, que
+frenaba al vendedor y había que ir a buscar al dueño. **Un control que describe
+el problema y no ofrece camino no es un control: es una pared**, y la pared la
+paga alguien que está atendiendo.
+
+Lo que quedó: la venta pasa, lo cobrado se registra tal como se cargó, el vuelto
+sigue saliendo solo del efectivo y la diferencia aparece en el arqueo del turno,
+que es donde se mira y se explica. Lo que falta para llegar al total **sigue
+frenando**, y eso no se toca: cobrar de menos es regalar mercadería y nadie lo
+cuenta después. La asimetría es a propósito —de más se explica, de menos se
+pierde—.
+
+## El piso de precios no miraba el nombre
+
+Buscando los iPhones que no estuvieran en dólares apareció **«iPhone 18 Pro
+(256gb)» a 1.510**, en «Sin categorizar», sin marca y sin la meta del plugin.
+Para el POS: un celular de mil quinientos diez pesos.
+
+La guarda de cordura —la que se escribió justo para esto, después de los nueve
+iPhones de agosto— no lo veía. Mira la **categoría** y la **marca**, y esta
+ficha no tenía ninguna de las dos. El piso de «Smartphones nuevos» no se aplica
+a un producto que nadie categorizó, y las fichas nuevas llegan sin categorizar:
+la guarda protegía exactamente el catálogo viejo y dejaba pasar lo que entra
+hoy.
+
+Ahora también mira el **nombre**, que es el único dato que siempre está —nadie
+carga un teléfono sin escribir el modelo—, con las palabras de accesorio
+leyéndose del nombre además de la categoría, para que «Cable iPhone original»
+siga sin piso.
+
+Vale la pena anotar por qué no apareció antes: los tests de `pisoPara` tenían
+uno que decía «un producto sin categoría ni marca no tiene piso» y pasaba en
+verde. **El agujero estaba escrito como comportamiento esperado.** No era un
+caso olvidado: era un caso decidido mal, y revisarlo requería mirar el catálogo
+real, no los tests.
+
+## El papel era todo en dólares o todo en pesos
+
+Tercera vuelta sobre la misma boleta, y la que faltaba. El comprobante decidía
+**una** moneda para todo el documento: dólares solo si cada renglón estaba
+cotizado en dólares y no había ningún descuento. Cualquier otra cosa salía en
+pesos, entera.
+
+Parecía prudente —el papel no convierte, y restar un descuento cargado en pesos
+de un precio en dólares exige convertir— pero la consecuencia era al revés de
+lo buscado: **una funda de $15.000 en el mismo carrito hacía que el iPhone
+saliera a $2.356.500**. El cliente firmaba pesos por un teléfono que había
+pactado en US$ 1.500, y en la primera corrida del dólar el papel y la deuda
+dejaban de decir lo mismo. Exactamente lo que la regla de la moneda existía
+para evitar.
+
+El error de razonamiento es visible en retrospectiva: **«en qué moneda va el
+total» y «en qué moneda va este renglón» son dos preguntas distintas y yo las
+respondí con una sola función.** El total no puede sumar dos monedas (D62), eso
+está bien; pero de ahí no se sigue que un renglón tenga que mentir sobre la
+suya. Cada renglón sabe en qué moneda se vendió y es el único que tiene que
+decirlo.
+
+Ahora el renglón del teléfono dice dólares siempre, y cuando el total va en
+pesos cada renglón en dólares lleva su equivalente en chiquito —«$ 1.108.000 al
+cambio»— para que el total salga de sumar lo que está impreso. Una venta toda
+en dólares sigue sin tener un solo número en pesos: ahí no hay nada que
+explicar.
+
+Lo que me hizo verlo fue que el local insistiera tres veces sobre el mismo
+papel. Las dos primeras arreglé lo que me mostraban; esta vez fui a mirar la
+condición y era demasiado estricta desde el día que la escribí.
+
+## La hoja fantasma del acuerdo de pago
+
+Al generar las boletas de prueba para mostrárselas al local apareció algo que
+ningún test iba a encontrar: **el acuerdo de un plan de doce cuotas salía en
+tres hojas**, la tercera con el pie solo. El contenido medía 325mm contra los
+297 de un A4.
+
+Los tests leen el HTML, no el papel. Verifican que las doce cuotas estén
+impresas —y lo están— pero no que entren. **Un comprobante tiene una dimensión
+física y la prueba de que anda es ponerlo en una hoja**, así que lo medí con el
+navegador: `getBoundingClientRect().height` de cada hoja, contra 297mm.
+
+El primer arreglo que escribí fue `max-height: 297mm; overflow: hidden`. Lo
+saqué a los dos minutos: eso no hace entrar nada, **recorta en silencio**. En
+un papel que el cliente firma, perder la cuota doce sin que nadie se entere es
+infinitamente peor que una hoja de más. Un control que oculta el problema en
+vez de resolverlo es el mismo error que la pared del excedente, con otra cara.
+
+Lo que entró de verdad: la tabla de cuotas en **dos columnas** a partir de
+cinco, con la fecha corta («9/11/26») porque la larga no entra en media hoja; y
+el acuerdo más compacto que el comprobante del cliente —detalle y total en
+cuerpo menor—, que es defendible porque en el acuerdo esos datos están para
+identificar la venta, no para leerse desde la otra punta del mostrador. Lo que
+se firma —las cuotas, el saldo, la conformidad— no se tocó.
+
+Quedó medido: seis casos, del iPhone pagado al peor caso de doce cuotas con
+cuatro renglones y recargo, todos en 296mm.

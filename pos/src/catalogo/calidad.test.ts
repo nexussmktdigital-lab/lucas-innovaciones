@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { crearBaseDePrueba, vaciar, type TestDb } from '@/db/test-db';
 import {
   cashSessions,
@@ -142,6 +143,27 @@ describe('evaluarCatalogo', () => {
     const problema = iphone13.problemas.find((x) => x.tipo === 'usd_incoherente')!;
     expect(problema.detalle).toContain('US$ 520');
     expect(problema.detalle).toContain('812.000');
+  });
+
+  it('un producto en dólares sin pesos calculados se marca, no se deja pasar', async () => {
+    /*
+     * Pasa cuando se sincroniza el catálogo sin cotización cargada: el espejo
+     * guarda cero pesos a propósito —el número de la ficha son dólares y
+     * escribirlo como pesos es el error de agosto— y el mostrador muestra $0.
+     */
+    await catalogoSucio();
+    await db
+      .update(products)
+      .set({ moneda: 'USD', precioUsdCentavos: 630_00, precioCentavos: 0 })
+      .where(eq(products.wooId, 6));
+
+    const informe = await evaluarCatalogo(db, TC);
+    const problema = informe.productos
+      .find((p) => p.wooId === 6)!
+      .problemas.find((x) => x.tipo === 'usd_incoherente')!;
+
+    expect(problema.detalle).toContain('US$ 630');
+    expect(problema.detalle).toContain('sin cotización cargada');
   });
 
   it('sin cotización no inventa avisos de dólares', async () => {
