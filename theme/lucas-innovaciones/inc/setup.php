@@ -36,9 +36,8 @@ function li_setup(): void {
 			'max_columns'     => 5,
 		),
 	) );
-	add_theme_support( 'wc-product-gallery-zoom' );
-	add_theme_support( 'wc-product-gallery-lightbox' );
-	add_theme_support( 'wc-product-gallery-slider' );
+	// Sin zoom, visor ni slider de WooCommerce: la ficha tiene su propia
+	// galería (ds.js) y esos tres scripts sumaban ~45 KB que no se usaban.
 
 	register_nav_menus( array(
 		'principal' => __( 'Menú principal', 'lucasinnovaciones' ),

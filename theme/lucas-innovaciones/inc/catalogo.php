@@ -425,5 +425,12 @@ add_filter( 'the_title', 'li_titulo_producto', 20, 2 );
  * @param int    $id     Post.
  */
 function li_titulo_producto( $titulo, $id = 0 ) {
-	return ( $id && 'product' === get_post_type( $id ) ) ? li_filtrar_nombre( $titulo ) : $titulo;
+	if ( ! $id || 'product' !== get_post_type( $id ) ) {
+		return $titulo;
+	}
+	// En la web, el nombre SEO (migas, búsquedas, cualquier the_title).
+	if ( li_es_web() && ! li_mail_al_local() && function_exists( 'li_nombre_web' ) ) {
+		return li_nombre_web( (int) $id );
+	}
+	return li_filtrar_nombre( $titulo );
 }

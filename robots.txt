@@ -1,0 +1,15 @@
+# Lucas Innovaciones — lucasinnovaciones.com.ar
+User-agent: *
+Disallow: /wp-admin/
+Allow: /wp-admin/admin-ajax.php
+Disallow: /carrito/
+Disallow: /finalizar-compra/
+Disallow: /mi-cuenta/
+Disallow: /*?*orderby=
+Disallow: /*?*precio_min=
+Disallow: /*?*precio_max=
+Disallow: /*?*add-to-cart=
+Disallow: /*?s=
+Disallow: /*?*li_frag=
+
+Sitemap: https://lucasinnovaciones.com.ar/wp-sitemap.xml
