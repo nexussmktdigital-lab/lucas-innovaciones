@@ -743,10 +743,17 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-precios { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .li-precios__monto { font-family: var(--li-font-display); font-weight: 700; color: var(--li-price); letter-spacing: var(--li-tracking-tight); line-height: 1.1; font-size: 19px; }
 @media (min-width: 768px) { .li-precios__monto { font-size: 23px; } }
-/* "10% OFF" en verde oscuro: el verde de marca como texto chico no tiene contraste. */
-.li-precios__leyenda { font-size: 11px; line-height: 1.35; color: var(--li-fg-2); }
-@media (min-width: 768px) { .li-precios__leyenda { font-size: 12px; } }
-.li-precios__leyenda strong { color: var(--li-success); font-weight: 700; }
+/* Recuadro del precio especial: badge "10% OFF" y leyenda en mayúsculas. */
+.li-precios__especial { display: flex; flex-direction: column; gap: 6px; }
+.li-precios__leyenda { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 10px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.04em; color: var(--li-fg-2); }
+.li-precios .li-badge { white-space: nowrap; }
+/* Tarjeta (Matias 08/10): el mismo recuadro que la ficha, pero en el verde
+   suave de antes, con texto oscuro (el verde de marca como texto chico no
+   tiene contraste). */
+.li-precios--card { align-items: stretch; }
+.li-precios--card .li-precios__especial { margin-top: 2px; padding: 8px 10px; border-radius: var(--li-radius); background: var(--li-green-soft); color: var(--li-fg-1); }
+.li-precios--card .li-precios__monto { color: var(--li-fg-1); }
+@media (min-width: 768px) { .li-precios--card .li-precios__especial { padding: 10px 12px; } .li-precios__leyenda { font-size: 11px; } }
 .li-precios__lista { font-size: 12px; color: var(--li-fg-3); line-height: 1.35; }
 .li-precios__lista del { color: var(--li-fg-4); }
 /* Ficha: precio de lista arriba, chico; abajo el recuadro negro con el precio especial. */
@@ -754,11 +761,10 @@ body.li-pronto { background: var(--li-black); color: #fff; min-height: 100vh; mi
 .li-precios--ficha .li-precios__lista { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 14px; color: var(--li-fg-2); }
 .li-precios--ficha .li-precios__lista strong { font-size: 18px; font-weight: 600; color: var(--li-fg-1); }
 .li-precios--ficha .li-precios__lista span { flex-basis: 100%; font-size: 12px; color: var(--li-fg-3); }
-.li-precios__especial { margin-top: 12px; padding: 16px 18px; border-radius: var(--li-radius-lg); background: var(--li-black); color: #fff; display: flex; flex-direction: column; gap: 8px; }
+.li-precios--ficha .li-precios__especial { margin-top: 12px; padding: 16px 18px; border-radius: var(--li-radius-lg); background: var(--li-black); color: #fff; gap: 8px; }
 .li-precios--ficha .li-precios__monto { color: #fff; font-size: 40px; }
 @media (min-width: 768px) { .li-precios--ficha .li-precios__monto { font-size: 46px; } }
-.li-precios--ficha .li-precios__leyenda { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0; background: none; color: var(--li-fg-invert-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-.li-precios--ficha .li-badge { white-space: nowrap; }
+.li-precios--ficha .li-precios__leyenda { gap: 8px; font-size: 12px; font-weight: 400; color: var(--li-fg-invert-2); }
 /* Barra fija de compra (celular). */
 .li-buybar__precio { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 .li-buybar__precio strong { font-family: var(--li-font-display); font-size: 20px; font-weight: 700; color: var(--li-price); letter-spacing: var(--li-tracking-tight); }
