@@ -18,7 +18,7 @@ mandan sobre este código:
 | # | Decisión |
 |---|---|
 | **D4** | **WooCommerce es la fuente de verdad del catálogo, el precio y el stock.** El POS mantiene un espejo local para que el buscador responda rápido, pero el espejo no autoriza nada: al confirmar una venta, quien descuenta stock es Woo. *El mostrador sí puede sumar stock y corregir un precio, y en los dos casos lo empuja a Woo por la cola: la fuente de verdad sigue siendo una sola, lo que cambió es que el mostrador también le escribe.* |
-| **D22** | **El precio en dólares se guarda en dólares y el de pesos se calcula con la cotización**, que se **congela en cada venta**: una venta vieja nunca se recalcula. *El valor lo traía el plugin `lucas-cotizacion`; desde que dejó de contestar lo trae el POS solo, cada dos horas, del blue de Córdoba de infodolar.com.* |
+| **D22** | **El precio en dólares se guarda en dólares y el de pesos se calcula con la cotización**, que se **congela en cada venta**: una venta vieja nunca se recalcula. En WooCommerce ese precio en dólares es el propio `_price` de la ficha, marcada con la meta `_li_moneda = USD`, y la web le aplica la cotización al renderizar: hay **un** número y una sola fuente. *El valor lo traía el plugin `lucas-cotizacion`; desde que dejó de contestar lo trae el POS solo, cada dos horas, del blue de Córdoba de infodolar.com.* |
 | **D23** | El POS es una app Next.js separada, no un plugin de WordPress. |
 | **D24** | **Ninguna línea de venta puede existir sin un producto real.** Los servicios técnicos y los chips son productos de catálogo en `Solo mostrador`. El fiado tiene su propio módulo y deja de cargarse como si fuera un producto. |
 | **D25** | Sin modo offline en la v1. Llega acotado en la v1.1: caché de catálogo y cola de la venta confirmada. |
@@ -1501,11 +1501,21 @@ tiene el precio en pesos guardado: la venta lo calcula en el momento, `precio
 USD × dólar` (ver `carrito.ts`). Apenas entra una cotización nueva, el mostrador
 ya cobra bien sin tocar una sola ficha.
 
-**La web sí.** WooCommerce guarda un número en pesos, y ese número lo
-recalculaba el plugin caído. Sin hacer nada, el POS cobraría el precio nuevo y
-la tienda seguiría publicando el viejo: con el dólar subiendo, se vende por la
-web a pérdida. Así que la tarea recalcula el precio de ficha de cada producto en
-dólares y lo manda a la tienda por la cola de siempre (`precio.empujar`).
+**La web tampoco.** Su ficha en dólares guarda dólares y el plugin `li-dolar`
+le aplica la cotización al renderizar, así que el precio que publica se
+recalcula solo.
+
+**Lo que se reprecia es el espejo del POS.** `products.precio_centavos` de un
+producto en dólares es un valor calculado —dólares × cotización— y lo usan las
+pantallas, el buscador, los listados y el orden por precio. Sin esta corrida ese
+número se queda viejo hasta la próxima sincronización, y la pantalla de calidad
+lo marca.
+
+**Y a la web no se le empuja nada.** Mandarle los pesos a una ficha marcada en
+dólares la publicaría multiplicada otra vez por la cotización: $1.280.000
+leídos como US$ 1.280.000. Esta tarea encolaba un `precio.empujar` por producto
+cambiado, con la convención vieja —en la que el POS creía que Woo guardaba
+pesos—; ahora no encola ninguno.
 
 Solo se toca lo que de verdad cambió, así que una corrida con el dólar quieto no
 escribe una fila.
@@ -1515,8 +1525,8 @@ escribe una fila.
 `/catalogo` evalúa las fichas y las lista **ordenadas por gravedad, no por
 cantidad**. Hay 781 fichas sin foto y una con precio sospechoso; la que hay que
 mirar primero es la última. Separa lo que impide vender bien (precio sospechoso,
-dólar incoherente, precio sin cargar) de lo que solo afea la ficha (sin SKU, sin
-foto), y linkea a editar cada una en WooCommerce.
+pesos sin recalcular, precio sin cargar) de lo que solo afea la ficha (sin SKU,
+sin foto), y linkea a editar cada una en WooCommerce.
 
 ### El marcador de facturación con producto real
 
@@ -1844,7 +1854,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Una cotización más vieja que el umbral se reporta vencida | `src/cotizacion/cotizacion.test.ts` |
 | Se lee el blue de Córdoba y **no** el oficial, que es el primero de la página | `src/cotizacion/infodolar.test.ts` |
 | Si infodólar cambia el diseño no se guarda nada | `src/cotizacion/infodolar.test.ts` |
-| Un cambio de cotización reprecia lo que está en dólares y lo manda a la tienda | `src/cotizacion/repreciar.test.ts` |
+| Un cambio de cotización reprecia el espejo y **no** le empuja pesos a la web | `src/cotizacion/repreciar.test.ts` |
+| Un iPhone de US$ 630 en Woo se lee como US$ 630, no como $630 | `src/woo/mapear.test.ts` |
+| Un precio en dólares viaja a Woo **en dólares**, con su marca al lado | `src/woo/cola.test.ts`, `src/catalogo/publicar.test.ts` |
+| Un precio en pesos limpia la marca de dólares de la ficha | `src/woo/cola.test.ts` |
+| El alta en la tienda no le suma el recargo a un precio en dólares | `src/catalogo/publicar.test.ts` |
 | El catálogo se ordena por gravedad, no por cantidad | `src/catalogo/calidad.test.ts` |
 | El vendedor llega a las pantallas del mostrador; a Reportes no, ni por URL | `e2e/calidad.spec.ts` |
 | **Las diecisiete pantallas cargan**, una por una, sin devolver error | `e2e/pantallas.spec.ts` |

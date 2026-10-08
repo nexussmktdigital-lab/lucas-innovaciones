@@ -491,18 +491,25 @@ describe('operacionesEnCola', () => {
  * WooCommerce simulado que anota los precios que se le escriben.
  *
  * El de arriba solo mira `stock_quantity`, que para una venta es lo único que
- * viaja. Acá lo que importa es otro campo.
+ * viaja. Acá lo que importa son otros dos campos, y **los dos juntos**: el
+ * número y la marca de moneda que dice en qué moneda está ese número.
  */
 function wooQueAnotaPrecios() {
   const precios: Record<number, string> = {};
+  const monedas: Record<number, string | undefined> = {};
 
   const fetchImpl = (async (entrada: string | URL, init?: RequestInit) => {
     const url = new URL(String(entrada));
     const wooId = Number(url.pathname.split('/').pop());
 
     if (init?.method === 'PUT') {
-      const cuerpo = JSON.parse(String(init.body)) as { regular_price?: string };
+      const cuerpo = JSON.parse(String(init.body)) as {
+        regular_price?: string;
+        meta_data?: { key: string; value: string }[];
+      };
       if (cuerpo.regular_price !== undefined) precios[wooId] = cuerpo.regular_price;
+      const marca = cuerpo.meta_data?.find((m) => m.key === '_li_moneda');
+      if (marca) monedas[wooId] = marca.value;
     }
 
     return new Response(JSON.stringify({ id: wooId }), {
@@ -520,7 +527,7 @@ function wooQueAnotaPrecios() {
     timeoutMs: 1000,
   });
 
-  return { cliente, precios };
+  return { cliente, precios, monedas };
 }
 
 describe('precio.empujar', () => {
@@ -542,6 +549,33 @@ describe('precio.empujar', () => {
 
     expect(informe.exitosas).toBe(1);
     expect(woo.precios[6485]).toBe('16800.00');
+    // En pesos la marca de dólares se limpia, aunque nunca haya estado puesta:
+    // es lo que arregla una ficha que quedó marcada de antes.
+    expect(woo.monedas[6485]).toBe('');
+  });
+
+  it('un producto en dólares viaja en dólares, con su marca al lado', async () => {
+    /*
+     * La convención del plugin: en una ficha marcada `_li_moneda = USD`, el
+     * número de WooCommerce son DÓLARES y la web le aplica la cotización al
+     * renderizar. Mandarle los pesos calculados —$990.000— la publicaría como
+     * US$ 990.000: mil quinientos millones en la vidriera.
+     */
+    await db
+      .update(products)
+      .set({ moneda: 'USD', precioUsdCentavos: 630_00, precioCentavos: 990_000_00 })
+      .where(eq(products.id, vidrioId));
+    await db.insert(syncQueue).values({
+      operacion: 'precio.empujar',
+      idempotencyKey: 'precio:usd',
+      payload: { productId: vidrioId, wooId: 6485 },
+    });
+
+    const woo = wooQueAnotaPrecios();
+    await drenarCola(db, woo.cliente);
+
+    expect(woo.precios[6485]).toBe('630.00');
+    expect(woo.monedas[6485]).toBe('USD');
   });
 
   it('manda el precio de ahora, no el que había cuando se encoló', async () => {

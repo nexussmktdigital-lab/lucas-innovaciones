@@ -126,7 +126,7 @@ export default async function PaginaCatalogo({
           titulo="Impiden vender bien"
           valor={informe.conProblemasBloqueantes.toLocaleString('es-AR')}
           alerta={informe.conProblemasBloqueantes > 0}
-          detalle="Precio sospechoso, dólar incoherente o sin precio"
+          detalle="Precio sospechoso, pesos sin recalcular o sin precio"
         />
         <Dato
           titulo="Se pueden vender bien"

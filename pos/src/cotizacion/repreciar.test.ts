@@ -1,9 +1,11 @@
 /**
  * Repreciar lo que está en dólares cuando cambia la cotización.
  *
- * Lo que importa probar no es la multiplicación: es que la tienda se entere
- * —si no, el POS cobra el precio nuevo y la web sigue publicando el viejo— y
- * que una corrida con el dólar quieto no escriba nada.
+ * Lo que importa probar no es la multiplicación: es que el espejo del POS
+ * quede al día, que una corrida con el dólar quieto no escriba nada y que **a
+ * la web no se le empuje nada**. La ficha en dólares de Woo guarda dólares y el
+ * plugin le aplica la cotización al renderizar; mandarle los pesos la
+ * publicaría multiplicada otra vez.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -46,22 +48,24 @@ describe('repreciar', () => {
 
     const r = await repreciarEnDolares(db, 1_571_00);
 
-    expect(r).toMatchObject({ mirados: 1, cambiados: 1, encolados: 1 });
+    expect(r).toMatchObject({ mirados: 1, cambiados: 1 });
 
     const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
     expect(enBase!.precioCentavos).toBe(usdAPesos(745_00, 1_571_00));
   });
 
-  it('manda el precio nuevo a la tienda', async () => {
-    // Sin esto el mostrador cobra bien y la web sigue publicando el viejo: con
-    // el dólar subiendo, se vende por la web a pérdida.
-    const p = await enDolares();
+  it('no le empuja el precio a la tienda: la web convierte sola', async () => {
+    /*
+     * Esto encolaba `precio.empujar` por cada producto repreciado, con la
+     * convención vieja —en la que el POS creía que Woo guardaba pesos—. Con la
+     * de verdad, esa escritura le pone $1.170.000 a una ficha que la web lee
+     * como US$ 1.170.000: mil ochocientos millones de pesos en la vidriera.
+     */
+    await enDolares();
 
     await repreciarEnDolares(db, 1_571_00);
 
-    const [op] = await db.select().from(syncQueue);
-    expect(op!.operacion).toBe('precio.empujar');
-    expect(op!.payload).toMatchObject({ productId: p.id, wooId: 7001 });
+    expect(await db.select().from(syncQueue)).toHaveLength(0);
   });
 
   it('con el dólar quieto no escribe nada', async () => {
@@ -69,7 +73,7 @@ describe('repreciar', () => {
 
     const r = await repreciarEnDolares(db, 1_500_00);
 
-    expect(r).toMatchObject({ mirados: 1, cambiados: 0, encolados: 0 });
+    expect(r).toMatchObject({ mirados: 1, cambiados: 0 });
     expect(await db.select().from(syncQueue)).toHaveLength(0);
   });
 
@@ -88,10 +92,10 @@ describe('repreciar', () => {
     expect(enBase!.precioCentavos).toBe(usdAPesos(745_00, 1_571_00));
   });
 
-  it('el mismo precio dos veces en días distintos no choca con la clave única', async () => {
+  it('el mismo precio dos veces en días distintos no falla', async () => {
     // El dólar vuelve sobre sus pasos: sube el martes y baja al mismo valor el
-    // jueves. Con la clave armada solo con el precio, la segunda vez violaba
-    // el índice único de `sync_queue` y se caía el repreciado del producto.
+    // jueves. Repreciar es idempotente —el precio sale de la cotización, no de
+    // sumar— así que volver al mismo valor vuelve al mismo precio.
     const p = await enDolares();
 
     await repreciarEnDolares(db, 1_571_00);
@@ -102,7 +106,8 @@ describe('repreciar', () => {
     const r = await repreciarEnDolares(db, 1_571_00);
 
     expect(r.cambiados).toBe(1);
-    expect(await db.select().from(syncQueue)).toHaveLength(2);
+    const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
+    expect(enBase!.precioCentavos).toBe(usdAPesos(745_00, 1_571_00));
   });
 
   it('no toca los productos en pesos', async () => {
@@ -125,12 +130,12 @@ describe('repreciar', () => {
     expect((await repreciarEnDolares(db, 1_571_00)).mirados).toBe(0);
   });
 
-  it('no encola lo que todavía no está en la tienda, pero sí lo reprecia', async () => {
+  it('también reprecia lo que todavía no está en la tienda', async () => {
     const p = await enDolares({ wooId: null });
 
     const r = await repreciarEnDolares(db, 1_571_00);
 
-    expect(r).toMatchObject({ cambiados: 1, encolados: 0 });
+    expect(r).toMatchObject({ cambiados: 1 });
     const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
     expect(enBase!.precioCentavos).toBe(usdAPesos(745_00, 1_571_00));
   });
@@ -147,7 +152,6 @@ describe('repreciar', () => {
     expect(await repreciarEnDolares(db, 1_571_00)).toMatchObject({
       mirados: 0,
       cambiados: 0,
-      encolados: 0,
     });
   });
 });

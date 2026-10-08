@@ -16,7 +16,7 @@ import type { BaseDatos } from '@/db/tipos';
 import type { ClienteWoo } from './cliente';
 import { wooProducto } from './tipos';
 import { meta } from './tipos';
-import { META_COTIZACION_APLICADA, META_PRECIO_USD } from './mapear';
+import { META_COTIZACION_APLICADA, META_MONEDA } from './mapear';
 
 export interface Cotizacion {
   valorCentavos: number;
@@ -49,7 +49,7 @@ async function cotizacionDesdeProductos(cliente: ClienteWoo): Promise<Cotizacion
   try {
     const pagina = await cliente.listar('products', wooProducto, { per_page: 20, search: 'iPhone' });
     for (const p of pagina.datos) {
-      if (meta(p, META_PRECIO_USD) === undefined) continue;
+      if (String(meta(p, META_MONEDA) ?? '').toUpperCase() !== 'USD') continue;
       const aplicada = meta(p, META_COTIZACION_APLICADA);
       const n = Number(aplicada);
       if (Number.isFinite(n) && n > 0) {

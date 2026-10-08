@@ -2328,3 +2328,70 @@ Lo que estoy empezando a hacer, y conviene dejarlo escrito: cuando una decisión
 parte algo en dos —dos monedas, dos planes, dos turnos—, hay que ir a buscar
 **todos** los lugares que leían el entero y revisarlos de a uno. La 0017 cambió
 la forma de la deuda; la anulación la leía y no estaba en la lista.
+
+## Dos convenciones sobre el mismo campo: el iPhone de US$ 630 que el POS leía $630
+
+Este es el hallazgo más caro del proyecto, y no fue un bug: fueron dos códigos
+que acordaron distinto sobre el mismo número y nunca se hablaron.
+
+En WooCommerce hay 54 productos cargados en dólares —los usados, casi todos
+iPhones—. El plugin de la web, `li-dolar`, los marca con la meta
+`_li_moneda = USD` y guarda el precio **en dólares** dentro de `_price`: un
+iPhone de US$ 630 tiene `_price = 630`, y la web lo multiplica por la cotización
+al renderizar. Es la convención que está en producción.
+
+El POS esperaba otra: una meta propia, `_li_precio_usd`, con el precio en
+dólares, y `_price` **en pesos**. Esa convención la cumplen **cero** fichas.
+Nadie la escribió nunca.
+
+El resultado: el POS leía `_price = 630`, no encontraba su meta, y guardaba
+$630. Un iPhone de casi un millón de pesos aparecía en el mostrador a
+seiscientos treinta pesos.
+
+**Lo que esto explica hacia atrás.** Una semana entera se trabajó sobre la
+hipótesis de que había fichas mal cargadas: la guarda de cordura, la alerta de
+«precio sospechoso», el editor de precios en dólares. Todo eso sirve, pero la
+ficha que lo disparó estaba bien. La leía mal el que la leía. Dicho de otro
+modo: **se construyeron tres defensas contra un síntoma sin haber mirado nunca
+el dato en producción.** Una sola consulta —cuántos productos tienen
+`_li_precio_usd`— habría devuelto cero y ahorrado la semana.
+
+**Lo que esto rompió hacia adelante.** Peor que leer mal: el editor de precios
+en dólares que escribí **escribía** con la convención del POS. Le puso al
+producto 6845 `_price = 990000` dejándole la marca `_li_moneda = USD`, o sea una
+ficha que la web publica a mil quinientos millones de pesos. No se vio porque
+ese producto está en stock 0 y la tienda está en modo «próximamente». Es el modo
+de falla que importa: **leer mal muestra un número raro en una pantalla;
+escribir mal publica un precio.**
+
+**El arreglo.** El POS adopta la convención del plugin, que es la que tiene los
+54 productos:
+
+- Al **leer** (`mapear.ts`): la marca `_li_moneda` dice que el número de la
+  ficha son dólares. Los pesos no se leen, se calculan, con la misma cuenta que
+  hace la web. Sin cotización quedan en **cero** y la ficha se marca, porque
+  poner el número de dólares como pesos es exactamente el error que esto vino a
+  cerrar.
+- Al **escribir** (`cola.ts`, `publicar.ts`): un producto en dólares viaja en
+  dólares, y el precio y la marca van **siempre en el mismo PUT**, armados por
+  una sola función (`cuerpoDePrecioParaWoo`). No existe un instante en que la
+  ficha tenga el número de una moneda y la marca de la otra. En pesos, la marca
+  se limpia, aunque nunca haya estado puesta: es lo que arregla una ficha que
+  quedó marcada de antes.
+- El **repreciado** por cotización dejó de empujarle el precio a la web. La web
+  convierte sola; esas 54 escrituras por corrida no solo eran al vacío, eran el
+  camino por el que un día salía un precio multiplicado dos veces.
+
+**Lo que se tira.** El aviso `usd_incoherente` del mapeo cruzaba dos cifras
+—los pesos de la ficha contra el USD por la cotización— y ya no hay dos cifras
+que cruzar: hay un número y una fuente. En la pantalla de calidad el mismo aviso
+sobrevive con otro significado, el único que le queda: **el espejo del POS quedó
+viejo** respecto del dólar de hoy. Se llama «Pesos sin recalcular», que es lo
+que es.
+
+**La lección, que es la misma de siempre con otra cara.** Cuando dos sistemas
+comparten un campo, la convención no es una decisión de diseño: es un dato
+observable, y hay que ir a mirarlo. Los tests no lo iban a encontrar —los del
+POS verificaban la convención del POS, y pasaban todos— porque un test prueba
+que el código hace lo que el código dice. Lo que la otra punta hace de verdad
+solo lo dice la otra punta.

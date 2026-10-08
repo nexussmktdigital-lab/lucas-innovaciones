@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapearProducto, mapearVariante } from './mapear';
+import { cuerpoDePrecioParaWoo, mapearProducto, mapearVariante } from './mapear';
 import { precioACentavos, wooProducto, wooVariacion } from './tipos';
 
 const TC = 157_100; // $1.571,00
@@ -61,55 +61,86 @@ describe('mapearProducto', () => {
     expect(avisos).toHaveLength(0);
   });
 
-  it('reconoce un iPhone en dolares por la meta del plugin de cotizacion', () => {
+  it('reconoce un iPhone en dolares por la marca del plugin', () => {
     const { fila, avisos } = mapearProducto(
       ficha({
         id: 7001,
         name: 'iPhone 14 Pro 256GB',
         sku: 'IP14P256',
-        price: '2152000',
+        // El numero de la ficha son DOLARES: la web los multiplica al renderizar.
+        price: '1370',
         images: [{ src: 'https://ejemplo/iphone.jpg' }],
-        meta_data: [{ key: '_li_precio_usd', value: '1370' }],
+        meta_data: [{ key: '_li_moneda', value: 'USD' }],
       }),
       TC,
     );
 
     expect(fila.moneda).toBe('USD');
     expect(fila.precioUsdCentavos).toBe(137_000);
+    // 1370 x 1571 = 2.152.270, redondeado al millar.
     expect(fila.precioCentavos).toBe(215_200_000);
+    expect(fila.fichaIncompleta).toBe(false);
     expect(avisos).toHaveLength(0);
   });
 
-  it('detecta el error de agosto: 9 iPhones de USD 6.300 publicados a $6.300', () => {
-    const { avisos } = mapearProducto(
+  /*
+   * El bug que esto cierra, que estuvo en produccion una semana: el POS leia la
+   * ficha de un iPhone de US$ 630 y mostraba $630 en el mostrador. No estaba
+   * mal cargada: el POS buscaba otra meta —`_li_precio_usd`, que no tiene
+   * ninguna ficha— y al no encontrarla tomaba el 630 de la ficha como pesos.
+   */
+  it('un iPhone de US$ 630 no se lee como $630', () => {
+    const { fila, avisos } = mapearProducto(
       ficha({
         id: 7002,
-        name: 'iPhone 15 Pro Max 1TB',
-        sku: 'IP15PM1T',
-        price: '6300',
+        name: 'iPhone 13 128GB usado',
+        sku: 'IP13-128-U',
+        price: '630',
         images: [{ src: 'https://ejemplo/x.jpg' }],
-        meta_data: [{ key: '_li_precio_usd', value: '6300' }],
+        meta_data: [{ key: '_li_moneda', value: 'USD' }],
       }),
       TC,
     );
 
-    expect(avisos.map((a) => a.tipo)).toContain('usd_incoherente');
-    expect(avisos[0]!.detalle).toMatch(/9897000/);
+    expect(fila.precioUsdCentavos).toBe(63_000);
+    expect(fila.precioCentavos).toBe(99_000_000); // $990.000, no $630
+    // Y no se lo confunde con una ficha a medio cargar por tener pocos pesos.
+    expect(fila.fichaIncompleta).toBe(false);
+    expect(avisos).toHaveLength(0);
   });
 
-  it('avisa cuando el USD esta cargado pero el precio en pesos quedo vacio', () => {
-    const { avisos } = mapearProducto(
+  it('la marca del plugin no distingue mayusculas', () => {
+    const { fila } = mapearProducto(
+      ficha({
+        id: 7005,
+        name: 'iPhone 11',
+        sku: 'IP11',
+        price: '380',
+        images: [{ src: 'https://ejemplo/x.jpg' }],
+        meta_data: [{ key: '_li_moneda', value: 'usd' }],
+      }),
+      TC,
+    );
+    expect(fila.moneda).toBe('USD');
+  });
+
+  it('avisa cuando la ficha esta marcada en dolares pero sin precio cargado', () => {
+    const { fila, avisos } = mapearProducto(
       ficha({
         id: 7003,
         name: 'iPhone 13',
         sku: 'IP13',
         price: '',
         images: [{ src: 'https://ejemplo/x.jpg' }],
-        meta_data: [{ key: '_li_precio_usd', value: '520' }],
+        meta_data: [{ key: '_li_moneda', value: 'USD' }],
       }),
       TC,
     );
     expect(avisos.map((a) => a.tipo)).toContain('usd_sin_conversion');
+    // Sin numero no hay moneda que respetar: queda como ficha sin precio.
+    expect(fila.moneda).toBe('ARS');
+    expect(fila.precioUsdCentavos).toBe(null);
+    expect(fila.fichaIncompleta).toBe(true);
   });
 
   it('marca los 32 productos a $1 como precio sin cargar', () => {
@@ -165,20 +196,59 @@ describe('mapearProducto', () => {
     expect(fila.activo).toBe(false);
   });
 
-  it('sin cotizacion vigente no revienta: solo no verifica el precio en pesos', () => {
+  /*
+   * Sin cotizacion los pesos quedan en cero, y es a proposito: el unico numero
+   * que hay es el de dolares, y escribirlo como si fueran pesos es justo el
+   * error que esto arregla. La venta ya se niega a cobrar un producto en
+   * dolares sin cotizacion, asi que nadie lo vende a $600.
+   */
+  it('sin cotizacion vigente el precio en pesos queda en cero y avisa', () => {
     const { fila, avisos } = mapearProducto(
       ficha({
         id: 7004,
         name: 'iPhone 12',
         sku: 'IP12',
-        price: '900000',
+        price: '600',
         images: [{ src: 'https://ejemplo/x.jpg' }],
-        meta_data: [{ key: '_li_precio_usd', value: '600' }],
+        meta_data: [{ key: '_li_moneda', value: 'USD' }],
       }),
       null,
     );
     expect(fila.moneda).toBe('USD');
-    expect(avisos).toHaveLength(0);
+    expect(fila.precioUsdCentavos).toBe(60_000);
+    expect(fila.precioCentavos).toBe(0);
+    expect(avisos.map((a) => a.tipo)).toContain('usd_sin_conversion');
+    // Le falta la cotizacion, no la ficha: no se lo manda a revisar carga.
+    expect(fila.fichaIncompleta).toBe(false);
+  });
+});
+
+describe('cuerpoDePrecioParaWoo', () => {
+  it('en pesos manda pesos y limpia la marca del plugin', () => {
+    expect(
+      cuerpoDePrecioParaWoo({ moneda: 'ARS', precioCentavos: 1_250_000, precioUsdCentavos: null }),
+    ).toEqual({ regular_price: '12500.00', meta_data: [{ key: '_li_moneda', value: '' }] });
+  });
+
+  /*
+   * El numero que viaja son DOLARES. Mandarle los pesos a una ficha marcada en
+   * dolares la publica multiplicada otra vez por la cotizacion: $990.000
+   * leidos como US$ 990.000 son mil quinientos millones de pesos en la web.
+   */
+  it('en dolares manda dolares, no los pesos calculados', () => {
+    expect(
+      cuerpoDePrecioParaWoo({
+        moneda: 'USD',
+        precioCentavos: 99_000_000, // $990.000, lo que el POS muestra
+        precioUsdCentavos: 63_000, // US$ 630, lo que la web tiene que guardar
+      }),
+    ).toEqual({ regular_price: '630.00', meta_data: [{ key: '_li_moneda', value: 'USD' }] });
+  });
+
+  it('marcado en dolares pero sin dolares cargados viaja en pesos y sin marca', () => {
+    expect(
+      cuerpoDePrecioParaWoo({ moneda: 'USD', precioCentavos: 1_250_000, precioUsdCentavos: null }),
+    ).toEqual({ regular_price: '12500.00', meta_data: [{ key: '_li_moneda', value: '' }] });
   });
 });
 

@@ -8,9 +8,58 @@ import { usdAPesos } from '@/lib/dinero';
 import { normalizar } from '@/lib/texto';
 import { meta, precioACentavos, type WooProducto, type WooVariacion } from './tipos';
 
-/** Meta del plugin `lucas-cotizacion` (D22): el USD es la fuente de verdad. */
-export const META_PRECIO_USD = '_li_precio_usd';
+/**
+ * Meta del plugin `li-dolar`: esta ficha tiene el precio en dolares.
+ *
+ * **Cuando esta puesta, el numero de `price` de Woo SON DOLARES**, no pesos.
+ * La web los multiplica por la cotizacion al renderizar; en la base de Woo
+ * vive el precio pactado, que es el que no cambia cuando cambia el dolar.
+ *
+ * Es la convencion que esta en produccion con 54 productos. El POS tenia otra
+ * —un meta aparte con el precio en dolares y `price` en pesos— que no usaba
+ * ninguna ficha: cero productos. Dos convenciones sobre el MISMO campo, y el
+ * POS leia `price = 630` de un iPhone de US$ 630 y mostraba $630 en el
+ * mostrador. Una semana de fichas «mal cargadas» que estaban bien.
+ */
+export const META_MONEDA = '_li_moneda';
 export const META_COTIZACION_APLICADA = '_li_cotizacion_aplicada';
+
+/**
+ * El cuerpo de precio que WooCommerce tiene que recibir, en la convencion del
+ * plugin. Lo usan el alta (`publicar`) y el empuje de precio de la cola.
+ *
+ * `regular_price` y no `price`: `price` es de solo lectura en la API de
+ * WooCommerce —lo calcula ella segun haya oferta o no— y escribirlo no cambia
+ * nada.
+ *
+ * **En dolares viaja el numero en dolares**, con la marca `_li_moneda = USD` al
+ * lado: la web lo multiplica por la cotizacion al renderizar. Mandar pesos a una
+ * ficha marcada en dolares es el error de mil veces —$990.000 publicados como
+ * US$ 990.000, o sea mil quinientos millones— asi que el precio y la marca van
+ * SIEMPRE en el mismo PUT: no existe un instante en que la ficha tenga uno sin
+ * el otro.
+ *
+ * Cuando el producto esta en pesos la marca se limpia, en el mismo PUT y aunque
+ * nunca haya estado en dolares. Es lo que hace que empujar sea idempotente y
+ * que arregle una ficha que quedo marcada de antes.
+ *
+ * Un producto marcado en dolares pero sin precio en dolares cargado viaja en
+ * pesos y sin marca: es lo unico que no publica un numero falso. En `products`
+ * ese estado no existe —lo prohibe el CHECK `products_usd_ck`— pero esta
+ * funcion tambien la llama el alta, que arma el objeto a mano.
+ */
+export function cuerpoDePrecioParaWoo(p: {
+  moneda: 'ARS' | 'USD';
+  precioCentavos: number;
+  precioUsdCentavos: number | null;
+}): { regular_price: string; meta_data: { key: string; value: string }[] } {
+  const enDolares = p.moneda === 'USD' && p.precioUsdCentavos !== null && p.precioUsdCentavos > 0;
+  const centavos = enDolares ? p.precioUsdCentavos! : p.precioCentavos;
+  return {
+    regular_price: (centavos / 100).toFixed(2),
+    meta_data: [{ key: META_MONEDA, value: enDolares ? 'USD' : '' }],
+  };
+}
 
 /** Categorias cuyos productos son servicios, no mercaderia (D24). */
 export const CATEGORIAS_SERVICIO = ['servicio tecnico', 'servicios', 'telefonia'];
@@ -99,31 +148,45 @@ export function mapearProducto(p: WooProducto, tcCentavos: number | null): Resul
   const gestionaStock = aBooleano(p.manage_stock);
   const stock = p.stock_quantity ?? 0;
 
-  const precioCentavos = precioACentavos(p.price ?? p.regular_price);
+  const precioDeLaFicha = precioACentavos(p.price ?? p.regular_price);
 
-  // --- Dolares (D22) ---------------------------------------------------
-  const usdCrudo = meta(p, META_PRECIO_USD);
-  const precioUsdCentavos = usdCrudo === undefined ? null : precioACentavos(usdCrudo) || null;
+  /* --- Dolares (D22, D62) ----------------------------------------------
+   *
+   * Con la marca del plugin puesta, el numero de la ficha ES el precio en
+   * dolares. Los pesos no se leen: **se calculan**, con la misma cuenta que
+   * hace la web al renderizar. Asi el mostrador y la vidriera dicen lo mismo
+   * y ninguno de los dos guarda un numero que el dolar deja viejo.
+   *
+   * Ya no hay nada que cruzar entre dos cifras —antes se comparaba el precio
+   * en pesos de la ficha contra el USD por la cotizacion, y se avisaba si no
+   * se condecian—: hay un solo numero y una sola fuente.
+   */
+  const enDolares = String(meta(p, META_MONEDA) ?? '').toUpperCase() === 'USD';
+  const precioUsdCentavos = enDolares ? precioDeLaFicha || null : null;
   const moneda: 'ARS' | 'USD' = precioUsdCentavos ? 'USD' : 'ARS';
 
-  if (precioUsdCentavos && tcCentavos) {
-    const esperado = usdAPesos(precioUsdCentavos, tcCentavos);
-    if (precioCentavos === 0) {
-      avisar('usd_sin_conversion', `USD cargado pero el precio en pesos esta vacio`);
-    } else {
-      // Tolerancia amplia: la cotizacion se reescribe dos veces por dia y el
-      // precio puede quedar de la corrida anterior. Lo que buscamos es el
-      // error de magnitud, no la diferencia de unos pesos.
-      const razon = esperado / precioCentavos;
-      if (razon > 1.5 || razon < 0.66) {
-        avisar(
-          'usd_incoherente',
-          `Precio en pesos ${precioCentavos / 100} no se condice con USD ${
-            precioUsdCentavos / 100
-          } al TC ${tcCentavos / 100} (esperado ${esperado / 100})`,
-        );
-      }
-    }
+  /*
+   * Sin cotizacion no se inventa el precio en pesos.
+   *
+   * Dejarlo en cero es lo unico honesto: poner el numero de dolares como si
+   * fueran pesos es exactamente el error que esto vino a arreglar —un iPhone
+   * de US$ 630 a $630— y es el que se paga caro. La venta ya se niega a cobrar
+   * un producto en dolares sin cotizacion, asi que nadie lo vende a ciegas.
+   */
+  const precioCentavos = precioUsdCentavos
+    ? tcCentavos
+      ? usdAPesos(precioUsdCentavos, tcCentavos)
+      : 0
+    : precioDeLaFicha;
+
+  if (enDolares && !precioUsdCentavos) {
+    avisar('usd_sin_conversion', 'Marcada en dolares pero sin precio cargado');
+  }
+  if (precioUsdCentavos && !tcCentavos) {
+    avisar(
+      'usd_sin_conversion',
+      `USD ${precioUsdCentavos / 100} sin cotizacion cargada: no se puede calcular el precio en pesos`,
+    );
   }
 
   // --- Calidad de carga -------------------------------------------------
@@ -165,7 +228,13 @@ export function mapearProducto(p: WooProducto, tcCentavos: number | null): Resul
       soloMostrador,
       // Un servicio no lleva stock y su precio lo pone el cajero en la venta.
       precioEditable: esServicio,
-      fichaIncompleta: !sku || !imagenUrl || precioCentavos < PISO_PRECIO_PLAUSIBLE_CENTAVOS,
+      // Un producto en dolares tiene precio aunque sus pesos sean cero: los
+      // pesos son un calculo, y sin cotizacion no se pueden hacer. Mirar esa
+      // cifra marcaria los 54 usados como fichas sin precio.
+      fichaIncompleta:
+        !sku ||
+        !imagenUrl ||
+        (!precioUsdCentavos && precioCentavos < PISO_PRECIO_PLAUSIBLE_CENTAVOS),
     },
     avisos,
   };
