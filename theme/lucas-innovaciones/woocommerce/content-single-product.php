@@ -26,7 +26,7 @@ if ( post_password_required() ) {
 }
 
 $li_id     = $product->get_id();
-$li_nombre = li_nombre_publico( $product->get_name() );
+$li_nombre = li_nombre_web( $product );
 $li_marca  = li_marca_producto( $li_id );
 $li_sku    = $product->get_sku();
 $li_imgs   = array_values( array_filter( array_merge( array( $product->get_image_id() ), $product->get_gallery_image_ids() ) ) );
@@ -145,7 +145,16 @@ if ( li_es_usado( $li_id ) ) {
 					</details>
 				<?php endif; ?>
 
-				<?php if ( $li_desc_ok && ( $product->get_description() || $product->get_short_description() ) ) : ?>
+				<?php $li_seo = li_seo_producto( $li_id ); ?>
+				<?php if ( $li_seo && ! empty( $li_seo['descripcion'] ) ) : ?>
+					<?php // Descripción curada (seo/productos): manda sobre la cargada, que en varios productos es de otro. ?>
+					<details class="li-acc__item"<?php echo $li_specs ? '' : ' open'; ?>>
+						<summary>Descripción <?php echo li_ds_icono( 'chevron-d', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></summary>
+						<div class="li-acc__text">
+							<?php echo wp_kses_post( $li_seo['descripcion'] ); ?>
+						</div>
+					</details>
+				<?php elseif ( $li_desc_ok && ( $product->get_description() || $product->get_short_description() ) ) : ?>
 					<details class="li-acc__item"<?php echo $li_specs ? '' : ' open'; ?>>
 						<summary>Descripción <?php echo li_ds_icono( 'chevron-d', 18 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></summary>
 						<div class="li-acc__text">

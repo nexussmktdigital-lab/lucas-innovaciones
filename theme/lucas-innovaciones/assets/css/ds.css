@@ -655,6 +655,10 @@ body.li-filtros-abiertos { overflow: hidden; }
 .li-acc__rows dd { margin: 0; color: var(--li-fg-1); }
 .li-acc__text { padding: 0 18px 16px; font-size: 14px; color: var(--li-fg-2); line-height: var(--li-lh-body); }
 .li-acc__text p { margin: 0 0 10px; }
+.li-acc__text ul { margin: 0 0 10px; padding-left: 18px; }
+.li-acc__text li { margin: 0 0 4px; }
+.li-acc__text li::marker { color: var(--li-green); }
+.li-acc__text strong { color: var(--li-fg-1); font-weight: 600; }
 
 .li-pdp__related { margin-top: 48px; }
 @media (min-width: 768px) { .li-pdp__related { margin-top: 64px; } }

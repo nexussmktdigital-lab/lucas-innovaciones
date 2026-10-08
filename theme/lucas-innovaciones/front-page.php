@@ -56,7 +56,7 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 						<?php if ( $li_m ) : ?>
 							<span class="li-card__brand"><?php echo esc_html( $li_m ); ?></span>
 						<?php endif; ?>
-						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_publico( $li_dest->get_name() ) ); ?></span>
+						<span class="li-hero__float-name"><?php echo esc_html( li_nombre_web( $li_dest ) ); ?></span>
 						<?php echo li_ds_precio( $li_dest, 'sm' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 					</a>
 				<?php endif; ?>
