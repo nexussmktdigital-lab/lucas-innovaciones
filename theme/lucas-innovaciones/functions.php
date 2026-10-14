@@ -33,4 +33,5 @@ if ( class_exists( 'WooCommerce' ) ) {
 	require_once LI_DIR . '/inc/celulares.php';
 	require_once LI_DIR . '/inc/seo.php';
 	require_once LI_DIR . '/inc/precio.php';
+	require_once LI_DIR . '/inc/emails.php';
 }
