@@ -2543,3 +2543,85 @@ se firma —las cuotas, el saldo, la conformidad— no se tocó.
 
 Quedó medido: seis casos, del iPhone pagado al peor caso de doce cuotas con
 cuatro renglones y recargo, todos en 296mm.
+
+## Cobrar una venta en dólares reventaba, y nadie lo sabía
+
+Apareció armando el plan canje, no buscándolo. El canje en dólares viaja por el
+mismo camino que un pago en billetes, así que fui a ver cómo llegaba ese dato al
+servidor. No llegaba.
+
+La pantalla de cobro arma el pago con `montoUsdCentavos` y
+`cotizacionCentavos` —los dólares que entraron y el dólar del día— y los manda.
+El esquema de la acción del servidor no los declaraba, y **zod descarta en
+silencio lo que no declara**. El pago llegaba al dominio sin ellos, el dominio
+los escribía como `null`, y la base tiene un check que los exige en un pago en
+dólares: la venta se rechazaba con un error de Postgres, con el cliente
+enfrente.
+
+Lo comprobé antes de tocar nada, parseando la entrada real contra el esquema:
+
+    lo que manda la pantalla:   { medio: 'dolares', montoCentavos: 62800000,
+                                  montoUsdCentavos: 40000, cotizacionCentavos: 157100 }
+    lo que sobrevive al esquema: { medio: 'dolares', montoCentavos: 62800000 }
+
+**Por qué ningún test lo agarró.** Los hay, y buenos: `confirmar.test.ts` prueba
+el cobro en dólares contra la base real, con el cajón de dólares y todo. Pero
+prueba el **dominio**, al que se le pasan los datos a mano. El agujero estaba en
+la capa de arriba —la acción del servidor— que no tiene tests propios porque
+necesita sesión. Y el único recorrido en dólares con e2e era el **cobro de una
+deuda**, que va por otro lado y no toca este esquema.
+
+Es la cuarta vez en este proyecto que el error vive en la intersección que
+ningún test visita, y la primera en que la intersección es entre dos capas y no
+entre dos funciones. La lección nueva: **un esquema de validación que descarta
+en silencio es un lugar donde se pierden datos sin que nada falle cerca**. El
+dominio no puede defenderse —le llega un objeto bien formado al que le falta
+algo— y la base se entera demasiado tarde para decir algo útil.
+
+Quedó cubierto con un e2e que vende en dólares de punta a punta, y lo verifiqué
+rompiéndolo: sin el arreglo, la venta no entra.
+
+## El canje: un pago que no es plata
+
+Lo que el local pidió: recibir un teléfono como parte de pago. Para el sistema
+son dos hechos y ninguno de los dos se podía registrar sin romper algo. Los
+tres atajos disponibles eran todos malos, y vale dejarlos escritos porque son
+los que uno intenta primero:
+
+- **Cargarlo como efectivo** deja el cajón con seiscientos dólares que no
+  existen. El arqueo pide justificar una diferencia inventada, que es
+  exactamente el problema que había sacado la semana pasada.
+- **Cargarlo como cuenta corriente** le inventa al cliente una deuda que no
+  tiene, y aparece en Fiado, en el semáforo y en los recordatorios.
+- **Vender al precio neto** (US$ 400 en vez de US$ 1.000) no registra nada
+  falso sobre la plata, pero la facturación del día queda corta y el margen de
+  esa venta sale deformado.
+
+El medio nuevo resuelve el primer hecho reusando una idea que ya estaba: la
+cuenta corriente también suma al total y no mueve ninguna cuenta. El segundo lo
+hace el alta, en la misma transacción.
+
+**Dos restricciones en la base, y no solo validación en el código.** Un canje
+tiene su equipo y ningún otro medio tiene uno; los dólares del canje vienen con
+su cotización o no vienen. Sin la primera se puede grabar un canje de US$ 600
+contra nada —un descuento disfrazado que no deja ni plata ni mercadería— y el
+agujero solo se ve al cerrar el mes.
+
+## PGlite dejó pasar una migración que PostgreSQL rechaza
+
+El medio nuevo es un valor nuevo en un enum, y los checks lo nombran. En PGlite
+—la base de los tests— las migraciones corrieron sin una queja. Contra el
+PostgreSQL de verdad:
+
+    unsafe use of new value "canje" of enum type medio_pago
+    hint: New enum values must be committed before they can be used.
+
+No se puede usar un valor nuevo de enum hasta que se confirma la transacción que
+lo creó. Partir la migración en dos archivos no alcanza: **Drizzle corre todas
+las pendientes en una sola transacción**. La salida es comparar `medio::text`,
+que no usa el valor del enum.
+
+Lo que importa de esto no es el casteo: es que **la base de los tests no es la
+base de producción**, y hay una clase entera de errores que solo aparecen
+corriendo las migraciones donde van a correr. Estuvo a un paso de ser un deploy
+que se cae a la mitad y deja el esquema a medias.

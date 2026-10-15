@@ -104,6 +104,7 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
 
       {resumen.porMedio.length > 0 ||
       resumen.fiadoCentavos > 0 ||
+      resumen.canjeCentavos > 0 ||
       resumen.gastosCentavos > 0 ||
       resumen.retirosCentavos > 0 ||
       resumen.devolucionesCentavos > 0 ||
@@ -189,6 +190,7 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
           {/* Lo que NO entró ni salió del cajón, separado para que nadie lo
               sume al conteo de los billetes. */}
           {resumen.fiadoCentavos > 0 ||
+          resumen.canjeCentavos > 0 ||
           resumen.cobrosDeFiadoCentavos > 0 ||
           resumen.gastosDeOtraCuentaCentavos > 0 ? (
             <dl className="mt-2 flex flex-col gap-1 border-t border-(--color-borde) pt-2 text-sm text-(--color-tinta-suave)">
@@ -204,6 +206,12 @@ async function TurnoAbierto({ sesionId, abiertaEn }: { sesionId: string; abierta
                 <div className="flex justify-between">
                   <dt>Fiado en el turno · no entró plata</dt>
                   <dd className="tabular">{formatearARS(resumen.fiadoCentavos)}</dd>
+                </div>
+              ) : null}
+              {resumen.canjeCentavos > 0 ? (
+                <div className="flex justify-between">
+                  <dt>Recibido en canje · entró mercadería, no plata</dt>
+                  <dd className="tabular">{formatearARS(resumen.canjeCentavos)}</dd>
                 </div>
               ) : null}
               {resumen.cobrosDeFiadoCentavos > 0 ? (

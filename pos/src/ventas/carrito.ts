@@ -288,7 +288,41 @@ export type MedioPago =
   | 'dolares'
   | 'cheque'
   | 'mercadopago'
-  | 'cuenta_corriente';
+  | 'cuenta_corriente'
+  | 'canje';
+
+/**
+ * El equipo que el cliente entrega como parte de pago.
+ *
+ * Se da de alta con la venta, en la misma transacción: un alta sin venta sería
+ * stock que nadie entregó, y una venta sin alta sería un pago contra nada.
+ *
+ * **El valor de canje es el costo.** Es lo que el local pagó por ese teléfono
+ * —en mercadería, no en plata— y es contra ese número que se va a calcular el
+ * margen el día que se venda. El precio de venta es otra decisión y va aparte.
+ */
+export interface EquipoRecibido {
+  /** Modelo y estado, como se escribe en el catálogo. */
+  nombre: string;
+  /**
+   * IMEI o número de serie.
+   *
+   * Es lo único que distingue dos equipos del mismo modelo, y el catálogo real
+   * ya los nombra así: «iPhone 13 Pro 128gb 100% (5072)». Va al nombre del
+   * producto y al comprobante que firma el cliente.
+   */
+  imei?: string | null;
+  categoria?: string | null;
+  marca?: string | null;
+  /**
+   * A cuánto se va a vender, en la moneda del canje.
+   *
+   * Opcional: si no viene, queda al valor de canje y alguien le pone el precio
+   * después. Es mejor que frenar el cobro con el cliente enfrente por un
+   * número que todavía no se decidió.
+   */
+  precioVentaCentavos?: number | null;
+}
 
 export interface Pago {
   medio: MedioPago;
@@ -305,6 +339,8 @@ export interface Pago {
   /** Solo `dolares`: la cotización con la que se convirtió, congelada. */
   cotizacionCentavos?: number | null;
   monetaryAccountId?: string | null;
+  /** Solo `canje`: el equipo que entró. Sin esto el canje no se puede grabar. */
+  equipoRecibido?: EquipoRecibido | null;
   /** Solo tarjeta: el Posnet es un aparato aparte, el POS solo registra. */
   marcaTarjeta?: string | null;
   cuotas?: number | null;
@@ -401,6 +437,20 @@ export function problemasDelCobro(
     problemas.push(
       'Falta cuántos dólares entraron. Si no hay cotización cargada, cargala en Dólar (F9).',
     );
+    return problemas;
+  }
+
+  /*
+   * Un canje tiene que decir qué equipo entró.
+   *
+   * La base lo exige con un check, pero ahí ya es tarde: la venta revienta con
+   * el cliente enfrente y un mensaje de Postgres. Acá se dice qué falta.
+   */
+  const canjesSinEquipo = pagos.filter(
+    (p) => p.medio === 'canje' && !(p.equipoRecibido?.nombre ?? '').trim(),
+  ).length;
+  if (canjesSinEquipo > 0) {
+    problemas.push('Falta decir qué equipo entra en el canje: el modelo, y el IMEI si lo tenés.');
     return problemas;
   }
 
