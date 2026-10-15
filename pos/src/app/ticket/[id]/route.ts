@@ -23,6 +23,7 @@ import {
   creditPlans,
   customers,
   installments,
+  products,
   saleItems,
   salePayments,
   sales,
@@ -93,11 +94,30 @@ export async function GET(
     .select({
       medio: salePayments.medio,
       montoCentavos: salePayments.montoCentavos,
+      montoUsdCentavos: salePayments.montoUsdCentavos,
       marcaTarjeta: salePayments.marcaTarjeta,
       cuotas: salePayments.cuotas,
+      equipoRecibido: products.nombre,
     })
     .from(salePayments)
+    .leftJoin(products, eq(products.id, salePayments.productoRecibidoId))
     .where(eq(salePayments.saleId, id));
+
+  /*
+   * El equipo que el cliente entregó en parte de pago.
+   *
+   * Es la única forma de pago que se imprime, y a propósito: las otras son
+   * asunto interno, pero un canje es un teléfono que el cliente dejó en el
+   * mostrador y del que no se lleva otra constancia que este papel.
+   */
+  const pagoEnCanje = pagos.find((p) => p.medio === 'canje');
+  const canje = pagoEnCanje
+    ? {
+        descripcion: pagoEnCanje.equipoRecibido ?? 'Equipo recibido',
+        montoCentavos: pagoEnCanje.montoUsdCentavos ?? pagoEnCanje.montoCentavos,
+        moneda: (pagoEnCanje.montoUsdCentavos ? 'USD' : 'ARS') as 'USD' | 'ARS',
+      }
+    : null;
 
   // Los medios de pago no se imprimen; de ellos solo sale lo que quedó fiado,
   // que es lo que el cliente necesita saber de esta compra.
@@ -150,6 +170,7 @@ export async function GET(
       montoCentavos: c.montoCentavos,
     })),
     monedaDeLaDeuda,
+    canje,
     recargoCentavos: cuotas[0]?.recargoCentavos ?? 0,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
   };

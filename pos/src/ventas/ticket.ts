@@ -84,6 +84,23 @@ export interface DatosDelTicket {
    */
   monedaDeLaDeuda?: 'ARS' | 'USD';
   /**
+   * El equipo que el cliente entregó en parte de pago, si entregó uno.
+   *
+   * **Es la única excepción a «los medios de pago no se imprimen».** Las otras
+   * formas de pago son asunto interno —cómo se compuso el pago no le cambia
+   * nada al cliente— pero un canje no es una forma de pago: es un teléfono que
+   * el cliente dejó en el mostrador y del que no se lleva nada más que este
+   * papel. Lo pidió el local y es lo correcto: sin esto, el único registro de
+   * que entregó un equipo está del lado del negocio.
+   */
+  canje?: {
+    /** Modelo y estado, con el IMEI, como entró al catálogo. */
+    descripcion: string;
+    /** Lo que se le reconoció, en la moneda en que se pactó. */
+    montoCentavos: number;
+    moneda: 'ARS' | 'USD';
+  } | null;
+  /**
    * Lo que se cobró por financiar, en la moneda de la deuda.
    *
    * Va **solo en el acuerdo de pago**, desglosado: el que firma un saldo de
@@ -122,6 +139,7 @@ const NOMBRE_DEL_MEDIO: Record<string, string> = {
   cheque: 'Cheque',
   mercadopago: 'Mercado Pago',
   cuenta_corriente: 'Cuenta corriente',
+  canje: 'Canje',
 };
 
 export function nombreDelMedio(medio: string): string {
@@ -449,6 +467,30 @@ function hojaDelComprobante(
       : '';
 
   /*
+   * El equipo que el cliente entregó en parte de pago.
+   *
+   * Va en los **dos** papeles. En el del cliente porque es su única constancia
+   * de que dejó un teléfono —no se lleva nada más— y en el acuerdo porque es
+   * parte de cómo se saldó la compra, y el papel que respalda el saldo tiene
+   * que explicar de dónde salió la diferencia.
+   */
+  const bloqueDeCanje = datos.canje
+    ? `
+  <section class="cuotas">
+    <div class="cuotas-encabezado">
+      <span class="etiqueta">ENTREGÓ EN PARTE DE PAGO</span>
+    </div>
+    <div class="cuota">
+      <span class="cuota-n"></span>
+      <span class="cuota-fecha">${escapar(datos.canje.descripcion)}</span>
+      <span class="cuota-monto">${escapar(
+        (datos.canje.moneda === 'USD' ? formatearUSD : formatearARS)(datos.canje.montoCentavos),
+      )}</span>
+    </div>
+  </section>`
+    : '';
+
+  /*
    * A partir de cinco cuotas la lista va en dos columnas.
    *
    * Con doce cuotas —el plan más largo que ofrece la pantalla— y tres o cuatro
@@ -560,6 +602,7 @@ function hojaDelComprobante(
     <div class="cifra">${escapar(cifra(totalCentavos))}</div>
   </div>
 
+  ${bloqueDeCanje}
   ${bloqueDeCuotas}
   ${bloqueDeSaldoSinPlan}
 

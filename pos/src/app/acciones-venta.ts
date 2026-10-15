@@ -33,7 +33,23 @@ const medioPago = z.enum([
   'cheque',
   'mercadopago',
   'cuenta_corriente',
+  'canje',
 ]);
+
+/**
+ * El equipo que entra en un canje, tal como lo manda la pantalla.
+ *
+ * Los topes son los mismos del alta de productos: lo que ataja acá es lo
+ * grosero —un nombre vacío, un IMEI de doscientos dígitos— y el dominio lo
+ * vuelve a validar, porque esto llega del navegador (D28).
+ */
+const equipoRecibido = z.object({
+  nombre: z.string().trim().min(2).max(200),
+  imei: z.string().trim().max(40).nullish(),
+  categoria: z.string().trim().max(100).nullish(),
+  marca: z.string().trim().max(100).nullish(),
+  precioVentaCentavos: z.number().int().positive().nullish(),
+});
 
 const esquemaVenta = z.object({
   lineas: z
@@ -52,7 +68,21 @@ const esquemaVenta = z.object({
       z.object({
         medio: medioPago,
         montoCentavos: z.number().int().positive(),
+        /*
+         * Solo `dolares` y `canje`: los billetes o el valor pactado, y la
+         * cotización del día.
+         *
+         * Faltaban en el esquema, y zod descarta en silencio lo que no
+         * declara: la pantalla los mandaba, el servidor los perdía y el pago
+         * llegaba a la base sin ellos. La base lo rechaza —tiene un check que
+         * los exige— así que **cobrar una venta en dólares reventaba**. No se
+         * había notado porque el único camino en dólares con tests de punta a
+         * punta era el cobro de una deuda, que va por otro lado.
+         */
+        montoUsdCentavos: z.number().int().positive().nullish(),
+        cotizacionCentavos: z.number().int().positive().nullish(),
         monetaryAccountId: z.string().uuid().nullish(),
+        equipoRecibido: equipoRecibido.nullish(),
         marcaTarjeta: z.string().max(40).nullish(),
         cuotas: z.number().int().positive().max(60).nullish(),
         ultimos4: z
@@ -206,7 +236,10 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
       pagos: validado.data.pagos.map((p) => ({
         medio: p.medio,
         montoCentavos: p.montoCentavos,
+        montoUsdCentavos: p.montoUsdCentavos ?? null,
+        cotizacionCentavos: p.cotizacionCentavos ?? null,
         monetaryAccountId: p.monetaryAccountId ?? null,
+        equipoRecibido: p.equipoRecibido ?? null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,
@@ -396,7 +429,10 @@ export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<R
       pagos: d.pagos.map((p) => ({
         medio: p.medio,
         montoCentavos: p.montoCentavos,
+        montoUsdCentavos: p.montoUsdCentavos ?? null,
+        cotizacionCentavos: p.cotizacionCentavos ?? null,
         monetaryAccountId: p.monetaryAccountId ?? null,
+        equipoRecibido: p.equipoRecibido ?? null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,

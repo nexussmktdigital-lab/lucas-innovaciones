@@ -459,6 +459,46 @@ del cliente: quien compró tres veces tiene tres planes, y un plan anulado no
 aparece. Desde la ficha se reimprime el comprobante y se anula o se devuelve,
 con la misma regla del turno de la lista.
 
+### Plan canje
+
+El cliente paga parte de la compra con su teléfono usado: se vende un iPhone de
+US$ 1.000, se le recibe el suyo por US$ 600 y los US$ 400 restantes entran por
+donde sea. Para el sistema son **dos hechos**, y esa es toda la dificultad:
+
+1. **Un pago que no es plata.** Cierra la venta y no entra a ningún cajón, igual
+   que la cuenta corriente. Es la razón de ser del medio: cargarlo como efectivo
+   deja el arqueo con seiscientos dólares que no existen y obliga a quien cuenta
+   a justificar una diferencia inventada; cargarlo como cuenta corriente le
+   inventa al cliente una deuda que no tiene, y aparece en Fiado y en los
+   recordatorios de WhatsApp.
+2. **Una entrada de mercadería con costo.** El equipo va a stock al valor de
+   canje, y contra ese número se calcula el margen el día que se venda.
+
+**El valor de canje es el costo**, y se escribe a mano: el local recibe «al
+costo o menos que el costo» según cómo venga el equipo. En una venta en dólares
+se tipea en dólares, como el resto.
+
+**El equipo sale a la venta en el acto**, también en la web —lo pidió el local—
+y la publicación viaja por la cola, así que no depende de que WooCommerce
+conteste con el cliente enfrente. Queda en la lista de fichas a completar junto
+con la foto, que es lo único que le falta.
+
+**El IMEI va en el nombre**, entre paréntesis al final, que es exactamente como
+el catálogo real nombra los usados: «iPhone 13 Pro 128gb 100% (5072)». Es lo
+único que distingue dos equipos del mismo modelo, y si falta, el alta rechaza el
+segundo por nombre repetido y la pantalla pide agregarlo.
+
+**Todo en la transacción de la venta.** Un alta sin venta sería stock que nadie
+entregó; una venta sin alta sería un pago contra nada. Y la base lo sostiene con
+dos restricciones: un canje tiene su equipo y ningún otro medio tiene uno
+(`sale_payments_canje_ck`), y los dólares del canje vienen con su cotización o
+no vienen (`sale_payments_dolares_ck`).
+
+En el arqueo va en su propia línea —«Recibido en canje · entró mercadería, no
+plata»— por la misma razón que el fiado: sin separarlo, el total vendido no
+coincide con lo contado y quien cierra tiene que justificar una diferencia que
+no existe.
+
 ### El comprobante y el acuerdo de pago
 
 Son **dos papeles de la misma venta**, no dos ventas. Cada uno hace un trabajo
@@ -535,8 +575,11 @@ Tres reglas sobre qué sale impreso, las tres pedidas por el local:
   lado de un mismo producto son la discusión que el papel tiene que evitar—.
   Antes el papel era todo o nada: alcanzaba una funda de $15.000 para que el
   iPhone también saliera convertido.
-- **Los medios de pago no se imprimen.** Cómo se compuso el pago es asunto
-  interno; en el papel va lo que entregó y lo que queda debiendo. Con cuotas, va
+- **Los medios de pago no se imprimen, salvo el canje.** Cómo se compuso el pago
+  es asunto interno; en el papel va lo que entregó y lo que queda debiendo. La
+  excepción es el equipo que el cliente dejó en parte de pago: no es una forma
+  de pago sino un teléfono que entregó, y este papel es su única constancia.
+  Sale con el modelo, el IMEI y por cuánto se lo recibió, en los dos papeles. Con cuotas, va
   además cada vencimiento con su monto: sin eso el cliente no sabe cuándo tiene
   que volver, y la fecha la discute cada uno de memoria.
 - **El saldo y las cuotas van en la moneda de la deuda, que puede no ser la del
@@ -1880,6 +1923,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un precio en dólares viaja a Woo **en dólares**, con su marca al lado | `src/woo/cola.test.ts`, `src/catalogo/publicar.test.ts` |
 | Un precio en pesos limpia la marca de dólares de la ficha | `src/woo/cola.test.ts` |
 | El alta en la tienda no le suma el recargo a un precio en dólares | `src/catalogo/publicar.test.ts` |
+| Un canje suma a la venta y **no** entra al cajón | `src/ventas/canje.test.ts`, `e2e/canje.spec.ts` |
+| El equipo recibido entra a stock con el valor de canje como costo | `src/ventas/canje.test.ts` |
+| Un canje sin equipo no se puede grabar, ni desde la base | `src/ventas/canje.test.ts` |
+| Si la venta falla, el equipo recibido no queda dado de alta | `src/ventas/canje.test.ts` |
+| Cobrar una venta en dólares funciona de punta a punta | `e2e/canje.spec.ts` |
 | Una venta fiada imprime los dos papeles juntos, sin un segundo botón | `src/ventas/ticket.test.ts`, `e2e/fiado-dolares.spec.ts` |
 | Una venta pagada imprime una sola hoja | `src/ventas/ticket.test.ts` |
 | Un equipo sin categoría ni marca tiene piso por el nombre | `src/ventas/cordura.test.ts` |

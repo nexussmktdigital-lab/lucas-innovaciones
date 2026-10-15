@@ -59,6 +59,18 @@ const CUENTA_CORRIENTE = {
   tipoCuenta: null,
 };
 
+/**
+ * Plan canje: entra un teléfono como parte de pago.
+ *
+ * Va aparte de `MEDIOS` por lo mismo que la cuenta corriente: no mueve
+ * ninguna cuenta. La diferencia es que acá sí entra algo —el equipo— y por eso
+ * el renglón pide más que un monto.
+ */
+const CANJE = {
+  medio: 'canje' as MedioPago,
+  tipoCuenta: null,
+};
+
 const MARCAS = ['Visa', 'Mastercard', 'Amex', 'Naranja', 'Cabal', 'Otra'];
 
 /** Clave de idempotencia: una por intento de cobro, estable entre reintentos. */
@@ -168,6 +180,31 @@ export default function Cobro({
   function agregarMedio(medio: MedioPago, tipoCuenta: Cuenta['tipo'] | null) {
     const faltante = Math.max(0, cobro?.faltanteCentavos ?? totales.totalCentavos);
 
+    /*
+     * El canje arranca vacío y con su equipo en blanco.
+     *
+     * Vacío porque el valor de canje lo decide quien atiende mirando el
+     * teléfono, no lo que falta de la cuenta: se recibe «al costo o menos que
+     * el costo» según cómo venga el equipo.
+     */
+    if (medio === 'canje') {
+      setPagos((p) => [
+        ...p,
+        {
+          clave: nuevaClave(),
+          medio,
+          montoCentavos: 0,
+          ...(ventaEnDolares
+            ? { montoUsdCentavos: 0, cotizacionCentavos: tcCentavos }
+            : {}),
+          equipoRecibido: { nombre: '', imei: '' },
+          texto: '',
+          monetaryAccountId: null,
+        },
+      ]);
+      return;
+    }
+
     // En dólares el renglón arranca vacío: lo que falta en pesos convertido a
     // dólares da un número con centavos que nadie va a pagar en billetes.
     if (medio === 'dolares') {
@@ -221,7 +258,12 @@ export default function Cobro({
      * salen de la cotización. Es el único renglón del cobro donde el número
      * del campo no es el que suma contra el total.
      */
-    if (pago?.medio === 'dolares') {
+    /*
+     * En una venta en dólares el canje también se tipea en dólares: el equipo
+     * se recibe «por US$ 600», no por su equivalente en pesos de hoy. En una
+     * venta en pesos se tipea en pesos, como cualquier otro renglón.
+     */
+    if (pago?.medio === 'dolares' || (pago?.medio === 'canje' && pago.cotizacionCentavos)) {
       const tc = pago.cotizacionCentavos ?? tcCentavos;
       actualizar(clave, {
         texto,
@@ -257,7 +299,23 @@ export default function Cobro({
       pagos: pagos.map((p) => ({
         medio: p.medio,
         montoCentavos: p.montoCentavos,
+        /*
+         * Los dólares y la cotización viajan siempre que los haya.
+         *
+         * Son dos hechos distintos —lo que el cliente entregó y lo que eso
+         * valía ese día— y la base los exige en un pago en dólares. Sin
+         * mandarlos, la venta se rechazaba al insertar el pago.
+         */
+        montoUsdCentavos: p.montoUsdCentavos ?? null,
+        cotizacionCentavos: p.cotizacionCentavos ?? null,
         monetaryAccountId: p.monetaryAccountId ?? null,
+        equipoRecibido:
+          p.medio === 'canje' && p.equipoRecibido?.nombre.trim()
+            ? {
+                nombre: p.equipoRecibido.nombre.trim(),
+                imei: (p.equipoRecibido.imei ?? '').trim() || null,
+              }
+            : null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
       })),
@@ -305,7 +363,7 @@ export default function Cobro({
         <p className="cifra text-5xl leading-none">{formatearARS(totales.totalCentavos)}</p>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
-          {(puedeFiar ? [...MEDIOS, CUENTA_CORRIENTE] : MEDIOS).map(({ medio, tipoCuenta }) => (
+          {(puedeFiar ? [...MEDIOS, CUENTA_CORRIENTE, CANJE] : [...MEDIOS, CANJE]).map(({ medio, tipoCuenta }) => (
             <button
               key={medio}
               type="button"
@@ -346,8 +404,13 @@ export default function Cobro({
                         en billetes
                       </span>
                     ) : null}
+                    {p.medio === 'canje' ? (
+                      <span className="ml-1 text-xs font-normal text-(--color-tinta-suave)">
+                        entra un equipo
+                      </span>
+                    ) : null}
                   </span>
-                  {p.medio === 'dolares' ? (
+                  {p.medio === 'dolares' || (p.medio === 'canje' && p.cotizacionCentavos) ? (
                     <span aria-hidden="true" className="text-(--color-tinta-suave)">
                       US$
                     </span>
@@ -388,6 +451,50 @@ export default function Cobro({
                       <>Escribí cuántos dólares entraron.</>
                     )}
                   </p>
+                ) : null}
+
+                {/* El equipo que entra. Sin esto el canje no se puede grabar:
+                    un pago que no deja ni plata ni deuda tiene que dejar, por
+                    lo menos, el teléfono que lo justifica. */}
+                {p.medio === 'canje' ? (
+                  <div className="mt-2 flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={p.equipoRecibido?.nombre ?? ''}
+                      placeholder="Equipo que entra · ej.: iPhone 13 128gb 87%"
+                      aria-label="Equipo que entra en el canje"
+                      onChange={(e) =>
+                        actualizar(p.clave, {
+                          equipoRecibido: {
+                            ...(p.equipoRecibido ?? { nombre: '' }),
+                            nombre: e.target.value,
+                          },
+                        })
+                      }
+                      className="min-h-10 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-sm"
+                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={p.equipoRecibido?.imei ?? ''}
+                        placeholder="IMEI o serie"
+                        aria-label="IMEI del equipo que entra"
+                        onChange={(e) =>
+                          actualizar(p.clave, {
+                            equipoRecibido: {
+                              ...(p.equipoRecibido ?? { nombre: '' }),
+                              imei: e.target.value,
+                            },
+                          })
+                        }
+                        className="tabular min-h-10 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-papel) px-2 text-sm"
+                      />
+                    </div>
+                    <p className="text-xs text-(--color-tinta-suave)">
+                      Entra a stock con el valor del canje como costo, y sale a la venta. El IMEI
+                      es lo que distingue dos equipos iguales: va en el nombre y en el comprobante.
+                    </p>
+                  </div>
                 ) : null}
 
                 {p.medio === 'credito' || p.medio === 'debito' ? (

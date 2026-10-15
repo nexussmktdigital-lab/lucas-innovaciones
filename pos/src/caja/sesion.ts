@@ -145,6 +145,16 @@ export interface ResumenDeSesion {
   porMedio: { medio: string; cantidad: number; totalCentavos: number }[];
   /** Lo que se fió en el turno. Es facturación, pero no entró plata. */
   fiadoCentavos: number;
+  /**
+   * Lo que se pagó con mercadería en el turno (plan canje).
+   *
+   * Es facturación y tampoco entró plata: lo que entró fue un teléfono. Va
+   * aparte por la misma razón que el fiado —sin separarlo, el total vendido no
+   * coincide con lo contado y quien cierra tiene que justificar una diferencia
+   * que no existe— y porque es lo único que hay que ir a buscar al estante
+   * cuando se audita un turno.
+   */
+  canjeCentavos: number;
   /** Cuánto de lo que entró vino de deudas viejas y no de ventas de hoy. */
   cobrosDeFiadoCentavos: number;
   /**
@@ -304,6 +314,17 @@ export async function resumenDeSesion(
     `),
   );
 
+  const [canje] = filasDe<{ total: string | number }>(
+    await db.execute(sql`
+      SELECT COALESCE(SUM(p.monto_centavos), 0) AS total
+        FROM sale_payments p
+        JOIN sales s ON s.id = p.sale_id
+       WHERE s.cash_session_id = ${sesionId}
+         AND s.estado = 'completed'
+         AND p.medio = 'canje'
+    `),
+  );
+
   const [cobros] = filasDe<{ total: string | number }>(
     await db.execute(sql`
       SELECT COALESCE(SUM(monto_centavos), 0) AS total
@@ -369,6 +390,7 @@ export async function resumenDeSesion(
       totalCentavos: Number(f.total),
     })),
     fiadoCentavos: Number(fiado?.total ?? 0),
+    canjeCentavos: Number(canje?.total ?? 0),
     cobrosDeFiadoCentavos: Number(cobros?.total ?? 0),
     gastosCentavos: Number(salidas?.gastos ?? 0),
     retirosCentavos: Number(salidas?.retiros ?? 0),

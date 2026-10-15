@@ -47,6 +47,7 @@ import {
   type ProductoVendible,
   type VarianteVendible,
 } from './carrito';
+import { registrarEquipoRecibido } from './canje';
 import { anotarDeuda } from '@/fiado/cuenta';
 import { crearPlan, validarRecargo, type Cadencia } from '@/fiado/plan';
 import { pesosAUsdExacto } from '@/lib/dinero';
@@ -197,6 +198,16 @@ export function tipoDeCuentaPara(
       return 'mercadopago';
     case 'cuenta_corriente':
       // No entra plata: queda como deuda del cliente.
+      return null;
+    /*
+     * El canje tampoco mueve una cuenta: lo que entró es un teléfono.
+     *
+     * Es la razón de ser del medio. Cargarlo como efectivo deja el cajón con
+     * seiscientos dólares que no existen y obliga a quien arquea a inventar
+     * una justificación; cargarlo como cuenta corriente le inventa al cliente
+     * una deuda que no tiene. Lo que entró va a stock, no a la caja.
+     */
+    case 'canje':
       return null;
   }
 }
@@ -637,15 +648,49 @@ export async function confirmarVenta(
       })),
     );
 
+    /*
+     * 11 bis. Los equipos que entraron por canje.
+     *
+     * Van ANTES de los pagos porque cada pago de canje guarda el id del
+     * producto que recibió, y la base lo exige: un canje sin equipo no se
+     * puede grabar (`sale_payments_canje_ck`). En la misma transacción que la
+     * venta: un alta sin venta sería stock que nadie entregó.
+     */
+    const recibidoPorPago = new Map<number, string>();
+    for (const [i, p] of solicitud.pagos.entries()) {
+      if (p.medio !== 'canje') continue;
+      if (!p.equipoRecibido) {
+        throw new ErrorVenta('Un canje tiene que decir qué equipo entró.', 'datos_invalidos');
+      }
+      const recibido = await registrarEquipoRecibido(tx, {
+        equipo: p.equipoRecibido,
+        montoCentavos: p.montoCentavos,
+        montoUsdCentavos: p.montoUsdCentavos ?? null,
+        usuarioId: solicitud.vendedorId,
+        ventaId,
+        ip: solicitud.ip ?? null,
+      });
+      recibidoPorPago.set(i, recibido.productId);
+    }
+
     // 12. Los pagos.
     await tx.insert(salePayments).values(
-      solicitud.pagos.map((p) => ({
+      solicitud.pagos.map((p, i) => ({
         saleId: ventaId,
         medio: p.medio,
         monetaryAccountId: p.monetaryAccountId ?? null,
         montoCentavos: p.montoCentavos,
-        montoUsdCentavos: p.medio === 'dolares' ? (p.montoUsdCentavos ?? null) : null,
-        cotizacionCentavos: p.medio === 'dolares' ? (p.cotizacionCentavos ?? null) : null,
+        /*
+         * Los dólares del canje se guardan igual que los de un pago en
+         * billetes: lo entregado y lo que valía ese día son dos hechos
+         * distintos, y sin el segundo no se puede reconstruir el primero
+         * cuando el dólar se mueva.
+         */
+        montoUsdCentavos:
+          p.medio === 'dolares' || p.medio === 'canje' ? (p.montoUsdCentavos ?? null) : null,
+        cotizacionCentavos:
+          p.medio === 'dolares' || p.medio === 'canje' ? (p.cotizacionCentavos ?? null) : null,
+        productoRecibidoId: recibidoPorPago.get(i) ?? null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,

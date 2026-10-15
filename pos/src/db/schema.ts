@@ -54,6 +54,14 @@ export const medioPagoEnum = pgEnum('medio_pago', [
   'cheque',
   'mercadopago',
   'cuenta_corriente',
+  /**
+   * Plan canje: el cliente paga parte de la compra con su telefono usado.
+   *
+   * Suma al total de la venta y **no mueve ninguna cuenta**, igual que la
+   * cuenta corriente. La diferencia con esa es que acá sí entra algo: el
+   * equipo, que va a `producto_recibido_id` y a stock.
+   */
+  'canje',
 ]);
 
 export const tipoCuentaEnum = pgEnum('tipo_cuenta_monetaria', [
@@ -528,6 +536,14 @@ export const salePayments = pgTable(
     montoUsdCentavos: bigint({ mode: 'number' }),
     /** Solo `dolares`: la cotizacion con la que se convirtio, congelada. */
     cotizacionCentavos: bigint({ mode: 'number' }),
+    /**
+     * Solo `canje`: el equipo que el cliente entrego como parte de pago.
+     *
+     * Es lo que hace auditable un pago que no mueve ni plata ni deuda: sin
+     * esto no queda rastro de a cambio de que se dio. El producto se crea con
+     * la venta, en la misma transaccion.
+     */
+    productoRecibidoId: uuid().references(() => products.id),
     /** Solo tarjeta: el Posnet es un aparato aparte, el POS unicamente registra. */
     marcaTarjeta: text(),
     cuotas: integer(),
@@ -542,10 +558,35 @@ export const salePayments = pgTable(
      * los trae. Sin esto, un pago en dolares sin el dato queda como un pago en
      * pesos cualquiera y el cajon de dolares no se entera.
      */
+    /*
+     * Un pago en dolares trae los dolares y su cotizacion. Un canje los trae
+     * si la venta fue en dolares, y entonces trae los dos: con uno solo no se
+     * puede reconstruir nada. Ningun otro medio los trae.
+     */
     check(
       'sale_payments_dolares_ck',
-      sql`(${t.medio} = 'dolares') = (${t.montoUsdCentavos} IS NOT NULL AND ${t.cotizacionCentavos} IS NOT NULL)`,
+      sql`CASE ${t.medio}::text
+            WHEN 'dolares' THEN ${t.montoUsdCentavos} IS NOT NULL AND ${t.cotizacionCentavos} IS NOT NULL
+            WHEN 'canje'   THEN (${t.montoUsdCentavos} IS NULL) = (${t.cotizacionCentavos} IS NULL)
+            ELSE ${t.montoUsdCentavos} IS NULL AND ${t.cotizacionCentavos} IS NULL
+          END`,
     ),
+    /*
+     * Un canje tiene su equipo, y ningun otro medio tiene uno.
+     *
+     * Sin esta guarda se puede grabar un canje de US$ 600 contra nada —un
+     * descuento disfrazado que no deja ni plata ni mercaderia— y el agujero
+     * solo se ve al cerrar el mes.
+     *
+     * Compara `medio::text` y no `medio`: PostgreSQL no deja usar un valor
+     * nuevo de enum hasta que se confirma la transaccion que lo creo, y las
+     * migraciones corren todas juntas en una.
+     */
+    check(
+      'sale_payments_canje_ck',
+      sql`(${t.medio}::text = 'canje') = (${t.productoRecibidoId} IS NOT NULL)`,
+    ),
+    index('sale_payments_recibido_idx').on(t.productoRecibidoId),
     check(
       'sale_payments_usd_positivo_ck',
       sql`${t.montoUsdCentavos} IS NULL OR ${t.montoUsdCentavos} > 0`,
