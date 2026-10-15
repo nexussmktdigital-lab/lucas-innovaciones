@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Lucas Innovaciones — Tienda
- * Description: Reglas chicas de la tienda que no dependen del tema: el slug de un producto nuevo se arma sin el IMEI del final del nombre, y peso y medidas por defecto por categoría para cotizar envíos; y un ajuste de stock por diferencia para el POS (atómico y sin duplicar en los reintentos).
- * Version: 1.4.0
+ * Description: Reglas chicas de la tienda que no dependen del tema: el slug de un producto nuevo se arma sin el IMEI del final del nombre, y peso y medidas por defecto por categoría para cotizar envíos; un ajuste de stock por diferencia para el POS (atómico y sin duplicar en los reintentos); y el envío estándar se oculta cuando corresponde el envío gratis.
+ * Version: 1.5.0
  * Requires PHP: 8.1
  * Author: Lucas Innovaciones
  *
@@ -338,3 +338,23 @@ add_action(
 	2
 );
 add_action( 'update_option_li_dolar_multiplo', static fn() => do_action( 'litespeed_purge_all' ) );
+
+/*
+ * Envíos.
+ *
+ * Desde el mínimo del envío gratis, WooCommerce ofrece el envío gratis y
+ * también el envío estándar pago: el cliente podría elegir pagar de más sin
+ * darse cuenta. Cuando el gratis está disponible se saca el estándar
+ * (flat_rate) y queda todo lo demás, incluido el retiro en el local.
+ */
+add_filter(
+	'woocommerce_package_rates',
+	static function ( array $tarifas ): array {
+		$hay_gratis = (bool) array_filter( $tarifas, static fn( $t ) => 'free_shipping' === $t->get_method_id() );
+		if ( ! $hay_gratis ) {
+			return $tarifas;
+		}
+		return array_filter( $tarifas, static fn( $t ) => 'flat_rate' !== $t->get_method_id() );
+	},
+	100
+);
