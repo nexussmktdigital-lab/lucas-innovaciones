@@ -236,8 +236,10 @@ producto nuevo. Sin ella el alta funciona igual, escrita a mano.
 
 ### 7. Aplicar las migraciones
 
-Las migraciones **no corren solas**, y es a propósito (**punto 4**). Se corren
-desde tu máquina, apuntando a la base de producción **sin tocar tu `.env`**:
+**El despliegue las aplica solo** (**punto 4**), así que con el primer deploy la
+base queda armada. Si hace falta correrlas a mano —antes de desplegar, o para
+registrar algo que se hizo por otro lado— se hace desde tu máquina, apuntando a
+la base de producción **sin tocar tu `.env`**:
 
 ```powershell
 $env:DATABASE_URL="<la cadena DIRECTA de Neon, sin -pooler>"
@@ -484,22 +486,48 @@ Sin `CRON_SECRET` la ruta devuelve 503 y **no pasa ninguna de las dos cosas**.
 
 ---
 
-## 4. Migraciones: primero la base, después el código
+## 4. Migraciones: corren solas al desplegar
 
-Las migraciones **no corren solas al desplegar**, y es a propósito: una
-construcción en Vercel no tendría por qué poder escribir en la base de
-producción, y una vista previa terminaría migrándola sin que nadie lo pida.
+**No hay que acordarse de nada.** La construcción de producción en Vercel aplica
+las migraciones pendientes antes de construir, y si fallan **la construcción
+falla**: Vercel deja en pie el despliegue anterior, que funciona. Desplegar
+código que espera un esquema que no está es exactamente lo que esto impide.
 
-La contrapartida es que se puede desplegar código que espera una columna que
-todavía no existe. En el mostrador eso se ve como una pantalla rota sin
-explicación, que es la peor forma de enterarse.
+Lo hace `src/db/migrar-al-desplegar.ts`, que Vercel ejecuta por el script
+`vercel-build` del `package.json`.
 
-El orden es siempre el mismo:
+> **Esto antes no corría solo, y la razón era buena**: una vista previa
+> comparte las variables de entorno con producción, así que cada rama que
+> alguien desplegara habría migrado la base del local. Se cambió después de
+> que el orden al revés dejara al mostrador sin poder cobrar una tarde entera.
+> El riesgo de la vista previa se resuelve mirando `VERCEL_ENV`, que es lo que
+> faltaba.
+
+Qué construcción migra y cuál no:
+
+| Construcción | ¿Migra? |
+|---|---|
+| Producción en Vercel | **Sí** |
+| Vista previa (`preview`) o `development` en Vercel | No: comparte las variables con producción |
+| `npm run build` en cualquier máquina, o en CI | No: no es una construcción de Vercel |
+| Producción **sin** `DATABASE_URL` | No, y **corta la construcción**: saltear en silencio sería volver al problema |
+
+Dos variables opcionales en Vercel:
+
+- **`DATABASE_URL_MIGRACIONES`** — si está, se usa para migrar en vez de
+  `DATABASE_URL`. Sirve para apuntar las migraciones a la conexión **directa**
+  de Neon y dejar la del pooler para la aplicación.
+- **`SALTAR_MIGRACION_AL_DESPLEGAR=1`** — la salida de emergencia: desplegar sin
+  migrar. Tiene que ser exactamente `1`.
+
+### A mano, cuando hace falta
+
+Sigue andando, y es lo que hay que usar para migrar **antes** de desplegar o
+para registrar algo que se corrió por otro lado:
 
 ```bash
-npm run db:migrate                                          # 1. la base
-npm run produccion:chequear -- --env .env.produccion --produccion   # 2. confirmar
-git push                                                     # 3. el código
+npm run db:migrate                                          # la base
+npm run produccion:chequear -- --env .env.produccion --produccion   # confirmar
 ```
 
 El chequeo compara las migraciones que el código trae contra las que la base

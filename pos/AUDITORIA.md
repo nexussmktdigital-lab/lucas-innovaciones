@@ -2625,3 +2625,47 @@ Lo que importa de esto no es el casteo: es que **la base de los tests no es la
 base de producción**, y hay una clase entera de errores que solo aparecen
 corriendo las migraciones donde van a correr. Estuvo a un paso de ser un deploy
 que se cae a la mitad y deja el esquema a medias.
+
+## El despliegue que dejó al mostrador sin poder cobrar
+
+El plan canje agregó una columna a `sale_payments`. El código se desplegó, la
+migración no se corrió, y como esa columna se escribe en **toda** venta —no
+solo en las de canje— el POS falló en cada cobro con «No se pudo confirmar la
+venta». El local estuvo sin poder vender hasta que alguien pegó el SQL en el
+editor de Neon.
+
+Lo primero que hay que decir es que **el runbook ya decía el orden correcto**,
+y con la advertencia exacta escrita:
+
+> «se puede desplegar código que espera una columna que todavía no existe. En
+> el mostrador eso se ve como una pantalla rota sin explicación, que es la peor
+> forma de enterarse.»
+
+Y yo indiqué el orden al revés: mergear —que despliega— y después migrar. No
+fue que faltara la documentación: fue que quien daba las instrucciones no la
+siguió. Una advertencia escrita en un documento no protege de nada si el paso
+que la viola se puede dar igual.
+
+**Por qué ahora corre sola.** La decisión original de que las migraciones no
+corrieran al desplegar tenía una razón buena: una vista previa de Vercel
+comparte las variables de entorno con producción, así que cada rama que alguien
+desplegara habría migrado la base del local. Pero esa razón no exigía dejar el
+orden en manos de una persona: exigía **distinguir qué construcción es**, que es
+lo que no se había hecho. `VERCEL_ENV` lo dice. Solo migra la de producción.
+
+Dos detalles que valen más que el cambio en sí:
+
+- **Si la migración falla, la construcción falla.** Vercel deja en pie el
+  despliegue anterior, que funciona. El modo de falla pasa de «el mostrador no
+  puede cobrar» a «el deploy no salió», que es infinitamente mejor.
+- **En producción sin `DATABASE_URL` corta en vez de saltear.** Saltear en
+  silencio reconstruiría el problema entero: una construcción que pasa, un
+  despliegue que sale, y el esquema atrás.
+
+**Lo que queda sin resolver, y conviene tenerlo presente.** El canje es una
+función opcional y se llevó puesto el mostrador entero, porque dejé que una
+columna nueva entrara en el camino de toda venta. Que la migración corra sola
+cierra la ventana, no la causa: el próximo esquema que no coincida con el
+código va a romper lo que toque. La defensa de fondo sería que una venta en
+efectivo no necesite saber de columnas que solo usa el canje, y eso no está
+hecho.
