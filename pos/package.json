@@ -10,6 +10,7 @@
     "dev": "next dev",
     "demo": "tsx src/scripts/demo.ts",
     "build": "next build",
+    "vercel-build": "tsx src/db/migrar-al-desplegar.ts && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

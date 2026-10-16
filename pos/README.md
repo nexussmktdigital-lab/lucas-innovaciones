@@ -1923,6 +1923,8 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un precio en dólares viaja a Woo **en dólares**, con su marca al lado | `src/woo/cola.test.ts`, `src/catalogo/publicar.test.ts` |
 | Un precio en pesos limpia la marca de dólares de la ficha | `src/woo/cola.test.ts` |
 | El alta en la tienda no le suma el recargo a un precio en dólares | `src/catalogo/publicar.test.ts` |
+| Solo la construcción de producción migra la base; una vista previa no | `src/db/migrar-al-desplegar.test.ts` |
+| En producción sin `DATABASE_URL` la construcción falla, no saltea | `src/db/migrar-al-desplegar.test.ts` |
 | Un canje suma a la venta y **no** entra al cajón | `src/ventas/canje.test.ts`, `e2e/canje.spec.ts` |
 | El equipo recibido entra a stock con el valor de canje como costo | `src/ventas/canje.test.ts` |
 | Un canje sin equipo no se puede grabar, ni desde la base | `src/ventas/canje.test.ts` |
