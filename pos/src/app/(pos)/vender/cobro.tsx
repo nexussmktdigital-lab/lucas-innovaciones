@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { aCentavos, formatearARS, formatearUSD, pesosAUsdExacto, usdAPesos } from '@/lib/dinero';
-import PlanDeCuotas, { recargoDelPlan, type PlanElegido } from './plan-de-cuotas';
+import PlanDeCuotas, { type PlanElegido } from './plan-de-cuotas';
 import {
   calcularCobro,
   problemasDelCobro,
@@ -322,18 +322,8 @@ export default function Cobro({
       descuentoGlobal,
       clienteId,
       idempotencyKey: clave.current,
-      // Sin fiado no hay nada que financiar, y el servidor lo ignora igual. El
-      // recargo se elige en porcentaje y viaja como monto, calculado sobre lo
-      // fiado de este momento: así no queda viejo si cambió algún pago.
-      plan:
-        hayFiado && plan
-          ? {
-              frecuencia: plan.frecuencia,
-              dias: plan.dias,
-              cuotas: plan.cuotas,
-              recargoCentavos: recargoDelPlan(fiadoEnDeudaCentavos, plan),
-            }
-          : null,
+      // Sin fiado no hay nada que financiar, y el servidor lo ignora igual.
+      plan: hayFiado ? plan : null,
     });
 
     if (!r.ok) {
