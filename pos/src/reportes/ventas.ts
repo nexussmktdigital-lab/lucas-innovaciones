@@ -21,6 +21,7 @@
 import { sql } from 'drizzle-orm';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import type { MedioPago } from '@/ventas/carrito';
+import { facturadoPorMedio, type MedioDeLoFacturado } from './plata';
 import { instante, type Periodo } from './periodo';
 
 /**
@@ -42,7 +43,15 @@ export interface ResumenDeVentas {
   cantidadDeVentas: number;
   unidades: number;
   totalCentavos: number;
-  /** Lo vendido a cuenta corriente: facturado, pero no entró plata. */
+  /**
+   * Lo que quedó a cuenta corriente: facturado, pero no entró plata.
+   *
+   * Es la parte fiada, no el total de las ventas fiadas. Un iPhone de
+   * $1.000.000 con $400.000 de anticipo y el resto en cuotas deja $600.000 de
+   * deuda, y eso es lo que dice este número: antes sumaba el millón entero
+   * —`SUM(total) WHERE tipo = 'fiado'`— y la pantalla informaba como plata
+   * futura una plata que ya estaba en el cajón.
+   */
   fiadoCentavos: number;
   /** Total dividido por cantidad de ventas. Cero si no hubo ventas. */
   ticketPromedioCentavos: number;
@@ -73,8 +82,13 @@ export async function resumenDeVentas(
              AND s2.fecha >= ${instante(p.desde)} AND s2.fecha < ${instante(p.hasta)}
         ), 0)                                                                AS unidades,
         COALESCE(SUM(s.total_centavos) FILTER (WHERE s.estado = 'completed'), 0)  AS total,
-        COALESCE(SUM(s.total_centavos) FILTER (
-          WHERE s.estado = 'completed' AND s.tipo = 'fiado'
+        COALESCE((
+          SELECT SUM(pg.monto_centavos)
+            FROM sale_payments pg
+            JOIN sales s2 ON s2.id = pg.sale_id
+           WHERE s2.estado = 'completed'
+             AND pg.medio = 'cuenta_corriente'
+             AND s2.fecha >= ${instante(p.desde)} AND s2.fecha < ${instante(p.hasta)}
         ), 0)                                                                AS fiado,
         COUNT(*) FILTER (WHERE s.estado = 'cancelled')                       AS anuladas
       FROM sales s
@@ -96,74 +110,23 @@ export async function resumenDeVentas(
   };
 }
 
-export interface VentaPorMedio {
-  medio: MedioPago;
-  cantidad: number;
-  totalCentavos: number;
-}
+export type VentaPorMedio = MedioDeLoFacturado;
 
 /**
- * Lo cobrado por cada medio de pago, **neto de vuelto**.
+ * Lo cobrado por cada medio de pago que **es plata**, neto de vuelto.
  *
- * La primera versión de esto sumaba el bruto de los renglones de pago, y en la
- * auditoría quedó a la vista lo que eso produce: una venta de $5.000 pagada con
- * un billete de $10.000 hacía figurar «Efectivo $10.000». Con dos ventas así, la
- * pantalla decía *vendido $23.000* arriba y *efectivo $30.000* abajo. Es el
- * mismo error que el hallazgo 22, ya corregido en el arqueo y reintroducido acá.
+ * Es el desglose completo de `facturadoPorMedio` sin los medios que facturan
+ * sin traer plata: la cuenta corriente, que es deuda, y el canje, que es un
+ * teléfono. Antes solo sacaba la cuenta corriente, así que un canje de
+ * $600.000 figuraba acá como si hubiera entrado plata; la nota al pie decía
+ * que todo lo listado había entrado, y no era cierto.
  *
- * El vuelto se resta **una vez por venta y no una por renglón de pago**: si
- * alguien paga con dos billetes cargados por separado, restarlo dos veces deja
- * el número en rojo. La cuenta corriente queda afuera porque no es plata que
- * entró, sino deuda; lo fiado se informa por su cuenta en el resumen.
- *
- * Lo que sí no incluye, y el arqueo sí, son los cobros de deudas viejas: esto
- * es un reporte de **ventas** del período, no del movimiento del cajón.
+ * Lo que no incluye, y el arqueo sí, son los cobros de deudas viejas: esto es
+ * un reporte de **ventas** del período, no del movimiento del cajón. Para la
+ * plata que entró de verdad está `flujoDelPeriodo`.
  */
 export async function ventasPorMedio(db: BaseDatos, p: Periodo): Promise<VentaPorMedio[]> {
-  const filas = filasDe<{ medio: MedioPago; cantidad: string | number; total: string | number }>(
-    await db.execute(sql`
-      WITH vueltos AS (
-        SELECT s.id,
-               GREATEST(
-                 COALESCE((
-                   SELECT SUM(pg.monto_centavos) FROM sale_payments pg WHERE pg.sale_id = s.id
-                 ), 0) - s.total_centavos,
-                 0
-               ) AS vuelto
-          FROM sales s
-         WHERE s.estado = 'completed'
-           AND s.fecha >= ${instante(p.desde)} AND s.fecha < ${instante(p.hasta)}
-      ),
-      pagos AS (
-        SELECT pg.sale_id,
-               pg.medio::text         AS medio,
-               count(*)               AS cantidad,
-               SUM(pg.monto_centavos) AS bruto
-          FROM sale_payments pg
-          JOIN sales s ON s.id = pg.sale_id
-         WHERE s.estado = 'completed'
-           AND pg.medio <> 'cuenta_corriente'
-           AND s.fecha >= ${instante(p.desde)} AND s.fecha < ${instante(p.hasta)}
-         GROUP BY pg.sale_id, pg.medio
-      )
-      SELECT g.medio,
-             SUM(g.cantidad) AS cantidad,
-             SUM(
-               g.bruto - CASE WHEN g.medio = 'efectivo'
-                              THEN COALESCE(v.vuelto, 0) ELSE 0 END
-             ) AS total
-        FROM pagos g
-        LEFT JOIN vueltos v ON v.id = g.sale_id
-       GROUP BY g.medio
-       ORDER BY total DESC
-    `),
-  );
-
-  return filas.map((f) => ({
-    medio: f.medio,
-    cantidad: Number(f.cantidad),
-    totalCentavos: Number(f.total),
-  }));
+  return (await facturadoPorMedio(db, p)).filter((m) => m.esPlata);
 }
 
 export interface ProductoVendido {

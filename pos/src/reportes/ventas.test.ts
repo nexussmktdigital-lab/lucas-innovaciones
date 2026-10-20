@@ -314,7 +314,9 @@ describe('todo tiene que cuadrar con lo vendido', () => {
     });
 
     const medios = await ventasPorMedio(db, TODO);
-    expect(medios).toEqual([{ medio: 'efectivo', cantidad: 1, totalCentavos: 5_000_00 }]);
+    expect(medios).toEqual([
+      { medio: 'efectivo', cantidad: 1, totalCentavos: 5_000_00, esPlata: true },
+    ]);
   });
 
   /* Restarlo una vez por renglón de pago dejaría el número en rojo. */
@@ -382,8 +384,18 @@ describe('por medio de pago', () => {
     await vender({ producto: celular, medio: 'transferencia' });
 
     const medios = await ventasPorMedio(db, TODO);
-    expect(medios[0]).toEqual({ medio: 'transferencia', cantidad: 1, totalCentavos: 380_000_00 });
-    expect(medios[1]).toEqual({ medio: 'efectivo', cantidad: 2, totalCentavos: 10_000_00 });
+    expect(medios[0]).toEqual({
+      medio: 'transferencia',
+      cantidad: 1,
+      totalCentavos: 380_000_00,
+      esPlata: true,
+    });
+    expect(medios[1]).toEqual({
+      medio: 'efectivo',
+      cantidad: 2,
+      totalCentavos: 10_000_00,
+      esPlata: true,
+    });
   });
 
   it('los pagos de una venta anulada no figuran', async () => {
