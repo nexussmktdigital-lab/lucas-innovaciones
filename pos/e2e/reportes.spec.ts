@@ -181,6 +181,108 @@ test('las tres planillas están y cada una dice para qué es', async ({ page }) 
   await expect(bajar).toContainText('Lo que salió en el período');
 });
 
+/**
+ * Lo facturado no es lo que entró.
+ *
+ * Es la distinción que el reporte no hacía: restaba los gastos de lo
+ * facturado, y un mes en que se fía mucho daba «ganancia» con el cajón vacío.
+ * Acá se arma el caso completo —una venta fiada con anticipo, un cobro de esa
+ * deuda y un gasto— y se mira que las dos cuentas salgan separadas.
+ */
+test('lo fiado se factura y no entra; el cobro de la deuda sí entra', async ({
+  page,
+  context,
+}) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  const cliente = `Cliente del reporte ${Date.now().toString().slice(-5)}`;
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(cliente);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByRole('link', { name: cliente })).toBeVisible({ timeout: 15_000 });
+
+  // Una venta mitad en efectivo y mitad fiada: $5.000 facturados, $2.000 que
+  // entran al cajón y $3.000 que quedan en la libreta.
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await buscador.press('Enter');
+
+  const opciones = await page.locator('#cliente option').allTextContents();
+  const i = opciones.findIndex((t) => t.includes(cliente));
+  expect(i).toBeGreaterThan(-1);
+  await page.locator('#cliente').selectOption({ index: i });
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').fill('2000');
+  // El renglón nuevo se prellena con lo que falta: los $3.000 restantes.
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+  await expect(cobro.getByText(/Le vas a fiar/)).toBeVisible();
+  await Promise.all([
+    context.waitForEvent('page'),
+    cobro.getByRole('button', { name: /Confirmar venta/ }).click(),
+  ]);
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  const facturado = page.getByRole('region', { name: 'Lo facturado y lo que entró' });
+  await page.goto('/reportes?periodo=hoy');
+  await expect(facturado).toBeVisible();
+
+  // Lo fiado figura en el desglose y dice que no es plata.
+  await expect(facturado).toContainText('Cuenta corriente');
+  await expect(facturado).toContainText('no traen plata');
+
+  // Ahora se cobra la deuda: eso sí es plata que entra en el período.
+  await page.goto('/fiado');
+  const fila = page.getByRole('listitem').filter({ hasText: cliente });
+  await fila.getByRole('button', { name: 'Recibir un pago' }).click();
+  await fila.getByLabel('¿Cuánto paga?').fill('2000');
+  await fila.getByRole('button', { name: 'Registrar el pago' }).click();
+  await expect(page.getByText(/Cobrado /)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/reportes?periodo=hoy');
+  await expect(facturado).toContainText('Cobros de fiado de antes');
+  await expect(
+    page.getByRole('region', { name: 'Con qué se cobraron las deudas' }),
+  ).toBeVisible();
+});
+
+test('en qué se gastó viene con la cuenta y los gastos grandes', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  const gasto = `Lote de iPhones ${Date.now().toString().slice(-5)}`;
+  await page.goto('/gastos');
+  await page.getByRole('button', { name: '+ Cargar un gasto' }).click();
+  const alta = page.getByRole('form', { name: 'Cargar un gasto' });
+  await alta.getByLabel('¿En qué se gastó?').fill(gasto);
+  await alta.getByLabel('Cuánto').fill('150000');
+  await alta.getByLabel('Categoría').selectOption({ label: 'Compra a proveedores' });
+  await alta.getByLabel('Con qué').selectOption('transferencia');
+  await alta.getByLabel('De qué cuenta salió').selectOption({ label: 'Banco' });
+  await alta.getByRole('button', { name: 'Guardar el gasto' }).click();
+  await expect(page.getByText(gasto).first()).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/reportes?periodo=hoy');
+  const seccion = page.getByRole('region', { name: 'Lo que salió' });
+  await expect(seccion).toBeVisible();
+
+  // La categoría contesta en qué; la cuenta, de dónde salió; y el detalle, a
+  // quién y por qué, que es la pregunta que sigue al total.
+  await expect(seccion).toContainText('Compra a proveedores');
+  await expect(seccion).toContainText('Banco');
+  await expect(seccion).toContainText(gasto);
+  await expect(seccion).toContainText('$ 150.000,00');
+});
+
 test('el vendedor no entra a los reportes', async ({ page }) => {
   await entrarComoVendedor(page);
 

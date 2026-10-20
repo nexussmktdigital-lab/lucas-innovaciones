@@ -225,6 +225,11 @@ async function csvDeGastos(db: BaseDatos, p: Periodo): Promise<string> {
     vencimiento: string | null;
     cargado_por: string;
     comprobante: string | null;
+    moneda: string;
+    usd: string | number | null;
+    tc: string | number | null;
+    cheque_numero: string | null;
+    cheque_recibido_de: string | null;
   }>(
     await db.execute(sql`
       SELECT
@@ -238,7 +243,12 @@ async function csvDeGastos(db: BaseDatos, p: Periodo): Promise<string> {
         cu.nombre                             AS cuenta,
         to_char(g.vencimiento, 'DD/MM/YYYY')  AS vencimiento,
         u.nombre                              AS cargado_por,
-        g.comprobante_url                     AS comprobante
+        g.comprobante_url                     AS comprobante,
+        g.moneda::text                        AS moneda,
+        g.monto_usd_centavos                  AS usd,
+        g.tc_aplicado_centavos                AS tc,
+        g.cheque_numero,
+        g.cheque_recibido_de
       FROM expenses g
       JOIN expense_categories cat ON cat.id = g.category_id
       JOIN users u ON u.id = g.cargado_por_id
@@ -251,10 +261,18 @@ async function csvDeGastos(db: BaseDatos, p: Periodo): Promise<string> {
     `),
   );
 
+  /*
+   * `Monto` es siempre pesos, también en un gasto en dólares: es la columna
+   * que el contador suma, y una que mezclara monedas daría un total que no es
+   * de ninguna. Los dólares y la cotización con la que se congelaron van en
+   * sus propias columnas, para poder reconstruir lo que de verdad salió.
+   */
   return armarCsv(
     [
       'Fecha', 'Categoria', 'Beneficiario', 'Descripcion', 'Monto',
-      'Estado', 'Medio', 'Cuenta', 'Vencimiento', 'Cargado por', 'Comprobante',
+      'Moneda', 'Dolares', 'Cotizacion',
+      'Estado', 'Medio', 'Cuenta', 'Cheque N', 'Cheque recibido de',
+      'Vencimiento', 'Cargado por', 'Comprobante',
     ],
     filas.map((f) => [
       f.fecha,
@@ -262,9 +280,14 @@ async function csvDeGastos(db: BaseDatos, p: Periodo): Promise<string> {
       f.beneficiario ?? '',
       f.descripcion,
       montoParaPlanilla(Number(f.monto)),
+      f.moneda,
+      f.usd === null ? '' : montoParaPlanilla(Number(f.usd)),
+      f.tc === null ? '' : montoParaPlanilla(Number(f.tc)),
       f.estado === 'pagado' ? 'Pagado' : 'Pendiente',
       f.medio ? nombreDelMedio(f.medio as MedioPago) : '',
       f.cuenta ?? '',
+      f.cheque_numero ?? '',
+      f.cheque_recibido_de ?? '',
       f.vencimiento ?? '',
       f.cargado_por,
       f.comprobante ?? '',

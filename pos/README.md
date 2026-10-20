@@ -1295,13 +1295,13 @@ porque «$180.000» no dice nada y «$180.000, 12% más que la semana pasada» s
 elige el período de un clic —hoy, ayer, últimos 7 días, este mes, el mes pasado,
 últimos 12 meses— o se escribe un rango a mano.
 
-Lo que muestra, en ese orden: vendido, ventas, ticket promedio y unidades; lo
-que se fio aparte, porque está facturado y esa plata no entró; vendido contra
-gastos pagados; por medio de pago; por categoría; qué se vendió, **ordenado por
-facturación y no por unidades** (veinte vidrios son más unidades que un celular
-y mucha menos plata, y lo que hay que reponer primero es lo segundo); día por
-día; y mes a mes, sumando el histórico que quedó del sistema anterior para poder
-comparar con algo.
+Lo que muestra, en ese orden: vendido, ventas, ticket promedio y unidades; **lo
+facturado contra lo que entró** (abajo); por categoría; qué se vendió,
+**ordenado por facturación y no por unidades** (veinte vidrios son más unidades
+que un celular y mucha menos plata, y lo que hay que reponer primero es lo
+segundo); día por día; **en qué se gastó**, de qué cuenta salió y cuáles fueron
+los gastos grandes; y mes a mes, sumando el histórico que quedó del sistema
+anterior para poder comparar con algo.
 
 Los gráficos son barras en CSS. Sin librería: son quince filas y una barra es un
 `div` con un ancho en porcentaje; una dependencia de 90 kB sería más código que
@@ -1319,6 +1319,60 @@ mantener y una pantalla más lenta en la tablet del mostrador.
 - **Lo fiado se factura aunque no entre plata.** Cuenta como venta y se informa
   aparte, porque confundir las dos cosas es creer que entró plata que está en la
   libreta.
+
+### Lo facturado y lo que entró son dos cuentas distintas
+
+Esto era, hasta acá, un solo renglón: *vendido − gastos = diferencia*. Esa resta
+es mentira en los dos extremos.
+
+- **Lo facturado no es lo que entró.** Una venta fiada factura y no trae un
+  peso; un canje tampoco, trae un teléfono. Un mes en que se fía mucho daba
+  «ganancia» con el cajón vacío.
+- **Lo que entró no es solo lo que se vendió.** Los cobros de fiado viejo son
+  plata de verdad que entra este mes aunque la venta haya sido en marzo. El
+  reporte de ventas los deja afuera, con razón —es un reporte de ventas— y así
+  no se veían en ninguna pantalla.
+
+Así que ahora son dos paneles, uno al lado del otro:
+
+```
+Facturado = cobrado en el acto + fiado + canje     ← el negocio
+Entró     = cobrado en el acto + cobros de fiado   ← la caja
+```
+
+El desglose de **cómo se pagó lo facturado** lista todos los medios, incluidos
+la cuenta corriente y el canje, marcados «no entró» y en gris. Los lista porque
+**la suma de la tabla da exactamente lo facturado**: un desglose que esconde
+renglones obliga al lector a creer que la diferencia es redondeo, y no lo es.
+
+Dos cosas que se arreglaron de paso, las dos del mismo tipo —números que decían
+ser una cosa y eran otra—:
+
+- **El canje figuraba entre los medios cobrados**, debajo de una nota que decía
+  que todo lo listado había entrado. Un canje de $600.000 hacía creer que
+  habían entrado $600.000 que estaban en la vitrina.
+- **Lo fiado sumaba la venta entera y no la parte fiada.** Un iPhone de
+  $1.000.000 con $400.000 de anticipo informaba el millón entero como plata que
+  no entró, cuando $400.000 ya estaban en el cajón. Ahora sale de los renglones
+  de pago a cuenta corriente, que es lo que de verdad quedó debiendo.
+
+Lo cobrado en billetes de dólar se informa aparte y **no se suma**: un total de
+dos monedas no es un total (D62).
+
+### En qué se gastó
+
+«Compra a proveedores: $8.400.000» no contesta la pregunta que sigue, que es a
+quién y por qué. Son tres paneles:
+
+- **En qué**, por categoría, con el total del período en el título.
+- **De dónde salió**, por cuenta: cuánto del cajón, cuánto del banco. Son los
+  números que se cruzan contra el resumen bancario y contra el arqueo.
+- **Los gastos más grandes**, uno por uno, con beneficiario y fecha. Diez
+  alcanzan: en un mes, los diez primeros suelen ser casi todo. Un gasto en
+  dólares se muestra en dólares.
+
+Lo que quedó **pendiente de pago** se informa aparte y no entra en la resta: una
+factura que llegó no salió de ninguna cuenta.
 
 ### Cuánto quedó
 
@@ -1342,7 +1396,7 @@ Tres, del período elegido, que se bajan de un clic:
 |---|---|---|
 | **Ventas** | venta | Es lo que se le manda al contador. Las anuladas van marcadas y con el motivo: esconderlas haría que los números no se puedan conciliar con los de ningún otro lado. |
 | **Productos vendidos** | producto vendido | Con esto se arma cualquier análisis que el POS no traiga hecho, sin pedir una pantalla nueva. Trae costo y ganancia por renglón. |
-| **Gastos** | gasto | Lo que salió, con categoría, beneficiario y cuenta. |
+| **Gastos** | gasto | Lo que salió, con categoría, beneficiario y cuenta. `Monto` es siempre pesos —es la columna que el contador suma—; los dólares, la cotización congelada y los datos del cheque van en columnas propias. |
 
 Salen en el dialecto que Excel en castellano abre bien haciendo doble clic:
 **punto y coma**, **BOM** —sin él los acentos salen rotos— y **decimales con
@@ -2054,6 +2108,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Pagar después un gasto en dólares usa la cotización del día que se cargó, no la de hoy | `src/gastos/gastos.test.ts` |
 | Sin cotización no se carga un gasto en dólares: los pesos saldrían de la nada | `src/gastos/gastos.test.ts` |
 | El cheque guarda su número y de quién vino, y esos datos no se cuelgan de otro medio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| El desglose por medio suma exactamente lo facturado del período | `src/reportes/plata.test.ts` |
+| La cuenta corriente y el canje facturan y no cuentan como plata que entró | `src/reportes/plata.test.ts`, `e2e/reportes.spec.ts` |
+| Lo fiado es la parte fiada, no el total de la venta con anticipo | `src/reportes/plata.test.ts` |
+| Un cobro de fiado es plata del período aunque la venta sea de antes | `src/reportes/plata.test.ts`, `e2e/reportes.spec.ts` |
+| Lo cobrado en billetes de dólar no se suma al total en pesos | `src/reportes/plata.test.ts` |
+| Un gasto pendiente no cuenta como plata que salió | `src/reportes/plata.test.ts` |
 | Una transferencia entre cuentas no cambia el total del negocio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | No se transfiere más de lo que hay en la cuenta | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | El saldo guardado de cada cuenta coincide con sus movimientos | `src/gastos/gastos.test.ts` |

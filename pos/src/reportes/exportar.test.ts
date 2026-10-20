@@ -294,6 +294,57 @@ describe('la planilla de gastos', () => {
     expect(luz[encabezado.indexOf('Estado')]).toBe('Pendiente');
   });
 
+  /*
+   * El contador suma la columna `Monto`, y esa columna es siempre pesos: una
+   * que mezclara monedas daría un total que no es de ninguna. Los dólares y
+   * la cotización van aparte, que es lo que permite reconstruir meses después
+   * cuántos billetes salieron de verdad.
+   */
+  it('un gasto en dólares trae sus pesos, sus dólares y la cotización', async () => {
+    await registrarGasto(db, {
+      fecha: '2026-09-12',
+      categoryId: categoria,
+      descripcion: 'Lote de iPhones al proveedor',
+      montoUsdCentavos: 600_00,
+      tcAplicadoCentavos: 1_500_00,
+      estado: 'pagado',
+      medio: 'transferencia',
+      monetaryAccountId: caja,
+      usuarioId: duenio,
+    });
+
+    const filas = await planilla('gastos');
+    const e = filas[0]!;
+    const lote = filas.find((f) => f[e.indexOf('Descripcion')]?.includes('Lote de iPhones'))!;
+
+    expect(lote[e.indexOf('Moneda')]).toBe('USD');
+    expect(lote[e.indexOf('Monto')]).toBe('900000,00');
+    expect(lote[e.indexOf('Dolares')]).toBe('600,00');
+    expect(lote[e.indexOf('Cotizacion')]).toBe('1500,00');
+  });
+
+  it('un cheque trae su número y de quién vino', async () => {
+    await registrarGasto(db, {
+      fecha: '2026-09-13',
+      categoryId: categoria,
+      descripcion: 'Mercadería pagada con cheque',
+      montoCentavos: 450_000_00,
+      estado: 'pagado',
+      medio: 'cheque',
+      monetaryAccountId: caja,
+      chequeNumero: '0012345678',
+      chequeRecibidoDe: 'Clienta del lunes',
+      usuarioId: duenio,
+    });
+
+    const filas = await planilla('gastos');
+    const e = filas[0]!;
+    const ch = filas.find((f) => f[e.indexOf('Medio')] === 'Cheque')!;
+
+    expect(ch[e.indexOf('Cheque N')]).toBe('0012345678');
+    expect(ch[e.indexOf('Cheque recibido de')]).toBe('Clienta del lunes');
+  });
+
   /* Un gasto anulado no es plata que salió, igual que una venta anulada. */
   it('lo anulado no figura', async () => {
     await anularGasto(db, { gastoId: flete, motivo: 'Cargado dos veces', usuarioId: duenio });

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { nombreDelMedio } from '@/ventas/ticket';
 import {
   ErrorPeriodo,
@@ -23,9 +23,15 @@ import {
   resumenDeVentas,
   ventasPorCategoria,
   ventasPorDia,
-  ventasPorMedio,
   ventasPorVendedor,
 } from '@/reportes/ventas';
+import {
+  cobrosDeFiadoPorMedio,
+  facturadoPorMedio,
+  flujoDelPeriodo,
+  gastosMasGrandes,
+  gastosPorCuenta,
+} from '@/reportes/plata';
 import { EXPORTABLES } from '@/reportes/exportar';
 import BotonImprimir from '../caja/[id]/boton-imprimir';
 
@@ -64,21 +70,39 @@ export default async function PaginaReportes({
 
   const previo = periodoAnterior(periodo);
 
-  const [resumen, antes, medios, top, categorias, dias, gente, gastos, margen, meses] =
-    await Promise.all([
-      resumenDeVentas(db, periodo),
-      resumenDeVentas(db, previo),
-      ventasPorMedio(db, periodo),
-      productosVendidos(db, periodo, 15),
-      ventasPorCategoria(db, periodo),
-      ventasPorDia(db, periodo),
-      ventasPorVendedor(db, periodo),
-      gastosPorCategoria(db, periodo),
-      rentabilidad(db, periodo),
-      facturacionPorMes(db, 12),
-    ]);
+  const [
+    resumen,
+    antes,
+    top,
+    categorias,
+    dias,
+    gente,
+    gastos,
+    margen,
+    meses,
+    flujo,
+    comoSePago,
+    cobrosDeFiado,
+    salidasPorCuenta,
+    gastosGrandes,
+  ] = await Promise.all([
+    resumenDeVentas(db, periodo),
+    resumenDeVentas(db, previo),
+    productosVendidos(db, periodo, 15),
+    ventasPorCategoria(db, periodo),
+    ventasPorDia(db, periodo),
+    ventasPorVendedor(db, periodo),
+    gastosPorCategoria(db, periodo),
+    rentabilidad(db, periodo),
+    facturacionPorMes(db, 12),
+    flujoDelPeriodo(db, periodo),
+    facturadoPorMedio(db, periodo),
+    cobrosDeFiadoPorMedio(db, periodo),
+    gastosPorCuenta(db, periodo),
+    gastosMasGrandes(db, periodo, 10),
+  ]);
 
-  const gastadoCentavos = gastos.reduce((n, g) => n + g.totalCentavos, 0);
+  const noSonPlata = comoSePago.filter((m) => !m.esPlata);
   const elegido = leerNombreDePeriodo(nombre);
   const esRango = Boolean(desde && hasta);
   const queryDelPeriodo = esRango
@@ -122,88 +146,152 @@ export default async function PaginaReportes({
         />
       </section>
 
-      {resumen.fiadoCentavos > 0 || resumen.anuladas > 0 ? (
+      {/* Lo fiado ya no se cuenta acá: tiene su renglón en el desglose de
+          abajo, donde se lee contra el total en vez de al lado de él. */}
+      {resumen.anuladas > 0 ? (
         <p className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-3 text-sm text-(--color-tinta-suave)">
-          {resumen.fiadoCentavos > 0 ? (
-            <>
-              De lo vendido,{' '}
-              <strong className="tabular text-(--color-tinta)">
-                {formatearARS(resumen.fiadoCentavos)}
-              </strong>{' '}
-              se fio: está facturado, pero esa plata no entró.
-            </>
-          ) : null}
-          {resumen.anuladas > 0 ? (
-            <>
-              {resumen.fiadoCentavos > 0 ? ' ' : ''}
-              Se anularon <strong>{resumen.anuladas}</strong> venta
-              {resumen.anuladas === 1 ? '' : 's'}, que no cuentan en ningún número de esta
-              pantalla.
-            </>
-          ) : null}
+          Se anularon <strong>{resumen.anuladas}</strong> venta
+          {resumen.anuladas === 1 ? '' : 's'}, que no cuentan en ningún número de esta pantalla.
         </p>
       ) : null}
 
-      {/* El resultado del período: lo que entró contra lo que salió. */}
-      {gastadoCentavos > 0 ? (
-        <section
-          aria-label="Entró y salió"
-          className="rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-4"
-        >
-          <dl className="flex flex-col gap-1 text-sm">
-            <Renglon termino="Vendido" valor={formatearARS(resumen.totalCentavos)} />
-            <Renglon termino="Gastos pagados" valor={`−${formatearARS(gastadoCentavos)}`} rojo />
-            <div className="mt-1 flex justify-between border-t border-(--color-borde) pt-2 font-bold">
-              <dt>Diferencia</dt>
-              <dd
-                className={`tabular ${
-                  resumen.totalCentavos - gastadoCentavos >= 0
-                    ? 'text-(--color-ok)'
-                    : 'text-(--color-error)'
-                }`}
-              >
-                {formatearARS(resumen.totalCentavos - gastadoCentavos)}
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-2 text-xs text-(--color-tinta-suave)">
-            No es la ganancia: acá no está descontado lo que costó la mercadería, y lo fiado suma
-            sin haber entrado.
-          </p>
-        </section>
-      ) : null}
+      {/*
+        Las dos cuentas del período, separadas.
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {medios.length > 0 ? (
-          <Panel titulo="Por medio de pago">
+        Antes esto era «vendido − gastos = diferencia», y esa resta es mentira
+        en los dos extremos: lo facturado incluye lo fiado, que no entró, y lo
+        que entró incluye los cobros de deudas viejas, que no estaban en
+        ninguna parte. Un mes en que se fía todo daba «ganancia» con el cajón
+        vacío.
+      */}
+      {flujo.facturadoCentavos > 0 || flujo.salioCentavos > 0 ? (
+        <section
+          aria-label="Lo facturado y lo que entró"
+          className="grid gap-4 lg:grid-cols-2"
+        >
+          <Panel titulo="Lo que se facturó">
             <dl className="flex flex-col gap-1 text-sm">
-              {medios.map((m) => (
+              <div className="flex justify-between font-bold">
+                <dt>Facturado</dt>
+                <dd className="tabular">{formatearARS(flujo.facturadoCentavos)}</dd>
+              </div>
+              {comoSePago.map((m) => (
                 <Renglon
                   key={m.medio}
-                  termino={`${nombreDelMedio(m.medio)} · ${m.cantidad}`}
+                  termino={`${nombreDelMedio(m.medio)} · ${m.cantidad}${
+                    m.esPlata ? '' : ' · no entró'
+                  }`}
                   valor={formatearARS(m.totalCentavos)}
+                  apagado={!m.esPlata}
                 />
               ))}
             </dl>
+            {noSonPlata.length > 0 ? (
+              <p className="mt-2 rounded-(--radius-caja) bg-(--color-papel) p-2 text-xs text-(--color-tinta-suave)">
+                Los renglones grises facturan y <strong>no traen plata</strong>: la cuenta
+                corriente es deuda que se cobra más adelante y el canje es un teléfono que entró
+                al stock. Juntos son{' '}
+                <strong className="tabular text-(--color-tinta)">
+                  {formatearARS(flujo.fiadoCentavos + flujo.canjeCentavos)}
+                </strong>{' '}
+                de los {formatearARS(flujo.facturadoCentavos)} facturados.
+              </p>
+            ) : null}
+          </Panel>
+
+          <Panel titulo="La plata que entró y salió">
+            <dl className="flex flex-col gap-1 text-sm">
+              <Renglon
+                termino="Cobrado de ventas de este período"
+                valor={formatearARS(flujo.cobradoDeVentasCentavos)}
+              />
+              <Renglon
+                termino="Cobros de fiado de antes"
+                valor={formatearARS(flujo.cobrosDeFiadoCentavos)}
+              />
+              <div className="flex justify-between border-t border-(--color-borde) pt-1 font-semibold">
+                <dt>Entró</dt>
+                <dd className="tabular">{formatearARS(flujo.entroCentavos)}</dd>
+              </div>
+              <Renglon
+                termino="Gastos pagados"
+                valor={`−${formatearARS(flujo.salioCentavos)}`}
+                rojo
+              />
+              <div className="mt-1 flex justify-between border-t border-(--color-borde) pt-2 font-bold">
+                <dt>Quedó</dt>
+                <dd
+                  className={`tabular ${
+                    flujo.quedoCentavos >= 0 ? 'text-(--color-ok)' : 'text-(--color-error)'
+                  }`}
+                >
+                  {formatearARS(flujo.quedoCentavos)}
+                </dd>
+              </div>
+            </dl>
+
+            {flujo.cobrosDeFiadoUsdCentavos > 0 ? (
+              <p className="mt-2 text-xs text-(--color-tinta-suave)">
+                Además entraron{' '}
+                <strong className="tabular text-(--color-tinta)">
+                  {formatearUSD(flujo.cobrosDeFiadoUsdCentavos)}
+                </strong>{' '}
+                en billetes, cobrando deudas. No se suman arriba: un total de dos monedas no es un
+                total.
+              </p>
+            ) : null}
+            {flujo.aPagarCentavos > 0 ? (
+              <p className="mt-2 text-xs text-(--color-tinta-suave)">
+                Quedan{' '}
+                <strong className="tabular text-(--color-tinta)">
+                  {formatearARS(flujo.aPagarCentavos)}
+                </strong>{' '}
+                en facturas que llegaron en el período y todavía no se pagaron. Como no salieron
+                de ninguna cuenta, no están en la resta.
+              </p>
+            ) : null}
             <p className="mt-2 text-xs text-(--color-tinta-suave)">
-              Neto de vuelto y sin la cuenta corriente, que es deuda y no plata. No incluye los
-              cobros de deudas viejas: eso es movimiento del cajón y está en el reporte del turno.
+              No es la ganancia: acá no está descontado lo que costó la mercadería. Es cuánta
+              plata quedó.
             </p>
           </Panel>
-        ) : null}
+        </section>
+      ) : null}
 
-        {categorias.length > 0 ? (
-          <Panel titulo="Por categoría">
-            <Barras
-              filas={categorias.map((c) => ({
-                etiqueta: c.categoria,
-                valor: c.totalCentavos,
-                detalle: `${c.unidades} u.`,
-              }))}
-            />
-          </Panel>
-        ) : null}
-      </div>
+      {cobrosDeFiado.length > 0 ? (
+        <Panel titulo="Con qué se cobraron las deudas">
+          <dl className="flex flex-col gap-1 text-sm">
+            {cobrosDeFiado.map((c) => (
+              <Renglon
+                key={c.medio}
+                termino={`${nombreDelMedio(c.medio)} · ${c.cantidad}`}
+                valor={
+                  c.totalUsdCentavos > 0
+                    ? formatearUSD(c.totalUsdCentavos)
+                    : formatearARS(c.totalCentavos)
+                }
+              />
+            ))}
+          </dl>
+          <p className="mt-2 text-xs text-(--color-tinta-suave)">
+            Plata que entró en este período, de ventas que pueden ser de antes. El reporte de
+            ventas no la incluye —es un reporte de ventas— y por eso no se veía en ninguna
+            pantalla.
+          </p>
+        </Panel>
+      ) : null}
+
+      {categorias.length > 0 ? (
+        <Panel titulo="Por categoría">
+          <Barras
+            filas={categorias.map((c) => ({
+              etiqueta: c.categoria,
+              valor: c.totalCentavos,
+              detalle: `${c.unidades} u.`,
+            }))}
+          />
+        </Panel>
+      ) : null}
 
       {top.length > 0 ? (
         <Panel titulo="Qué se vendió">
@@ -287,33 +375,88 @@ export default async function PaginaReportes({
         )}
       </Panel>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {gastos.length > 0 ? (
-          <Panel titulo="Gastos del período">
-            <Barras
-              filas={gastos.map((g) => ({
-                etiqueta: g.categoria,
-                valor: g.totalCentavos,
-                detalle: `${g.cantidad}`,
-              }))}
-            />
-          </Panel>
-        ) : null}
+      {/* En qué se fue lo que salió: la categoría, de qué cuenta y cuáles
+          fueron los grandes. «Compra a proveedores: $8.400.000» no contesta la
+          pregunta que sigue, que es a quién y por qué. */}
+      {gastos.length > 0 ? (
+        <section aria-label="Lo que salió" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Panel titulo={`En qué se gastó · ${formatearARS(flujo.salioCentavos)}`}>
+              <Barras
+                filas={gastos.map((g) => ({
+                  etiqueta: g.categoria,
+                  valor: g.totalCentavos,
+                  detalle: `${g.cantidad}`,
+                }))}
+              />
+            </Panel>
 
-        {gente.length > 1 ? (
-          <Panel titulo="Por vendedor">
-            <dl className="flex flex-col gap-1 text-sm">
-              {gente.map((v) => (
-                <Renglon
-                  key={v.usuarioId}
-                  termino={`${v.nombre} · ${v.ventas}`}
-                  valor={formatearARS(v.totalCentavos)}
-                />
-              ))}
-            </dl>
-          </Panel>
-        ) : null}
-      </div>
+            {salidasPorCuenta.length > 0 ? (
+              <Panel titulo="De dónde salió">
+                <dl className="flex flex-col gap-1 text-sm">
+                  {salidasPorCuenta.map((c) => (
+                    <Renglon
+                      key={c.cuenta}
+                      termino={`${c.cuenta} · ${c.cantidad}`}
+                      valor={formatearARS(c.totalCentavos)}
+                    />
+                  ))}
+                </dl>
+                <p className="mt-2 text-xs text-(--color-tinta-suave)">
+                  Son los números que se cruzan contra el resumen del banco y contra el arqueo
+                  del cajón.
+                </p>
+              </Panel>
+            ) : null}
+          </div>
+
+          {gastosGrandes.length > 0 ? (
+            <Panel titulo="Los gastos más grandes">
+              <ul className="flex flex-col gap-1 text-sm">
+                {gastosGrandes.map((g, i) => (
+                  <li key={g.id} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="tabular w-6 shrink-0 text-xs text-(--color-tinta-suave)">
+                      {i + 1}
+                    </span>
+                    <span className="font-medium">{g.descripcion}</span>
+                    <span className="text-xs text-(--color-tinta-suave)">{g.categoria}</span>
+                    {g.beneficiario ? (
+                      <span className="text-xs text-(--color-tinta-suave)">
+                        · {g.beneficiario}
+                      </span>
+                    ) : null}
+                    <span className="tabular ml-auto text-xs text-(--color-tinta-suave)">
+                      {g.fecha}
+                    </span>
+                    <span className="tabular w-36 shrink-0 text-right font-semibold">
+                      {g.moneda === 'USD' && g.montoUsdCentavos !== null
+                        ? formatearUSD(g.montoUsdCentavos)
+                        : formatearARS(g.totalCentavos)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* El desglose por medio de pago está arriba, dentro de «Lo que se
+          facturó»: ahí se lee contra el total y con los que no son plata a la
+          vista. Repetirlo acá era la misma tabla dos veces. */}
+      {gente.length > 1 ? (
+        <Panel titulo="Por vendedor">
+          <dl className="flex flex-col gap-1 text-sm">
+            {gente.map((v) => (
+              <Renglon
+                key={v.usuarioId}
+                termino={`${v.nombre} · ${v.ventas}`}
+                valor={formatearARS(v.totalCentavos)}
+              />
+            ))}
+          </dl>
+        </Panel>
+      ) : null}
 
       {/* Este panel NO sigue el período elegido arriba, y hay que decirlo en el
           título: si no, alguien que mira «mes pasado» ve el mes actual a medias
@@ -485,13 +628,16 @@ function Renglon({
   termino,
   valor,
   rojo = false,
+  /** Gris: el renglón suma al total de arriba, pero no es plata que entró. */
+  apagado = false,
 }: {
   termino: string;
   valor: string;
   rojo?: boolean;
+  apagado?: boolean;
 }) {
   return (
-    <div className="flex justify-between gap-2">
+    <div className={`flex justify-between gap-2 ${apagado ? 'text-(--color-tinta-suave)' : ''}`}>
       <dt>{termino}</dt>
       <dd className={`tabular ${rojo ? 'text-(--color-error)' : ''}`}>{valor}</dd>
     </div>
