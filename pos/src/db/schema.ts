@@ -890,10 +890,35 @@ export const expenses = pgTable(
       .references(() => expenseCategories.id),
     payeeId: uuid().references(() => payees.id),
     descripcion: text().notNull(),
+    /**
+     * **Siempre en pesos**, tambien en un gasto en dolares.
+     *
+     * Es lo que suman los reportes y el resumen del mes: guardar dolares aca
+     * haria que el total del mes sumara dos monedas. En un gasto en dolares
+     * son los pesos congelados a `tcAplicadoCentavos`, y no se recalculan
+     * nunca: un gasto de marzo no cambia de monto porque hoy el dolar este a
+     * otro precio.
+     */
     montoCentavos: bigint({ mode: 'number' }).notNull(),
     moneda: monedaEnum().notNull().default('ARS'),
+    /** Solo `USD`: lo que de verdad salio, en centavos de dolar. */
+    montoUsdCentavos: bigint({ mode: 'number' }),
+    /** Solo `USD`: la cotizacion con la que se convirtio, congelada. */
     tcAplicadoCentavos: bigint({ mode: 'number' }),
     medio: medioPagoEnum(),
+    /**
+     * Solo `cheque`: el numero, y de quien se recibio ese cheque.
+     *
+     * El local paga a proveedores endosando cheques que le dieron los
+     * clientes, asi que lo que hace falta anotar es de donde vino. A quien se
+     * le pago ya esta en `payeeId`.
+     *
+     * Texto libre y no una referencia a un cliente: el cheque puede venir de
+     * alguien que no esta en la base, y frenar la carga de un gasto para dar
+     * de alta a un cliente que no compro nada seria un tramite sin sentido.
+     */
+    chequeNumero: text(),
+    chequeRecibidoDe: text(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
     cashSessionId: uuid().references(() => cashSessions.id),
     estado: estadoGastoEnum().notNull().default('pagado'),
@@ -918,6 +943,28 @@ export const expenses = pgTable(
     check(
       'expenses_pagado_ck',
       sql`(${t.estado} <> 'pagado') OR (${t.monetaryAccountId} IS NOT NULL AND ${t.medio} IS NOT NULL)`,
+    ),
+    /*
+     * Un gasto en dolares trae los dolares y su cotizacion, y ninguno mas los
+     * trae. Con los dolares solos no se sabe a cuanto se pago; con la
+     * cotizacion sola, cuantos dolares fueron.
+     */
+    check(
+      'expenses_dolares_ck',
+      sql`(${t.moneda} = 'USD') = (${t.montoUsdCentavos} IS NOT NULL AND ${t.tcAplicadoCentavos} IS NOT NULL)`,
+    ),
+    check(
+      'expenses_monto_usd_ck',
+      sql`${t.montoUsdCentavos} IS NULL OR ${t.montoUsdCentavos} > 0`,
+    ),
+    /*
+     * Los datos del cheque solo cuelgan de un pago con cheque. No se exigen
+     * —el numero puede no estar a mano— pero colgados de una transferencia no
+     * significan nada y el dia que alguien los lea van a mentir.
+     */
+    check(
+      'expenses_cheque_ck',
+      sql`(${t.chequeNumero} IS NULL AND ${t.chequeRecibidoDe} IS NULL) OR ${t.medio} = 'cheque'`,
     ),
   ],
 );

@@ -28,7 +28,7 @@ import {
   payees,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD, usdAPesosExacto } from '@/lib/dinero';
 import { efectivoDelTurno } from '@/caja/cajon';
 import type { MedioPago } from '@/ventas/carrito';
 
@@ -57,7 +57,22 @@ export interface DatosGasto {
   categoryId: string;
   payeeId?: string | null;
   descripcion: string;
-  montoCentavos: number;
+  /**
+   * En pesos. **En un gasto en dólares no se manda**: lo calcula el sistema a
+   * partir de los dólares y la cotización, igual que el precio de un producto
+   * en dólares. Es la misma guarda: un número tipeado a mano que tendría que
+   * ser el resultado de una cuenta es un número que un día no va a coincidir.
+   */
+  montoCentavos?: number;
+  /**
+   * El gasto en dólares: lo que de verdad salió y a cuánto estaba el dólar.
+   *
+   * Los pagos a proveedores de iPhone se hacen así. Hasta acá había que
+   * convertirlos a mano antes de cargarlos, y seis meses después no había
+   * forma de saber cuántos dólares habían salido.
+   */
+  montoUsdCentavos?: number | null;
+  tcAplicadoCentavos?: number | null;
   estado: 'pagado' | 'pendiente';
   /** Obligatorios si el gasto entra pagado. */
   medio?: MedioPago | null;
@@ -66,12 +81,76 @@ export interface DatosGasto {
   cashSessionId?: string | null;
   vencimiento?: string | null;
   comprobanteUrl?: string | null;
+  /**
+   * Solo con `medio: 'cheque'`: el número y de quién se recibió ese cheque.
+   *
+   * El local paga a proveedores endosando cheques que le dieron los clientes.
+   * A quién se le paga ya está en `payeeId`; lo que falta anotar es de dónde
+   * vino el cheque, que es lo único que no queda escrito en ningún lado.
+   */
+  chequeNumero?: string | null;
+  chequeRecibidoDe?: string | null;
   usuarioId: string;
+}
+
+/**
+ * Lo que de verdad sale, con su moneda.
+ *
+ * Un gasto en dólares tiene dos montos y hay que tener claro cuál es cuál: los
+ * pesos son los del reporte —congelados a la cotización del día— y los dólares
+ * son los que salieron del cajón verde.
+ */
+export interface MontoDelGasto {
+  moneda: 'ARS' | 'USD';
+  /** Siempre en pesos. En un gasto en dólares, los convertidos y congelados. */
+  montoCentavos: number;
+  montoUsdCentavos: number | null;
+  tcAplicadoCentavos: number | null;
+}
+
+/**
+ * Resuelve los dos montos de un gasto a partir de lo que mandó la pantalla.
+ *
+ * En pesos no hay nada que hacer. En dólares, **los pesos se calculan**, con
+ * la conversión exacta y no la del redondeo al millar que usan los precios de
+ * venta: un gasto no se redondea a un número lindo, se paga lo que se paga.
+ */
+export function montoDelGasto(datos: DatosGasto): MontoDelGasto {
+  const usd = datos.montoUsdCentavos ?? null;
+  const tc = datos.tcAplicadoCentavos ?? null;
+
+  if (!usd && !tc) {
+    return {
+      moneda: 'ARS',
+      montoCentavos: datos.montoCentavos ?? 0,
+      montoUsdCentavos: null,
+      tcAplicadoCentavos: null,
+    };
+  }
+
+  if (!usd || usd <= 0) {
+    throw new ErrorGasto('Escribí cuántos dólares salieron.');
+  }
+  if (!tc || tc <= 0) {
+    throw new ErrorGasto(
+      'No hay cotización cargada y este gasto es en dólares. Cargá el tipo de cambio en Dólar (F9).',
+    );
+  }
+
+  return {
+    moneda: 'USD',
+    montoCentavos: usdAPesosExacto(usd, tc),
+    montoUsdCentavos: usd,
+    tcAplicadoCentavos: tc,
+  };
 }
 
 export interface GastoRegistrado {
   id: string;
+  /** Siempre en pesos. En un gasto en dólares, los convertidos y congelados. */
   montoCentavos: number;
+  moneda: 'ARS' | 'USD';
+  montoUsdCentavos: number | null;
   estado: EstadoGasto;
   /** True si el gasto sacó plata de una cuenta en este mismo momento. */
   movioPlata: boolean;
@@ -79,9 +158,22 @@ export interface GastoRegistrado {
 
 const DESCRIPCION_MINIMA = 3;
 
-function validar(datos: DatosGasto): void {
-  if (!Number.isInteger(datos.montoCentavos) || datos.montoCentavos <= 0) {
+function validar(datos: DatosGasto, monto: MontoDelGasto): void {
+  if (!Number.isInteger(monto.montoCentavos) || monto.montoCentavos <= 0) {
     throw new ErrorGasto('El monto del gasto tiene que ser mayor a cero.');
+  }
+  /*
+   * Los datos del cheque solo cuelgan de un pago con cheque.
+   *
+   * La base lo impide con un check, pero ahí el mensaje es de Postgres. Acá se
+   * dice qué pasa: lo más probable es que alguien escribió el número, cambió
+   * el medio y el campo quedó con lo de antes.
+   */
+  const hayDatosDeCheque = Boolean(
+    (datos.chequeNumero ?? '').trim() || (datos.chequeRecibidoDe ?? '').trim(),
+  );
+  if (hayDatosDeCheque && datos.medio !== 'cheque') {
+    throw new ErrorGasto('Los datos del cheque solo van en un gasto pagado con cheque.');
   }
   if (datos.descripcion.trim().length < DESCRIPCION_MINIMA) {
     throw new ErrorGasto('Escribí en qué se gastó: dentro de un mes nadie se acuerda.');
@@ -122,7 +214,18 @@ async function moverCuenta(
   datos: {
     monetaryAccountId: string;
     cashSessionId?: string | null;
+    /** En pesos, con signo. Es lo que se mueve en cualquier cuenta menos una. */
     montoCentavos: number;
+    /**
+     * En centavos de DÓLAR, con signo. Lo que se mueve si la cuenta elegida es
+     * el cajón de los dólares.
+     *
+     * El cajón verde lleva su saldo en centavos de dólar, así que meterle los
+     * pesos equivalentes lo dejaría diciendo que hay un millón y medio de
+     * billetes. Es el mismo cuidado que ya tenía el cobro de una venta en
+     * dólares; acá hacía falta al permitir pagar un gasto con esos billetes.
+     */
+    montoUsdCentavos?: number | null;
     tipo: 'gasto' | 'anulacion' | 'retiro' | 'ingreso';
     referenciaId: string;
     referenciaTipo: string;
@@ -142,6 +245,39 @@ async function moverCuenta(
     ),
   );
   if (!cuenta) throw new ErrorGasto('No se encuentra esa cuenta.', 'cuenta_inexistente');
+
+  /*
+   * Qué número se mueve, según la cuenta.
+   *
+   * El cajón de los dólares lleva su saldo en centavos de dólar. Del resto
+   * —efectivo, banco, Mercado Pago— sale lo que dice el reporte, en pesos.
+   */
+  const esCajonDeDolares = String(cuenta.tipo) === 'dolares';
+  if (esCajonDeDolares && !datos.montoUsdCentavos) {
+    throw new ErrorGasto(
+      `«${cuenta.nombre}» tiene billetes, no pesos: un gasto que sale de ahí se carga en dólares.`,
+      'datos_invalidos',
+    );
+  }
+  const montoAMover = esCajonDeDolares ? datos.montoUsdCentavos! : datos.montoCentavos;
+  const cifra = esCajonDeDolares ? formatearUSD : formatearARS;
+
+  /*
+   * Del cajón no se puede sacar lo que no hay, y eso vale para los dos
+   * cajones. El de dólares es plata física igual que el de pesos: dejarlo en
+   * negativo rompe el arqueo de la misma forma.
+   */
+  if (montoAMover < 0 && (String(cuenta.tipo) === 'efectivo' || esCajonDeDolares)) {
+    const sale = -montoAMover;
+
+    const enLaCuenta = Number(cuenta.saldo_centavos);
+    if (enLaCuenta < sale) {
+      throw new ErrorGasto(
+        `En «${cuenta.nombre}» hay ${cifra(enLaCuenta)} y esto saca ${cifra(sale)}.`,
+        'saldo_insuficiente',
+      );
+    }
+  }
 
   if (datos.montoCentavos < 0 && String(cuenta.tipo) === 'efectivo') {
     const sale = -datos.montoCentavos;
@@ -178,7 +314,7 @@ async function moverCuenta(
     monetaryAccountId: datos.monetaryAccountId,
     cashSessionId: datos.cashSessionId ?? null,
     tipo: datos.tipo,
-    montoCentavos: datos.montoCentavos,
+    montoCentavos: montoAMover,
     referenciaTipo: datos.referenciaTipo,
     referenciaId: datos.referenciaId,
     usuarioId: datos.usuarioId,
@@ -187,7 +323,7 @@ async function moverCuenta(
 
   await tx
     .update(monetaryAccounts)
-    .set({ saldoCentavos: sql`${monetaryAccounts.saldoCentavos} + ${datos.montoCentavos}` })
+    .set({ saldoCentavos: sql`${monetaryAccounts.saldoCentavos} + ${montoAMover}` })
     .where(eq(monetaryAccounts.id, datos.monetaryAccountId));
 }
 
@@ -195,7 +331,8 @@ export async function registrarGasto(
   db: BaseDatos,
   datos: DatosGasto,
 ): Promise<GastoRegistrado> {
-  validar(datos);
+  const monto = montoDelGasto(datos);
+  validar(datos, monto);
 
   return db.transaction(async (tx) => {
     const [gasto] = await tx
@@ -205,8 +342,13 @@ export async function registrarGasto(
         categoryId: datos.categoryId,
         payeeId: datos.payeeId ?? null,
         descripcion: datos.descripcion.trim(),
-        montoCentavos: datos.montoCentavos,
+        montoCentavos: monto.montoCentavos,
+        moneda: monto.moneda,
+        montoUsdCentavos: monto.montoUsdCentavos,
+        tcAplicadoCentavos: monto.tcAplicadoCentavos,
         medio: datos.estado === 'pagado' ? (datos.medio as MedioPago) : null,
+        chequeNumero: (datos.chequeNumero ?? '').trim() || null,
+        chequeRecibidoDe: (datos.chequeRecibidoDe ?? '').trim() || null,
         monetaryAccountId: datos.estado === 'pagado' ? datos.monetaryAccountId : null,
         // La sesión de caja se guarda solo si el gasto salió del cajón: una
         // transferencia del banco no pertenece a ningún turno.
@@ -223,7 +365,8 @@ export async function registrarGasto(
       await moverCuenta(tx, {
         monetaryAccountId: datos.monetaryAccountId!,
         cashSessionId: datos.cashSessionId ?? null,
-        montoCentavos: -datos.montoCentavos,
+        montoCentavos: -monto.montoCentavos,
+        montoUsdCentavos: monto.montoUsdCentavos ? -monto.montoUsdCentavos : null,
         tipo: 'gasto',
         referenciaTipo: 'expenses',
         referenciaId: gasto!.id,
@@ -239,15 +382,22 @@ export async function registrarGasto(
       entidadId: gasto!.id,
       valorNuevo: {
         descripcion: datos.descripcion.trim(),
-        montoCentavos: datos.montoCentavos,
+        montoCentavos: monto.montoCentavos,
+        moneda: monto.moneda,
+        montoUsdCentavos: monto.montoUsdCentavos,
+        tcAplicadoCentavos: monto.tcAplicadoCentavos,
         estado: datos.estado,
         medio: datos.medio ?? null,
+        chequeNumero: (datos.chequeNumero ?? '').trim() || null,
+        chequeRecibidoDe: (datos.chequeRecibidoDe ?? '').trim() || null,
       },
     });
 
     return {
       id: gasto!.id,
-      montoCentavos: datos.montoCentavos,
+      montoCentavos: monto.montoCentavos,
+      moneda: monto.moneda,
+      montoUsdCentavos: monto.montoUsdCentavos,
       estado: datos.estado,
       movioPlata: datos.estado === 'pagado',
     };
@@ -262,9 +412,18 @@ export async function pagarGasto(
     medio: MedioPago;
     monetaryAccountId: string;
     cashSessionId?: string | null;
+    /** Solo con `medio: 'cheque'`, igual que en el alta. */
+    chequeNumero?: string | null;
+    chequeRecibidoDe?: string | null;
     usuarioId: string;
   },
 ): Promise<GastoRegistrado> {
+  const chequeNumero = (datos.chequeNumero ?? '').trim() || null;
+  const chequeRecibidoDe = (datos.chequeRecibidoDe ?? '').trim() || null;
+  if ((chequeNumero || chequeRecibidoDe) && datos.medio !== 'cheque') {
+    throw new ErrorGasto('Los datos del cheque solo van en un gasto pagado con cheque.');
+  }
+
   return db.transaction(async (tx) => {
     /*
      * El gasto se toma con candado ANTES de mirar en qué estado está.
@@ -298,16 +457,26 @@ export async function pagarGasto(
       .set({
         estado: 'pagado',
         medio: datos.medio,
+        chequeNumero,
+        chequeRecibidoDe,
         monetaryAccountId: datos.monetaryAccountId,
         cashSessionId: datos.cashSessionId ?? null,
         pagadoEn: new Date(),
       })
       .where(eq(expenses.id, datos.gastoId));
 
+    /*
+     * La moneda la fijó el alta y acá no se vuelve a decidir.
+     *
+     * Un gasto que entró como «US$ 600 al dólar de aquel día» se paga por esos
+     * US$ 600, no por lo que valgan hoy: la cotización quedó congelada al
+     * cargarlo. Lo único que se elige al pagar es de qué cuenta sale.
+     */
     await moverCuenta(tx, {
       monetaryAccountId: datos.monetaryAccountId,
       cashSessionId: datos.cashSessionId ?? null,
       montoCentavos: -gasto.montoCentavos,
+      montoUsdCentavos: gasto.montoUsdCentavos ? -gasto.montoUsdCentavos : null,
       tipo: 'gasto',
       referenciaTipo: 'expenses',
       referenciaId: gasto.id,
@@ -321,12 +490,14 @@ export async function pagarGasto(
       entidad: 'expenses',
       entidadId: gasto.id,
       valorAnterior: { estado: 'pendiente' },
-      valorNuevo: { estado: 'pagado', medio: datos.medio },
+      valorNuevo: { estado: 'pagado', medio: datos.medio, chequeNumero, chequeRecibidoDe },
     });
 
     return {
       id: gasto.id,
       montoCentavos: gasto.montoCentavos,
+      moneda: gasto.moneda,
+      montoUsdCentavos: gasto.montoUsdCentavos,
       estado: 'pagado',
       movioPlata: true,
     };
@@ -376,6 +547,8 @@ export async function anularGasto(
         // fuera al viejo, descuadraría un arqueo que ya se cerró (D29).
         cashSessionId: datos.cashSessionId ?? null,
         montoCentavos: gasto.montoCentavos,
+        // Lo que volvió al cajón verde son los mismos billetes que salieron.
+        montoUsdCentavos: gasto.montoUsdCentavos,
         tipo: 'anulacion',
         referenciaTipo: 'expenses',
         referenciaId: gasto.id,
@@ -412,13 +585,20 @@ export interface GastoEnLista {
   categoria: string;
   beneficiario: string | null;
   descripcion: string;
+  /** Siempre en pesos. En un gasto en dólares, los congelados al cargarlo. */
   montoCentavos: number;
+  moneda: 'ARS' | 'USD';
+  /** Solo en dólares: lo que de verdad salió. Es lo que se muestra. */
+  montoUsdCentavos: number | null;
+  tcAplicadoCentavos: number | null;
   estado: EstadoGasto;
   medio: string | null;
   cuenta: string | null;
   vencimiento: string | null;
   motivoAnulacion: string | null;
   cargadoPor: string | null;
+  chequeNumero: string | null;
+  chequeRecibidoDe: string | null;
 }
 
 interface FilaGasto {
@@ -428,12 +608,17 @@ interface FilaGasto {
   beneficiario: string | null;
   descripcion: string;
   monto_centavos: string | number;
+  moneda: 'ARS' | 'USD';
+  monto_usd_centavos: string | number | null;
+  tc_aplicado_centavos: string | number | null;
   estado: EstadoGasto;
   medio: string | null;
   cuenta: string | null;
   vencimiento: string | null;
   motivo_anulacion: string | null;
   cargado_por: string | null;
+  cheque_numero: string | null;
+  cheque_recibido_de: string | null;
 }
 
 function aGasto(f: FilaGasto): GastoEnLista {
@@ -444,20 +629,27 @@ function aGasto(f: FilaGasto): GastoEnLista {
     beneficiario: f.beneficiario,
     descripcion: String(f.descripcion),
     montoCentavos: Number(f.monto_centavos),
+    moneda: f.moneda,
+    montoUsdCentavos: f.monto_usd_centavos === null ? null : Number(f.monto_usd_centavos),
+    tcAplicadoCentavos: f.tc_aplicado_centavos === null ? null : Number(f.tc_aplicado_centavos),
     estado: f.estado,
     medio: f.medio,
     cuenta: f.cuenta,
     vencimiento: f.vencimiento,
     motivoAnulacion: f.motivo_anulacion,
     cargadoPor: f.cargado_por,
+    chequeNumero: f.cheque_numero,
+    chequeRecibidoDe: f.cheque_recibido_de,
   };
 }
 
 const SELECT_GASTO = sql`
   SELECT g.id, g.fecha, c.nombre AS categoria, p.nombre AS beneficiario,
-         g.descripcion, g.monto_centavos, g.estado, g.medio::text AS medio,
+         g.descripcion, g.monto_centavos, g.moneda::text AS moneda,
+         g.monto_usd_centavos, g.tc_aplicado_centavos,
+         g.estado, g.medio::text AS medio,
          m.nombre AS cuenta, g.vencimiento, g.motivo_anulacion,
-         u.nombre AS cargado_por
+         u.nombre AS cargado_por, g.cheque_numero, g.cheque_recibido_de
     FROM expenses g
     JOIN expense_categories c ON c.id = g.category_id
     LEFT JOIN payees p ON p.id = g.payee_id

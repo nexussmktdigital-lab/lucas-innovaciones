@@ -532,8 +532,14 @@ npm run produccion:chequear -- --env .env.produccion --produccion   # confirmar
 
 El chequeo compara las migraciones que el código trae contra las que la base
 tiene aplicadas y **falla si falta alguna**, así que alcanza con correrlo antes
-de cada despliegue. Cada migración va en su propia transacción: si una falla a
-la mitad, no queda nada aplicado y se puede volver a correr.
+de cada despliegue.
+
+**Todas las pendientes van en UNA transacción**, no una por cada una: así lo
+hace el migrador de Drizzle. Si la última falla no queda aplicada ninguna, lo
+que es bueno —no hay esquema a medias, y se puede volver a correr— y tiene una
+consecuencia al escribirlas: un valor nuevo de enum no se puede usar en la
+misma corrida que lo creó, así que un CHECK que lo nombre compara
+`columna::text`.
 
 ---
 

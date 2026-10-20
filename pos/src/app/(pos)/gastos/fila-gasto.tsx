@@ -2,29 +2,30 @@
 
 import { useActionState, useState } from 'react';
 import { anularGastoAccion, pagarGastoAccion, type EstadoGastos } from '@/app/acciones-gastos';
-import { formatearARS } from '@/lib/dinero';
+import { formatearARS, formatearUSD } from '@/lib/dinero';
 import type { GastoEnLista } from '@/gastos/gastos';
-import type { Opcion } from './formulario-gasto';
+import { MEDIOS, type Opcion } from './formulario-gasto';
 
 const INICIAL: EstadoGastos = {};
 
-const MEDIOS = [
-  { valor: 'efectivo', etiqueta: 'Efectivo' },
-  { valor: 'transferencia', etiqueta: 'Transferencia' },
-  { valor: 'mercadopago', etiqueta: 'Mercado Pago' },
-  { valor: 'debito', etiqueta: 'Débito' },
-  { valor: 'credito', etiqueta: 'Crédito' },
-  { valor: 'cheque', etiqueta: 'Cheque' },
-] as const;
+// Una sola lista de medios, la del formulario: cuando eran dos, agregar uno
+// en el alta lo dejaba faltando en «marcar como pagado».
+const NOMBRE_DEL_MEDIO: Record<string, string> = Object.fromEntries(
+  MEDIOS.map((m) => [m.valor, m.etiqueta]),
+);
 
-const NOMBRE_DEL_MEDIO: Record<string, string> = {
-  efectivo: 'Efectivo',
-  transferencia: 'Transferencia',
-  mercadopago: 'Mercado Pago',
-  debito: 'Débito',
-  credito: 'Crédito',
-  cheque: 'Cheque',
-};
+/**
+ * Lo que se pagó, en la moneda en que se pagó.
+ *
+ * Un gasto en dólares se muestra en dólares: es lo que salió del cajón verde,
+ * y es el número con el que el dueño lo va a reconocer. Los pesos van al lado
+ * porque son los que suman en el total del mes.
+ */
+function cifraDelGasto(gasto: GastoEnLista): string {
+  return gasto.moneda === 'USD' && gasto.montoUsdCentavos !== null
+    ? formatearUSD(gasto.montoUsdCentavos)
+    : formatearARS(gasto.montoCentavos);
+}
 
 /** Un gasto de la lista, con lo que se puede hacer con él. */
 export default function FilaGasto({
@@ -68,19 +69,28 @@ export default function FilaGasto({
           </span>
         ) : null}
 
-        <span
-          className={`tabular ml-auto text-lg font-bold ${
-            anulado ? 'text-(--color-tinta-suave) line-through' : ''
-          }`}
-        >
-          {formatearARS(gasto.montoCentavos)}
-        </span>
+        <div className="ml-auto text-right">
+          <span
+            className={`tabular text-lg font-bold ${
+              anulado ? 'text-(--color-tinta-suave) line-through' : ''
+            }`}
+          >
+            {cifraDelGasto(gasto)}
+          </span>
+          {gasto.moneda === 'USD' ? (
+            <p className="tabular text-xs text-(--color-tinta-suave)">
+              {formatearARS(gasto.montoCentavos)}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-(--color-tinta-suave)">
         <span>{gasto.fecha}</span>
         {gasto.beneficiario ? <span>· {gasto.beneficiario}</span> : null}
         {gasto.medio ? <span>· {NOMBRE_DEL_MEDIO[gasto.medio] ?? gasto.medio}</span> : null}
+        {gasto.chequeNumero ? <span>· n.° {gasto.chequeNumero}</span> : null}
+        {gasto.chequeRecibidoDe ? <span>· recibido de {gasto.chequeRecibidoDe}</span> : null}
         {gasto.cuenta ? <span>· de {gasto.cuenta}</span> : null}
         {gasto.vencimiento && gasto.estado === 'pendiente' ? (
           <span>· vence {gasto.vencimiento}</span>
@@ -107,6 +117,7 @@ export default function FilaGasto({
 function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
   const [estado, accion, pendiente] = useActionState(pagarGastoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
+  const [medio, setMedio] = useState('transferencia');
 
   if (!abierto) {
     return (
@@ -132,7 +143,8 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
           <select
             id={`medio-${gasto.id}`}
             name="medio"
-            defaultValue="transferencia"
+            value={medio}
+            onChange={(e) => setMedio(e.target.value)}
             className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
           >
             {MEDIOS.map((m) => (
@@ -159,6 +171,37 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
             ))}
           </select>
         </div>
+
+        {medio === 'cheque' ? (
+          <>
+            <div>
+              <label htmlFor={`cheque-n-${gasto.id}`} className="mb-1 block text-xs font-medium">
+                N.° de cheque
+              </label>
+              <input
+                id={`cheque-n-${gasto.id}`}
+                name="chequeNumero"
+                type="text"
+                maxLength={40}
+                inputMode="numeric"
+                className="tabular min-h-11 w-32 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+              />
+            </div>
+            <div>
+              <label htmlFor={`cheque-de-${gasto.id}`} className="mb-1 block text-xs font-medium">
+                Recibido de
+              </label>
+              <input
+                id={`cheque-de-${gasto.id}`}
+                name="chequeRecibidoDe"
+                type="text"
+                maxLength={120}
+                placeholder="Quién nos dio el cheque"
+                className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+              />
+            </div>
+          </>
+        ) : null}
       </div>
 
       {estado.error ? (
@@ -167,6 +210,9 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
         </p>
       ) : null}
 
+      {/* La moneda la fijó el alta: un gasto que entró como US$ 600 se paga
+          por esos US$ 600, a la cotización de aquel día. Acá solo se elige de
+          dónde sale. */}
       <div className="flex gap-2">
         <button
           type="button"
@@ -180,7 +226,7 @@ function Pagar({ gasto, cuentas }: { gasto: GastoEnLista; cuentas: Opcion[] }) {
           disabled={pendiente}
           className="min-h-10 flex-1 rounded-(--radius-caja) bg-(--color-accion) text-sm font-semibold text-(--color-accion-texto) disabled:opacity-60"
         >
-          {pendiente ? 'Registrando…' : `Pagar ${formatearARS(gasto.montoCentavos)}`}
+          {pendiente ? 'Registrando…' : `Pagar ${cifraDelGasto(gasto)}`}
         </button>
       </div>
     </form>

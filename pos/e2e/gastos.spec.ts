@@ -22,6 +22,8 @@ test.describe.configure({ mode: 'serial' });
 const SUF = Date.now().toString().slice(-5);
 const FLETE = `Flete de Córdoba ${SUF}`;
 const ALQUILER = `Alquiler pendiente ${SUF}`;
+const IPHONES = `Lote de iPhones al proveedor ${SUF}`;
+const CHEQUE = `Mercadería pagada con cheque ${SUF}`;
 
 async function entrarComoDuenio(page: Page) {
   await page.goto('/ingresar');
@@ -153,6 +155,63 @@ test('un gasto pendiente no mueve plata hasta que se paga', async ({ page }) => 
     cargados(page).getByRole('listitem').filter({ hasText: ALQUILER }),
   ).not.toContainText('Pendiente', { timeout: 15_000 });
   expect(await efectivoEsperado(page)).toBe(antes);
+});
+
+test('un gasto en dólares queda en dólares, con sus pesos al lado', async ({ page }) => {
+  /*
+   * Al proveedor de iPhones se le paga en dólares. Antes había que convertir
+   * a mano antes de cargar: el gasto quedaba en pesos a la cotización que
+   * quien cargaba recordara, y meses después no había forma de saber cuántos
+   * dólares habían salido de verdad.
+   */
+  await entrarComoDuenio(page);
+  await page.goto('/gastos');
+  await page.getByRole('button', { name: '+ Cargar un gasto' }).click();
+
+  const alta = page.getByRole('form', { name: 'Cargar un gasto' });
+  await alta.getByLabel('¿En qué se gastó?').fill(IPHONES);
+  await alta.getByRole('button', { name: 'Lo pagué en dólares' }).click();
+  await alta.getByLabel('Cuánto').fill('600');
+
+  // Se ve a cuánto van a quedar los pesos antes de confirmar: US$ 6.000 en
+  // vez de US$ 600 se nota mucho más en pesos que en dólares.
+  await expect(alta).toContainText(/Son \$[\s ][\d.]+,\d{2} al dólar de hoy/);
+
+  await alta.getByLabel('Categoría').selectOption({ label: 'Compra a proveedores' });
+  await alta.getByLabel('Con qué').selectOption('transferencia');
+  await alta.getByLabel('De qué cuenta salió').selectOption({ label: 'Banco' });
+  await alta.getByRole('button', { name: 'Guardar el gasto' }).click();
+
+  const fila = cargados(page).getByRole('listitem').filter({ hasText: IPHONES });
+  await expect(fila).toBeVisible({ timeout: 15_000 });
+  await expect(fila).toContainText('US$ 600,00');
+  // Y los pesos congelados, que son los que suman en el total del mes.
+  await expect(fila).toContainText(/\$[\s ][\d.]+,\d{2}/);
+});
+
+test('un cheque guarda su número y de quién vino', async ({ page }) => {
+  // El local paga a proveedores endosando cheques de clientes. A quién se le
+  // paga ya está en el beneficiario; lo que faltaba anotar es de dónde vino.
+  await entrarComoDuenio(page);
+  await page.goto('/gastos');
+  await page.getByRole('button', { name: '+ Cargar un gasto' }).click();
+
+  const alta = page.getByRole('form', { name: 'Cargar un gasto' });
+  await alta.getByLabel('¿En qué se gastó?').fill(CHEQUE);
+  await alta.getByLabel('Cuánto').fill('450000');
+  await alta.getByLabel('Categoría').selectOption({ label: 'Compra a proveedores' });
+  await alta.getByLabel('Con qué').selectOption('cheque');
+
+  // Los campos del cheque aparecen recién al elegir cheque.
+  await alta.getByLabel('Número de cheque').fill(`00${SUF}`);
+  await alta.getByLabel('Cheque recibido de').fill('Clienta del lunes');
+  await alta.getByLabel('De qué cuenta salió').selectOption({ label: 'Banco' });
+  await alta.getByRole('button', { name: 'Guardar el gasto' }).click();
+
+  const fila = cargados(page).getByRole('listitem').filter({ hasText: CHEQUE });
+  await expect(fila).toBeVisible({ timeout: 15_000 });
+  await expect(fila).toContainText(`n.° 00${SUF}`);
+  await expect(fila).toContainText('recibido de Clienta del lunes');
 });
 
 test('el resumen del mes agrupa por categoría', async ({ page }) => {
