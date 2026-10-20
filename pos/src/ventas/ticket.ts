@@ -103,10 +103,8 @@ export interface DatosDelTicket {
   /**
    * Lo que se cobró por financiar, en la moneda de la deuda.
    *
-   * Va **solo en el acuerdo de pago**, desglosado: el que firma un saldo de
-   * US$ 550 por un teléfono de US$ 500 tiene que ver de dónde salen los otros
-   * 50. En el comprobante del cliente no aparece, porque ese papel no habla de
-   * la deuda.
+   * Ya va incluido en las cuotas y **no se imprime aparte** en ningún papel
+   * (pedido del local, 20/10): el acuerdo muestra solo las cuotas que quedan.
    */
   recargoCentavos?: number;
   nota?: string | null;
@@ -419,28 +417,10 @@ function hojaDelComprobante(
     .join('');
 
   /*
-   * El desglose del saldo, cuando se cobró algo por financiar.
-   *
-   * Sin esto el acuerdo diría «US$ 550» sobre un teléfono de US$ 500 y el
-   * cliente firmaría un número que no cierra con nada de lo que vio.
+   * Sin desglose del recargo (pedido del local, 20/10): el papel que se lleva
+   * el cliente muestra solo las cuotas que le quedan. «Saldo del producto» y
+   * «Recargo por financiar» lo confundían más de lo que aclaraban.
    */
-  const recargoCentavos = datos.recargoCentavos ?? 0;
-  // Va dentro del bloque de cuotas, que ya es solo del acuerdo: en la copia
-  // del cliente no se arma ninguno de los dos.
-  const bloqueDeRecargo =
-    recargoCentavos > 0
-      ? `
-    <div class="cuota">
-      <span class="cuota-n"></span>
-      <span class="cuota-fecha">Saldo del producto</span>
-      <span class="cuota-monto">${escapar(cifraDeLaDeuda(Math.max(0, saldoCentavos - recargoCentavos)))}</span>
-    </div>
-    <div class="cuota">
-      <span class="cuota-n"></span>
-      <span class="cuota-fecha">Recargo por financiar</span>
-      <span class="cuota-monto">${escapar(cifraDeLaDeuda(recargoCentavos))}</span>
-    </div>`
-      : '';
 
   /*
    * El saldo sin plan: «cuando pueda», que es el fiado de toda la vida.
@@ -457,7 +437,6 @@ function hojaDelComprobante(
       <span class="etiqueta">SALDO</span>
       <span class="detalle-chico">sin fechas pactadas</span>
     </div>
-    ${bloqueDeRecargo}
     <div class="cuota">
       <span class="cuota-n"></span>
       <span class="cuota-fecha">Queda debiendo</span>
@@ -510,7 +489,6 @@ function hojaDelComprobante(
       <span class="etiqueta">SALDO EN CUOTAS</span>
       <span class="detalle-chico">${cuotas.length} ${cuotas.length === 1 ? 'cuota' : 'cuotas'}</span>
     </div>
-    ${bloqueDeRecargo}
     <div class="cuotas-lista${enDosColumnas ? ' en-dos' : ''}">
     ${cuotas
       .map(
