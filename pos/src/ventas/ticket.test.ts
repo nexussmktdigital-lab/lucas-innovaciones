@@ -362,11 +362,11 @@ describe('el acuerdo de pago, que queda en el local', () => {
     expect(t).toContain('El saldo quedó pactado en dólares');
   });
 
-  it('con recargo por financiar, el acuerdo muestra solo las cuotas', () => {
+  it('con recargo por financiar, desglosa de dónde sale el saldo', () => {
     /*
-     * El local pidió (20/10) sacar «Saldo del producto» y «Recargo por
-     * financiar»: el cliente ve las cuotas que le quedan, con el recargo ya
-     * adentro, y nada más.
+     * El que firma un saldo de US$ 550 por un teléfono de US$ 500 tiene que ver
+     * de dónde salen los otros 50. En el comprobante del cliente no aparece
+     * nada de esto: ese papel lleva el precio del teléfono.
      */
     const t = acuerdo({
       ...IPHONE,
@@ -397,9 +397,8 @@ describe('el acuerdo de pago, que queda en el local', () => {
       { copia: 'acuerdo' },
     ));
 
-    expect(papel).not.toContain('Saldo del producto');
-    expect(papel).not.toContain('Recargo por financiar');
-    expect(papel).toContain('Vence el 6 de noviembre de 2026 US$ 550,00');
+    expect(papel).toContain('Saldo del producto US$ 1.500,00');
+    expect(papel).toContain('Recargo por financiar US$ 150,00');
     expect(t).toContain('queda un saldo de US$ 1.650,00');
   });
 
