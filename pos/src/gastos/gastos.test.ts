@@ -683,3 +683,288 @@ describe('extracto de una cuenta', () => {
     expect(filas[1]!.saldoCentavos).toBe(APERTURA);
   });
 });
+
+/* ========================================================================== */
+
+/**
+ * Gastos en dólares.
+ *
+ * Los pagos a proveedores de iPhone se hacen en dólares. Lo que importa probar
+ * es que los dos montos no se mezclen: los pesos son los del reporte,
+ * congelados a la cotización del día, y los dólares son los billetes que
+ * salieron del cajón verde.
+ */
+describe('un gasto en dólares', () => {
+  const TC = 1_571_00;
+  let cajonVerde: string;
+
+  beforeEach(async () => {
+    const [c] = await db
+      .insert(monetaryAccounts)
+      .values({ nombre: 'Caja en dólares', tipo: 'dolares', saldoCentavos: 5_000_00 })
+      .returning();
+    cajonVerde = c!.id;
+  });
+
+  function enDolares(parcial: Record<string, unknown> = {}) {
+    return {
+      ...base(),
+      categoryId: proveedores,
+      descripcion: 'Pago a proveedor: 3 iPhone 15',
+      montoCentavos: undefined,
+      montoUsdCentavos: 600_00,
+      tcAplicadoCentavos: TC,
+      estado: 'pagado' as const,
+      medio: 'dolares' as const,
+      monetaryAccountId: cajonVerde,
+      ...parcial,
+    };
+  }
+
+  it('los pesos los calcula el sistema, no se tipean', async () => {
+    // Es la misma guarda que en el precio de un producto en dólares: un número
+    // tipeado a mano que tendría que ser el resultado de una cuenta es un
+    // número que un día no va a coincidir.
+    const g = await registrarGasto(db, enDolares());
+
+    expect(g.moneda).toBe('USD');
+    expect(g.montoUsdCentavos).toBe(600_00);
+    // 600 × 1.571, exacto: un gasto no se redondea a un número lindo.
+    expect(g.montoCentavos).toBe(942_600_00);
+  });
+
+  it('del cajón verde salen DÓLARES, no su equivalente en pesos', async () => {
+    /*
+     * El cajón de dólares lleva su saldo en centavos de dólar. Meterle los
+     * pesos lo dejaría diciendo que hay novecientos cuarenta mil billetes.
+     */
+    await registrarGasto(db, enDolares());
+
+    expect(await saldo(cajonVerde)).toBe(5_000_00 - 600_00);
+
+    const [mov] = await db
+      .select()
+      .from(cashMovements)
+      .where(eq(cashMovements.monetaryAccountId, cajonVerde));
+    expect(mov!.montoCentavos).toBe(-600_00);
+  });
+
+  it('del cajón verde tampoco sale lo que no hay', async () => {
+    // Es plata física igual que los pesos: dejarlo en negativo rompe el
+    // arqueo de la misma forma.
+    await expect(
+      registrarGasto(db, enDolares({ montoUsdCentavos: 9_000_00 })),
+    ).rejects.toThrow(/US\$/);
+  });
+
+  it('pagado por transferencia salen los pesos, no los dólares', async () => {
+    // Se le debe al proveedor en dólares y se le transfiere en pesos: lo que
+    // sale del banco son los pesos convertidos.
+    await registrarGasto(db, enDolares({ medio: 'transferencia', monetaryAccountId: banco }));
+
+    const [mov] = await db
+      .select()
+      .from(cashMovements)
+      .where(eq(cashMovements.monetaryAccountId, banco));
+    expect(mov!.montoCentavos).toBe(-942_600_00);
+  });
+
+  it('sin cotización no se puede cargar: los pesos saldrían de la nada', async () => {
+    await expect(
+      registrarGasto(db, enDolares({ tcAplicadoCentavos: null })),
+    ).rejects.toThrow(/cotización/);
+  });
+
+  it('un gasto en pesos no puede salir del cajón verde', async () => {
+    await expect(
+      registrarGasto(db, {
+        ...base(),
+        estado: 'pagado',
+        medio: 'efectivo',
+        monetaryAccountId: cajonVerde,
+      }),
+    ).rejects.toThrow(/billetes, no pesos/);
+  });
+
+  it('anularlo devuelve los mismos billetes que salieron', async () => {
+    const g = await registrarGasto(db, enDolares());
+    await anularGasto(db, { gastoId: g.id, motivo: 'Se canceló la compra', usuarioId: duenio });
+
+    expect(await saldo(cajonVerde)).toBe(5_000_00);
+  });
+
+  it('pagarlo después usa la cotización del día que se cargó, no la de hoy', async () => {
+    /*
+     * La factura llegó en dólares y se paga la semana que viene. El gasto vale
+     * los US$ 600 que se pactaron: la cotización quedó congelada al cargarlo y
+     * al pagar solo se elige de qué cuenta sale.
+     */
+    const g = await registrarGasto(db, enDolares({ estado: 'pendiente', medio: null, monetaryAccountId: null }));
+    expect(g.montoCentavos).toBe(942_600_00);
+
+    await pagarGasto(db, {
+      gastoId: g.id,
+      medio: 'dolares',
+      monetaryAccountId: cajonVerde,
+      usuarioId: duenio,
+    });
+
+    expect(await saldo(cajonVerde)).toBe(5_000_00 - 600_00);
+  });
+
+  it('en la lista del mes se ve con sus dólares', async () => {
+    await registrarGasto(db, enDolares());
+    const [enLista] = await gastosDelMes(db, '2026-09');
+
+    expect(enLista!.moneda).toBe('USD');
+    expect(enLista!.montoUsdCentavos).toBe(600_00);
+    expect(enLista!.tcAplicadoCentavos).toBe(TC);
+  });
+
+  /*
+   * El total del mes suma pesos y nada más. Si un gasto en dólares guardara
+   * dólares en `monto_centavos`, el total sumaría dos monedas y no querría
+   * decir nada.
+   */
+  it('el total del mes lo suma en pesos', async () => {
+    await registrarGasto(db, enDolares());
+    await registrarGasto(db, { ...base(), estado: 'pendiente' });
+
+    const r = await resumenDelMes(db, '2026-09');
+    expect(r.totalCentavos).toBe(942_600_00 + 300_000_00);
+  });
+
+  it('la base rechaza dólares sin cotización, aunque se escriban a mano', async () => {
+    await rechazaCon(
+      db.insert(expenses).values({
+        fecha: '2026-09-15',
+        categoryId: proveedores,
+        descripcion: 'A mano',
+        montoCentavos: 942_600_00,
+        moneda: 'USD',
+        montoUsdCentavos: 600_00,
+        estado: 'pendiente',
+        cargadoPorId: duenio,
+      }),
+      /expenses_dolares_ck/,
+    );
+  });
+});
+
+describe('los datos del cheque', () => {
+  function conCheque(parcial: Record<string, unknown> = {}) {
+    return {
+      ...base(),
+      categoryId: proveedores,
+      descripcion: 'Pago a proveedor con cheque de tercero',
+      estado: 'pagado' as const,
+      medio: 'cheque' as const,
+      monetaryAccountId: banco,
+      chequeNumero: '0012345678',
+      chequeRecibidoDe: 'Juan Pérez',
+      ...parcial,
+    };
+  }
+
+  it('se guardan el número y de quién vino', async () => {
+    // El local paga a proveedores endosando cheques que le dieron los
+    // clientes: a quién se le paga ya está en el beneficiario, y lo que falta
+    // anotar es de dónde vino el cheque.
+    const g = await registrarGasto(db, conCheque());
+    const [enBase] = await db.select().from(expenses).where(eq(expenses.id, g.id));
+
+    expect(enBase!.chequeNumero).toBe('0012345678');
+    expect(enBase!.chequeRecibidoDe).toBe('Juan Pérez');
+  });
+
+  it('se ven en la lista del mes', async () => {
+    await registrarGasto(db, conCheque());
+    const [enLista] = await gastosDelMes(db, '2026-09');
+
+    expect(enLista!.chequeNumero).toBe('0012345678');
+    expect(enLista!.chequeRecibidoDe).toBe('Juan Pérez');
+  });
+
+  it('no se pueden colgar de un pago que no es cheque', async () => {
+    // Pasa de verdad: alguien escribe el número, cambia el medio, y el campo
+    // queda con lo de antes. Colgado de una transferencia no significa nada.
+    await expect(
+      registrarGasto(db, conCheque({ medio: 'transferencia' })),
+    ).rejects.toThrow(/solo van en un gasto pagado con cheque/);
+  });
+
+  it('la base lo impide también, no solo el código', async () => {
+    await rechazaCon(
+      db.insert(expenses).values({
+        fecha: '2026-09-15',
+        categoryId: proveedores,
+        descripcion: 'A mano',
+        montoCentavos: 10_000_00,
+        medio: 'transferencia',
+        monetaryAccountId: banco,
+        estado: 'pagado',
+        chequeNumero: '0012345678',
+        cargadoPorId: duenio,
+      }),
+      /expenses_cheque_ck/,
+    );
+  });
+
+  it('un cheque sin número se puede cargar igual', async () => {
+    // El número puede no estar a mano cuando se carga el gasto: exigirlo
+    // frenaría la carga por un dato que se completa después.
+    const g = await registrarGasto(db, conCheque({ chequeNumero: null, chequeRecibidoDe: null }));
+    expect(g.estado).toBe('pagado');
+  });
+
+  it('también se anotan al pagar uno que estaba pendiente', async () => {
+    /*
+     * El caso más común: llega la factura del proveedor, se anota, y días
+     * después se le paga endosando un cheque. Si los campos solo existieran
+     * en el alta, ese cheque —el que de verdad se usó— no quedaría escrito
+     * en ningún lado.
+     */
+    const g = await registrarGasto(db, {
+      ...base(),
+      categoryId: proveedores,
+      descripcion: 'Factura del proveedor, a pagar',
+      estado: 'pendiente',
+    });
+
+    await pagarGasto(db, {
+      gastoId: g.id,
+      medio: 'cheque',
+      monetaryAccountId: banco,
+      chequeNumero: '0098765432',
+      chequeRecibidoDe: 'Clienta del lunes',
+      usuarioId: duenio,
+    });
+
+    const [enBase] = await db.select().from(expenses).where(eq(expenses.id, g.id));
+    expect(enBase!.chequeNumero).toBe('0098765432');
+    expect(enBase!.chequeRecibidoDe).toBe('Clienta del lunes');
+  });
+
+  it('al pagar tampoco se cuelgan de un medio que no es cheque', async () => {
+    const g = await registrarGasto(db, {
+      ...base(),
+      categoryId: proveedores,
+      descripcion: 'Factura del proveedor, a pagar',
+      estado: 'pendiente',
+    });
+
+    await expect(
+      pagarGasto(db, {
+        gastoId: g.id,
+        medio: 'transferencia',
+        monetaryAccountId: banco,
+        chequeNumero: '0098765432',
+        usuarioId: duenio,
+      }),
+    ).rejects.toThrow(/solo van en un gasto pagado con cheque/);
+
+    // Y el gasto sigue pendiente: no se pagó a medias.
+    const [enBase] = await db.select().from(expenses).where(eq(expenses.id, g.id));
+    expect(enBase!.estado).toBe('pendiente');
+  });
+});

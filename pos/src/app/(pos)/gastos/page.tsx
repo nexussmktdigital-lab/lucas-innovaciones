@@ -15,6 +15,7 @@ import {
   type EstadoGasto,
 } from '@/gastos/gastos';
 import { cuentasConSaldo } from '@/gastos/cuentas';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import FormularioGasto from './formulario-gasto';
 import FilaGasto from './fila-gasto';
 
@@ -51,6 +52,9 @@ export default async function PaginaGastos({
   const cats = await categorias(db);
   const benef = await beneficiarios(db);
   const cuentas = await cuentasConSaldo(db);
+  // Para mostrar a cuánto van a quedar los pesos de un gasto en dólares. El
+  // que manda es el del servidor al guardar; este es para que se vea antes.
+  const cotizacion = await cotizacionVigente(db);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -72,6 +76,7 @@ export default async function PaginaGastos({
         beneficiarios={benef}
         cuentas={cuentas}
         hoy={hoy}
+        cotizacionCentavos={cotizacion?.valorCentavos ?? null}
       />
 
       {totales.cantidad > 0 ? (

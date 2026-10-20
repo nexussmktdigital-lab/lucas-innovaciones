@@ -17,9 +17,10 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
-import { aCentavos, ErrorDinero, formatearARS } from '@/lib/dinero';
+import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import { sesionAbierta } from '@/caja/sesion';
+import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import {
   anularGasto,
   crearBeneficiario,
@@ -41,6 +42,14 @@ const medios = z.enum([
   'credito',
   'mercadopago',
   'cheque',
+  /*
+   * Billetes verdes, del cajón de los dólares.
+   *
+   * Es con lo que se le paga al proveedor de iPhones, y faltaba: el gasto se
+   * cargaba como «efectivo» y salía del cajón de pesos, que no era de donde
+   * había salido.
+   */
+  'dolares',
 ]);
 
 const uuid = z.string().uuid();
@@ -70,12 +79,20 @@ async function duenio() {
  */
 async function turnoSiHaceFalta(
   medio: string,
-  tipoDeCuenta: 'efectivo' | 'otra',
+  tipoDeCuenta: string,
 ): Promise<{ cashSessionId?: string | null; error?: string }> {
-  if (medio !== 'efectivo' && tipoDeCuenta !== 'efectivo') return { cashSessionId: null };
+  const esEfectivo = medio === 'efectivo' || tipoDeCuenta === 'efectivo';
+  const esCajonDeDolares = medio === 'dolares' || tipoDeCuenta === 'dolares';
+  if (!esEfectivo && !esCajonDeDolares) return { cashSessionId: null };
 
   const caja = await sesionAbierta(db, config().POS_TERMINAL);
   if (!caja) {
+    /*
+     * El cajón verde no entra en el arqueo de la noche: lo que se cuenta
+     * contra el sistema son los pesos. Exigir una caja abierta para pagarle
+     * al proveedor con billetes sería un trámite que no cuadra nada.
+     */
+    if (esCajonDeDolares && !esEfectivo) return { cashSessionId: null };
     return {
       error:
         'Para pagar en efectivo tiene que haber una caja abierta: la plata sale del cajón del turno.',
@@ -84,9 +101,10 @@ async function turnoSiHaceFalta(
   return { cashSessionId: caja.id };
 }
 
-async function esCuentaDeEfectivo(monetaryAccountId: string): Promise<boolean> {
+/** El tipo de la cuenta elegida: decide si el gasto pertenece a un turno. */
+async function tipoDeCuenta(monetaryAccountId: string): Promise<string> {
   const cuentas = await cuentasConSaldo(db);
-  return cuentas.find((c) => c.id === monetaryAccountId)?.tipo === 'efectivo';
+  return cuentas.find((c) => c.id === monetaryAccountId)?.tipo ?? 'otra';
 }
 
 export async function registrarGastoAccion(
@@ -101,13 +119,39 @@ export async function registrarGastoAccion(
 
   const estado = String(datos.get('estado') ?? 'pagado') === 'pendiente' ? 'pendiente' : 'pagado';
 
-  let montoCentavos: number;
+  let importeCentavos: number;
   try {
-    montoCentavos = aCentavos(String(datos.get('monto') ?? ''));
+    importeCentavos = aCentavos(String(datos.get('monto') ?? ''));
   } catch (error) {
     return {
       error: error instanceof ErrorDinero ? 'Escribí cuánto se gastó.' : 'El monto no es válido.',
     };
+  }
+
+  /*
+   * En qué moneda se pagó, y a cuánto estaba el dólar.
+   *
+   * La cotización se lee acá y no en el navegador, igual que en el precio de
+   * un producto en dólares: los pesos de un gasto en dólares los calcula el
+   * servidor y quedan congelados. Si el navegador mandara el tipo de cambio,
+   * un gasto podría entrar a la cotización que a alguien le convenga.
+   */
+  const moneda = datos.get('moneda') === 'USD' ? 'USD' : 'ARS';
+  let montoCentavos: number | undefined = importeCentavos;
+  let montoUsdCentavos: number | null = null;
+  let tcAplicadoCentavos: number | null = null;
+
+  if (moneda === 'USD') {
+    const cotizacion = await cotizacionVigente(db);
+    if (!cotizacion) {
+      return {
+        error:
+          'No hay cotización cargada y este gasto es en dólares. Cargá el dólar del día y volvé a guardarlo.',
+      };
+    }
+    montoCentavos = undefined;
+    montoUsdCentavos = importeCentavos;
+    tcAplicadoCentavos = cotizacion.valorCentavos;
   }
 
   // El beneficiario puede venir elegido de la lista o escrito a mano.
@@ -140,10 +184,7 @@ export async function registrarGastoAccion(
       return { error: 'Elegí de qué cuenta salió la plata.' };
     }
 
-    const turno = await turnoSiHaceFalta(
-      medio,
-      (await esCuentaDeEfectivo(monetaryAccountId)) ? 'efectivo' : 'otra',
-    );
+    const turno = await turnoSiHaceFalta(medio, await tipoDeCuenta(monetaryAccountId));
     if (turno.error) return { error: turno.error };
     cashSessionId = turno.cashSessionId ?? null;
   }
@@ -155,8 +196,12 @@ export async function registrarGastoAccion(
       payeeId,
       descripcion: String(datos.get('descripcion') ?? ''),
       montoCentavos,
+      montoUsdCentavos,
+      tcAplicadoCentavos,
       estado,
       medio,
+      chequeNumero: String(datos.get('chequeNumero') ?? '').trim() || null,
+      chequeRecibidoDe: String(datos.get('chequeRecibidoDe') ?? '').trim() || null,
       monetaryAccountId,
       cashSessionId,
       vencimiento: String(datos.get('vencimiento') ?? '').trim() || null,
@@ -164,11 +209,20 @@ export async function registrarGastoAccion(
     });
 
     refrescar();
+
+    // Lo que se dice de vuelta es lo que se pagó: en un gasto en dólares, los
+    // dólares. Decir los pesos convertidos obligaría a dividir para comprobar
+    // que se cargó bien.
+    const cifra =
+      g.moneda === 'USD' && g.montoUsdCentavos !== null
+        ? `${formatearUSD(g.montoUsdCentavos)} (${formatearARS(g.montoCentavos)})`
+        : formatearARS(g.montoCentavos);
+
     return {
       ok:
         g.estado === 'pagado'
-          ? `Gasto de ${formatearARS(g.montoCentavos)} registrado y descontado.`
-          : `Gasto de ${formatearARS(g.montoCentavos)} anotado como pendiente.`,
+          ? `Gasto de ${cifra} registrado y descontado.`
+          : `Gasto de ${cifra} anotado como pendiente.`,
     };
   } catch (error) {
     if (error instanceof ErrorGasto) return { error: error.message };
@@ -196,10 +250,7 @@ export async function pagarGastoAccion(
     return { error: 'Elegí de qué cuenta sale la plata.' };
   }
 
-  const turno = await turnoSiHaceFalta(
-    medio.data,
-    (await esCuentaDeEfectivo(monetaryAccountId)) ? 'efectivo' : 'otra',
-  );
+  const turno = await turnoSiHaceFalta(medio.data, await tipoDeCuenta(monetaryAccountId));
   if (turno.error) return { error: turno.error };
 
   try {
@@ -208,11 +259,17 @@ export async function pagarGastoAccion(
       medio: medio.data,
       monetaryAccountId,
       cashSessionId: turno.cashSessionId ?? null,
+      chequeNumero: String(datos.get('chequeNumero') ?? '').trim() || null,
+      chequeRecibidoDe: String(datos.get('chequeRecibidoDe') ?? '').trim() || null,
       usuarioId: quien.usuarioId,
     });
 
     refrescar();
-    return { ok: `Pagado ${formatearARS(g.montoCentavos)}.` };
+    const cifra =
+      g.moneda === 'USD' && g.montoUsdCentavos !== null
+        ? `${formatearUSD(g.montoUsdCentavos)} (${formatearARS(g.montoCentavos)})`
+        : formatearARS(g.montoCentavos);
+    return { ok: `Pagado ${cifra}.` };
   } catch (error) {
     if (error instanceof ErrorGasto) return { error: error.message };
     console.error('[gastos] Falló el pago:', error);
@@ -277,9 +334,10 @@ export async function transferirAccion(
   }
 
   // Si sale del cajón, la salida es del turno: a la noche esa plata no está.
-  const turno = (await esCuentaDeEfectivo(origenId))
-    ? await turnoSiHaceFalta('efectivo', 'efectivo')
-    : { cashSessionId: null };
+  const turno =
+    (await tipoDeCuenta(origenId)) === 'efectivo'
+      ? await turnoSiHaceFalta('efectivo', 'efectivo')
+      : { cashSessionId: null };
   if ('error' in turno && turno.error) return { error: turno.error };
 
   try {

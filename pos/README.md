@@ -880,6 +880,54 @@ quién y de qué cuenta salió. Tres reglas, todas en la transacción:
   venta (D29). Un gasto cargado y anulado en el mismo turno deja el arqueo como
   estaba: las salidas van netas de anulación.
 
+### Un gasto en dólares se carga en dólares
+
+A los proveedores de iPhone se les paga en dólares, y hasta acá había que
+convertirlos a mano antes de cargarlos: el gasto quedaba en pesos a la
+cotización que quien cargaba recordara, y seis meses después no había forma de
+saber cuántos dólares habían salido de verdad.
+
+Ahora el monto se escribe en la moneda en que se pagó. «Lo pagué en dólares»
+cambia el campo a `US$` y muestra, antes de guardar, a cuánto van a quedar los
+pesos: US$ 6.000 en vez de US$ 600 se nota mucho más en pesos.
+
+- **La cotización la lee el servidor, no el navegador**, igual que en el precio
+  de un producto en dólares. Si el navegador la mandara, un gasto podría entrar
+  al tipo de cambio que a alguien le convenga.
+- **`monto_centavos` sigue siendo siempre pesos**, como en `sale_payments`: es
+  lo que suman los reportes y el total del mes, y guardar dólares ahí haría que
+  el total sumara dos monedas. Los pesos **se congelan** con la cotización del
+  día (`tc_aplicado_centavos`) y no se recalculan nunca: un gasto de marzo no
+  cambia de monto porque hoy el dólar esté a otro precio. Pagar después uno que
+  había quedado pendiente usa esa cotización congelada, no la de hoy.
+- **Del cajón verde salen dólares, no su equivalente en pesos.** Su saldo está
+  en centavos de dólar; meterle los pesos lo dejaría diciendo que hay un millón
+  y medio de billetes. Tampoco sale de ahí más de lo que hay, igual que del
+  cajón de pesos. Un gasto cargado en pesos no puede salir del cajón verde.
+- La base lo sostiene sola: `expenses_dolares_ck` exige que un gasto en dólares
+  traiga los dólares **y** su cotización, y que ningún otro los traiga. Con los
+  dólares solos no se sabe a cuánto se pagó; con la cotización sola no se sabe
+  cuántos dólares fueron.
+
+### El cheque: el número y de quién vino
+
+El local paga a proveedores **endosando cheques que recibió de clientes**. A
+quién se le paga ya está en el beneficiario; lo que faltaba anotar es de dónde
+vino el cheque, que es lo único que no quedaba escrito en ningún lado.
+
+Los dos campos aparecen al elegir «Cheque», en el alta y también al marcar como
+pagado un gasto que estaba pendiente —que es el caso más común: llega la
+factura, se anota, y días después se endosa el cheque—. Ninguno es obligatorio:
+el número puede no estar a mano cuando se carga.
+
+Van como texto libre y no como referencia a un cliente, porque el cheque puede
+venir de alguien que no está en la base y frenar la carga de un gasto para dar
+de alta a un cliente que no compró nada sería un trámite sin sentido. Lo que sí
+se impide, en el código y en la base (`expenses_cheque_ck`), es que esos datos
+queden colgados de una transferencia: pasa de verdad —alguien escribe el
+número, cambia el medio y el campo queda con lo de antes— y ahí no significan
+nada.
+
 ### Dónde está la plata
 
 En **Cuentas** están los saldos del cajón, el banco y Mercado
@@ -2001,6 +2049,11 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un gasto en efectivo baja el efectivo esperado del arqueo | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | Un gasto pendiente no mueve un peso hasta que se paga | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | Anular un gasto devuelve la plata y deja el arqueo como estaba | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| Un gasto en dólares guarda los dólares y la cotización del día, y los pesos los calcula el sistema | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
+| Del cajón verde salen dólares, no su equivalente en pesos, y tampoco más de los que hay | `src/gastos/gastos.test.ts` |
+| Pagar después un gasto en dólares usa la cotización del día que se cargó, no la de hoy | `src/gastos/gastos.test.ts` |
+| Sin cotización no se carga un gasto en dólares: los pesos saldrían de la nada | `src/gastos/gastos.test.ts` |
+| El cheque guarda su número y de quién vino, y esos datos no se cuelgan de otro medio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | Una transferencia entre cuentas no cambia el total del negocio | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | No se transfiere más de lo que hay en la cuenta | `src/gastos/gastos.test.ts`, `e2e/gastos.spec.ts` |
 | El saldo guardado de cada cuenta coincide con sus movimientos | `src/gastos/gastos.test.ts` |
