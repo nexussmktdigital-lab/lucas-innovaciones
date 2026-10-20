@@ -25,17 +25,32 @@ import {
 export interface PlanElegido extends Cadencia {
   cuotas: number;
   /**
-   * Lo que se cobra por financiar, en la moneda de la deuda.
+   * Lo que se cobra por financiar, como porcentaje de lo fiado, en puntos
+   * básicos (1000 = 10 %).
    *
-   * Un monto escrito a mano, no un porcentaje: el local lo negocia con el
-   * cliente enfrente y no sigue una tabla. Cero es el fiado de siempre, que es
-   * como viene.
+   * Porcentaje y no monto (pedido del local, 20/10): lo eligen en el momento,
+   * con el cliente enfrente, y la cuenta la hace el sistema. Cero es el fiado
+   * de siempre, que es como viene. Al servidor viaja ya convertido a monto
+   * (`recargoDelPlan`), así que lo que se guarda no cambia.
    */
-  recargoCentavos: number;
+  recargoBp: number;
 }
 
 /** Cuotas que se ofrecen con un toque. Cualquier otra se escribe. */
 const ATAJOS = [1, 2, 3, 6, 12];
+
+/** Porcentajes de recargo con un toque. Cualquier otro se escribe. */
+const ATAJOS_RECARGO = [5, 10, 15, 20, 30];
+
+/**
+ * El recargo en la moneda de la deuda: el porcentaje sobre lo fiado,
+ * redondeado al centavo y nunca más que lo fiado (el tope que pone el
+ * servidor).
+ */
+export function recargoDelPlan(montoCentavos: number, plan: Pick<PlanElegido, 'recargoBp'> | null): number {
+  const bp = Math.max(0, plan?.recargoBp ?? 0);
+  return Math.min(montoCentavos, Math.round((montoCentavos * bp) / 10_000));
+}
 
 export default function PlanDeCuotas({
   montoCentavos,
@@ -66,7 +81,7 @@ export default function PlanDeCuotas({
    * que firma. Por eso la vista previa reparte el TOTAL —financiado más
    * recargo—, con la misma función que usa el servidor al confirmar.
    */
-  const recargoCentavos = Math.min(Math.max(0, plan?.recargoCentavos ?? 0), montoCentavos);
+  const recargoCentavos = recargoDelPlan(montoCentavos, plan);
   const totalAPagarCentavos = montoCentavos + recargoCentavos;
 
   const cuotas = useMemo(() => {
@@ -101,7 +116,7 @@ export default function PlanDeCuotas({
                 frecuencia: f.valor,
                 dias: null,
                 cuotas: plan?.cuotas ?? 3,
-                recargoCentavos: plan?.recargoCentavos ?? 0,
+                recargoBp: plan?.recargoBp ?? 0,
               })
             }
             etiqueta={f.etiqueta}
@@ -117,7 +132,7 @@ export default function PlanDeCuotas({
               frecuencia: 'dias',
               dias: plan?.dias ?? 3,
               cuotas: plan?.cuotas ?? 3,
-              recargoCentavos: plan?.recargoCentavos ?? 0,
+              recargoBp: plan?.recargoBp ?? 0,
             })
           }
           etiqueta="Cada N días"
@@ -180,34 +195,52 @@ export default function PlanDeCuotas({
             </label>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <label htmlFor="recargo" className="text-xs text-(--color-tinta-suave)">
-              Recargo por financiar ({moneda === 'USD' ? 'US$' : '$'})
-            </label>
-            <input
-              id="recargo"
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
-              value={recargoCentavos === 0 ? '' : recargoCentavos / 100}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                onCambiar({
-                  ...plan,
-                  recargoCentavos: Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0,
-                });
-              }}
-              onFocus={(e) => e.currentTarget.select()}
-              placeholder="0"
-              className="tabular min-h-10 w-28 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right"
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-(--color-tinta-suave)">Recargo por financiar</span>
+            <Opcion
+              activa={plan.recargoBp === 0}
+              onClick={() => onCambiar({ ...plan, recargoBp: 0 })}
+              etiqueta="Sin recargo"
             />
-            <span className="text-xs text-(--color-tinta-suave)">
-              {recargoCentavos > 0
-                ? `Debe ${cifra(totalAPagarCentavos)} en vez de ${cifra(montoCentavos)}.`
-                : 'Opcional. En blanco, paga lo mismo que de contado.'}
-            </span>
+            {ATAJOS_RECARGO.map((p) => (
+              <Opcion
+                key={p}
+                activa={plan.recargoBp === p * 100}
+                onClick={() => onCambiar({ ...plan, recargoBp: p * 100 })}
+                etiqueta={`${p} %`}
+              />
+            ))}
+            <label className="flex items-center gap-1 text-xs text-(--color-tinta-suave)">
+              otro
+              <input
+                id="recargo"
+                type="number"
+                min={0}
+                max={100}
+                step="any"
+                inputMode="decimal"
+                value={plan.recargoBp === 0 ? '' : plan.recargoBp / 100}
+                onChange={(e) => {
+                  const n = Number(e.target.value.replace(',', '.'));
+                  onCambiar({
+                    ...plan,
+                    // Hasta 100 %: el servidor no acepta un recargo mayor que lo fiado.
+                    recargoBp: Number.isFinite(n) && n > 0 ? Math.min(10_000, Math.round(n * 100)) : 0,
+                  });
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="0"
+                aria-label="Recargo por financiar, en porcentaje"
+                className="tabular min-h-9 w-20 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right"
+              />
+              %
+            </label>
           </div>
+          <p className="mt-1 text-xs text-(--color-tinta-suave)">
+            {recargoCentavos > 0
+              ? `${(plan.recargoBp / 100).toLocaleString('es-AR')} % = ${cifra(recargoCentavos)}. Debe ${cifra(totalAPagarCentavos)} en vez de ${cifra(montoCentavos)}.`
+              : 'Opcional. Sin recargo, paga lo mismo que de contado.'}
+          </p>
 
           {/* Lo que el cliente NO va a ver en su comprobante: ese papel lleva
               el precio del producto y nada de la deuda. El recargo y las
@@ -215,7 +248,7 @@ export default function PlanDeCuotas({
           {recargoCentavos > 0 ? (
             <p className="mt-1 text-xs text-(--color-tinta-suave)">
               El comprobante del cliente no muestra esto: sale con el precio del producto. El
-              recargo y las cuotas van en el acuerdo de pago.
+              acuerdo de pago muestra solo las cuotas, con el recargo ya incluido.
             </p>
           ) : null}
 
