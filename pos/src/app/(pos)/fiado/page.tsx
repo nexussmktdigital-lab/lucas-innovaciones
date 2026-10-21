@@ -13,6 +13,7 @@ import { cotizacionVigente } from '@/cotizacion/cotizacion';
 import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { recordatorioDe, ultimosRecordatorios } from '@/whatsapp/mensajes';
 import FilaDeudor from './fila-deudor';
+import BuscadorDeudores from './buscador-deudores';
 
 export const dynamic = 'force-dynamic';
 
@@ -214,28 +215,34 @@ export default async function PaginaFiado() {
           {puedeFiar ? '.' : ''}
         </p>
       ) : (
-        <ul className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))]">
-          {ordenada.map((d) => (
-            <FilaDeudor
-              key={d.customerId}
-              deudor={d}
-              estado={estados.get(d.customerId) ?? null}
-              estadoUsd={estadosUsd.get(d.customerId) ?? null}
-              hayCaja={Boolean(caja)}
-              hayCotizacion={Boolean(cotizacion)}
-              puedeFiar={puedeFiar}
-              recordatorio={recordatorioDe(
-                {
-                  ...d,
-                  estado: urgenciaDe(d.customerId).estado,
-                  monedaDelPlan: urgenciaDe(d.customerId).moneda,
-                },
-                ajustes,
-              )}
-              ultimoAviso={avisos.get(d.customerId) ?? null}
-            />
-          ))}
-        </ul>
+        /* El buscador filtra en el navegador sobre esta misma lista: con el
+           cliente enfrente, un viaje al servidor por cada tecla —y las seis
+           consultas que rearman los semáforos— se paga en el mostrador. */
+        <BuscadorDeudores
+          items={ordenada.map((d) => ({
+            clave: d.customerId,
+            buscar: `${d.nombre} ${d.telefono ?? ''}`,
+            nodo: (
+              <FilaDeudor
+                deudor={d}
+                estado={estados.get(d.customerId) ?? null}
+                estadoUsd={estadosUsd.get(d.customerId) ?? null}
+                hayCaja={Boolean(caja)}
+                hayCotizacion={Boolean(cotizacion)}
+                puedeFiar={puedeFiar}
+                recordatorio={recordatorioDe(
+                  {
+                    ...d,
+                    estado: urgenciaDe(d.customerId).estado,
+                    monedaDelPlan: urgenciaDe(d.customerId).moneda,
+                  },
+                  ajustes,
+                )}
+                ultimoAviso={avisos.get(d.customerId) ?? null}
+              />
+            ),
+          }))}
+        />
       )}
 
       {lista.length > 0 ? (

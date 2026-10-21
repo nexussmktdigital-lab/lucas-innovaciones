@@ -647,6 +647,59 @@ Las reglas están en la transacción, no en la pantalla:
 - **Los cobros son inmutables y llevan clave de idempotencia**: reintentar el
   formulario no cobra dos veces.
 
+### Buscar a alguien en la lista
+
+La lista está ordenada **por urgencia** —a quién llamar hoy— y para eso está
+bien. Para lo otro que pasa todos los días no servía: entra alguien a pagar y
+hay que encontrarlo entre cuarenta tarjetas ordenadas por un criterio que no es
+su nombre.
+
+El buscador filtra **en el navegador**, por nombre o teléfono y sin tildes
+(«ruben» encuentra a «Rubén»: nadie las escribe en la tablet del mostrador). La
+lista ya está entera en la pantalla, así que buscar no cuesta nada y el
+resultado aparece mientras se escribe; una consulta nueva por cada tecla —más
+las seis que rearman los semáforos— es tiempo que se paga con el cliente
+enfrente. El orden no cambia al filtrar: lo que queda sigue en orden de
+urgencia.
+
+### El recibo del pago
+
+El que venía a pagar una cuota **se iba sin nada en la mano**. El pago quedaba
+en el sistema y en la libreta del local, y del lado del cliente no había
+ninguna constancia de que había pagado ni de cuánto le quedaba debiendo. En una
+deuda que se paga de a poco durante meses, eso es exactamente de lo que después
+se discute en el mostrador.
+
+El papel contesta las dos preguntas que trae el que paga: **cuánto entregué** y
+**cuánto me queda**. El saldo va en el renglón más grande de la hoja, donde en
+el comprobante de venta va el total, porque es el número por el que vuelve.
+
+- **Sale por duplicado en la misma hoja**, con una línea de corte: el cliente
+  se lleva una copia y la otra queda firmada en el local. Es un papel de tres
+  renglones y una cifra, así que en una hoja entera dejaba la mitad de abajo en
+  blanco en cada pago. Una copia nunca se parte entre dos páginas
+  (`break-inside: avoid`): la que no entra al pie se va entera a la siguiente.
+- **Viene tildado**, y se puede destildar cuando el cliente no lo quiere. El
+  enlace para imprimirlo queda igual en pantalla después de guardar: si el
+  navegador bloqueó la ventana, o si lo pide después, no hay que ir a buscar el
+  pago.
+- **El saldo impreso es el de ese momento**, congelado en el pago
+  (`saldo_resultante_centavos`). Un recibo reimpreso tres meses después dice lo
+  mismo que el que se entregó ese día; si leyera el saldo de hoy, dos copias
+  del mismo recibo dirían números distintos y ninguno sería falso, que es la
+  peor forma de que un papel esté mal.
+- **Cuando se cruza de moneda salen los dos números.** Una cuota de US$ 200
+  pagada por transferencia cancela doscientos dólares y hace entrar los pesos
+  que valgan hoy: si el papel dijera solo el primero, el cliente que pagó pesos
+  no reconoce ninguna cifra de su recibo.
+- **Si debe en las dos monedas, lo dice.** Pagar toda la deuda en pesos no es
+  «no debe nada» cuando hay un iPhone en dólares: el aviso va aparte y la otra
+  deuda nunca se suma (D62).
+
+El código del recibo (`RC-05C1CF20`) sale de los primeros dígitos del id del
+pago: no hay correlativo de recibos que mantener y el que lo trae de vuelta
+llega al pago exacto.
+
 ### La libreta de papel
 
 Cada cliente puede recibir una vez el saldo que dice la libreta, sin venta
@@ -2077,6 +2130,12 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Un carrito mezclado NO se fía en dólares: queda en pesos, entero | `src/fiado/cuenta.test.ts` |
 | Las dos deudas conviven en la misma cuenta y no se suman | `src/fiado/cuenta.test.ts` |
 | El que debe solo dólares aparece en la lista de Fiado y en el total por cobrar | `src/fiado/cuenta.test.ts`, `e2e/fiado-dolares.spec.ts` |
+| El buscador de Fiado encuentra por nombre o teléfono, sin tildes y sin recargar | `e2e/fiado.spec.ts` |
+| El recibo del pago dice el saldo que queda, y es el mismo que muestra la pantalla | `src/fiado/recibo.test.ts`, `e2e/fiado.spec.ts` |
+| El recibo reimpreso dice el saldo de ese momento, no el de hoy | `src/app/recibo/[id]/route.ts` |
+| Pagar en otra moneda imprime los dos números: lo imputado y lo que entró | `src/fiado/recibo.test.ts` |
+| El recibo no dice «no debe nada» cuando debe en la otra moneda | `src/fiado/recibo.test.ts` |
+| Una copia del recibo nunca se parte entre dos páginas, ni en el peor caso | `e2e/recibo.spec.ts` |
 | Un iPhone fiado se pacta en cuotas de dólares desde la pantalla de cobro | `e2e/fiado-dolares.spec.ts` |
 | Se cobra una cuota en billetes de dólar y entra al cajón verde, sin conversión | `e2e/fiado-dolares.spec.ts` |
 | Cobrar en billetes verdes baja la deuda en dólares y sube el cajón verde | `src/fiado/cuenta.test.ts` |

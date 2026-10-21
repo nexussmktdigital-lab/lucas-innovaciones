@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
@@ -141,6 +141,18 @@ export default function FilaDeudor({
   const [resultado, accion, pendiente] = useActionState(cobrarFiadoAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
   const [clave, setClave] = useState(nuevaClave);
+  const [imprimir, setImprimir] = useState(true);
+
+  /*
+   * La ventana del recibo se pide DENTRO del clic, no después de cobrar.
+   *
+   * Es la misma lección que la del comprobante de venta: abrirla cuando
+   * vuelve el servidor es abrirla fuera del gesto del cajero, y Safari —el
+   * navegador de la caja— la bloquea. Ahí la plata entra y el papel no sale
+   * nunca. Se abre en blanco al apretar y recién se la manda al recibo cuando
+   * hay id.
+   */
+  const ventana = useRef<Window | null>(null);
 
   /*
    * Las dos deudas, cada una con lo suyo.
@@ -212,6 +224,21 @@ export default function FilaDeudor({
       setClave(nuevaClave());
     }
   }, [resultado.ok]);
+
+  /*
+   * El recibo, en la ventana que se abrió al apretar.
+   *
+   * Si el cobro falló, la ventana se cierra: dejarla en blanco hace pensar
+   * que algo se imprimió. Si el navegador la bloqueó igual, el enlace queda
+   * en pantalla junto al aviso de cobrado, así que el recibo nunca se pierde.
+   */
+  useEffect(() => {
+    const v = ventana.current;
+    if (!v) return;
+    if (resultado.pagoId) v.location.href = `/recibo/${resultado.pagoId}`;
+    else v.close();
+    ventana.current = null;
+  }, [resultado.pagoId, resultado.error]);
 
   // El tope mide la deuda en pesos, que es la que el tope limita: un límite en
   // pesos contra una deuda en dólares compararía dos cosas distintas.
@@ -312,7 +339,20 @@ export default function FilaDeudor({
 
         {resultado.ok ? (
           <p role="status" className="text-sm font-medium text-(--color-ok)">
-            {resultado.ok}
+            {resultado.ok}{' '}
+            {/* El enlace queda siempre, haya salido el recibo o no: si el
+                navegador bloqueó la ventana, o si el cliente lo pide después
+                de guardar, está acá y no hay que ir a buscar el pago. */}
+            {resultado.pagoId ? (
+              <a
+                href={`/recibo/${resultado.pagoId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold underline underline-offset-2"
+              >
+                Imprimir el recibo
+              </a>
+            ) : null}
           </p>
         ) : null}
 
@@ -362,6 +402,10 @@ export default function FilaDeudor({
         ) : (
           <form
             action={accion}
+            // Dentro del gesto del cajero, antes de que el servidor conteste.
+            onSubmit={() => {
+              if (imprimir) ventana.current = window.open('', '_blank', 'width=420,height=760');
+            }}
             className="space-y-2 rounded-(--radius-caja) bg-(--color-papel) p-3"
           >
             <input type="hidden" name="clienteId" value={deudor.customerId} />
@@ -487,6 +531,21 @@ export default function FilaDeudor({
                 )}
               </p>
             ) : null}
+
+            {/* Tildado de entrada: el que viene a pagar una cuota se iba sin
+                nada en la mano, y en una deuda que se paga durante meses eso
+                es de lo que después se discute. Se puede destildar cuando el
+                cliente no lo quiere y no se gasta la hoja. */}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="imprimir"
+                checked={imprimir}
+                onChange={(e) => setImprimir(e.target.checked)}
+                className="size-4"
+              />
+              Imprimir el recibo, con el saldo que le queda
+            </label>
 
             {resultado.error ? (
               <p role="alert" className="text-sm font-medium text-(--color-error)">
