@@ -31,6 +31,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       monedaDeuda: creditPayments.monedaDeuda,
       montoCajaCentavos: creditPayments.montoCajaCentavos,
       medio: creditPayments.medio,
+      recargoCentavos: creditPayments.recargoCentavos,
+      recargoMotivo: creditPayments.recargoMotivo,
       nota: creditPayments.nota,
       saldoResultanteCentavos: creditPayments.saldoResultanteCentavos,
       cliente: customers.nombre,
@@ -78,14 +80,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     montoCentavos: pago.montoCentavos,
     monedaDeuda: pago.monedaDeuda,
     medio: pago.medio,
-    // `monto_caja_centavos` solo está cuando el medio no es de la moneda de la
-    // deuda; cuando coinciden es el mismo número y no se repite.
+    // `monto_caja_centavos` solo se guarda cuando hubo cruce de monedas, así
+    // que su mera presencia es la señal: compararlo contra el monto dejaría
+    // de servir en cuanto hay un recargo, que también viaja ahí adentro.
     enCaja:
-      pago.montoCajaCentavos !== null && pago.montoCajaCentavos !== pago.montoCentavos
+      pago.montoCajaCentavos !== null
         ? {
             montoCentavos: pago.montoCajaCentavos,
             moneda: enDolares ? ('ARS' as const) : ('USD' as const),
           }
+        : null,
+    recargo:
+      pago.recargoCentavos > 0 && pago.recargoMotivo
+        ? { centavos: pago.recargoCentavos, motivo: pago.recargoMotivo }
         : null,
     saldoCentavos,
     otraDeuda,

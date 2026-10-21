@@ -24,6 +24,7 @@ import {
   users,
 } from '@/db/schema';
 import { usdAPesos } from '@/lib/dinero';
+import { cuentaDe } from '@/fiado/cuenta';
 import { confirmarVenta, ErrorVenta, type SolicitudDeVenta } from './confirmar';
 
 const TC = 156_100; // $1.561,00
@@ -1171,5 +1172,186 @@ describe('cobro en dólares', () => {
     const [pago] = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
     expect(pago!.montoUsdCentavos).toBeNull();
     expect(pago!.cotizacionCentavos).toBeNull();
+  });
+});
+
+/**
+ * El recargo por pagar con cheque.
+ *
+ * Pagar con cheque le cuesta al local y lo cobra. Hasta acá se resolvía
+ * subiendo el precio a mano, y entonces el comprobante decía que el vidrio
+ * valía más de lo que vale.
+ */
+describe('recargo por el medio de pago', () => {
+  it('sube el total y el cheque se escribe por los dos juntos', async () => {
+    // Un vidrio de $10.000 pagado con cheque, con $500 de recargo.
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        pagos: [
+          {
+            medio: 'cheque',
+            montoCentavos: 1_000_000,
+            recargoCentavos: 50_000,
+            monetaryAccountId: bancoId,
+          },
+        ],
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(1_050_000);
+
+    const [venta] = await db.select().from(sales).where(eq(sales.id, r.id));
+    expect(venta!.subtotalCentavos).toBe(1_000_000);
+    expect(venta!.recargoCentavos).toBe(50_000);
+    expect(venta!.totalCentavos).toBe(1_050_000);
+
+    /*
+     * El cheque vale los dos juntos. Guardar acá solo la mercadería dejaría
+     * los pagos sumando menos que el total, y el desglose por medio de pago
+     * del reporte no explicaría el total de la venta.
+     */
+    const [pago] = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
+    expect(pago!.montoCentavos).toBe(1_050_000);
+  });
+
+  it('solo recarga lo que paga el cheque, no toda la venta', async () => {
+    // Mitad en efectivo, mitad con cheque: el recargo es del cheque.
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        pagos: [
+          { medio: 'efectivo', montoCentavos: 600_000, monetaryAccountId: cajaId },
+          {
+            medio: 'cheque',
+            montoCentavos: 400_000,
+            recargoCentavos: 20_000,
+            monetaryAccountId: bancoId,
+          },
+        ],
+      }),
+    );
+
+    expect(r.totalCentavos).toBe(1_020_000);
+
+    const pagos = await db.select().from(salePayments).where(eq(salePayments.saleId, r.id));
+    const efectivo = pagos.find((p) => p.medio === 'efectivo');
+    const cheque = pagos.find((p) => p.medio === 'cheque');
+    expect(efectivo!.montoCentavos).toBe(600_000);
+    expect(cheque!.montoCentavos).toBe(420_000);
+
+    // Y los pagos siguen sumando exactamente el total.
+    expect(pagos.reduce((n, p) => n + p.montoCentavos, 0)).toBe(1_020_000);
+  });
+
+  it('sin recargo la venta queda igual que siempre', async () => {
+    const r = await confirmarVenta(db, solicitud());
+    const [venta] = await db.select().from(sales).where(eq(sales.id, r.id));
+    expect(venta!.recargoCentavos).toBe(0);
+    expect(venta!.totalCentavos).toBe(venta!.subtotalCentavos);
+  });
+
+  it('un recargo negativo no convierte la venta en un descuento', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        pagos: [
+          {
+            medio: 'cheque',
+            montoCentavos: 1_000_000,
+            recargoCentavos: -50_000,
+            monetaryAccountId: bancoId,
+          },
+        ],
+      }),
+    );
+    expect(r.totalCentavos).toBe(1_000_000);
+  });
+});
+
+/**
+ * El recargo por fiar «cuando pueda».
+ *
+ * El fiado sin fechas es el más común del local y es justamente el que más se
+ * recarga, porque no tiene fecha de vuelta. Antes solo se podía cobrar
+ * recargo pactando cuotas.
+ */
+describe('recargo por fiar sin plan', () => {
+  it('suma a la deuda y no al total de la venta', async () => {
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        clienteId,
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        recargoFiadoCentavos: 100_000,
+      }),
+    );
+
+    // El comprobante del cliente lleva el precio del producto: $10.000.
+    expect(r.totalCentavos).toBe(1_000_000);
+
+    // Y la deuda son $11.000: el producto más el recargo por fiarlo.
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(1_100_000);
+  });
+
+  it('queda guardado en la venta, para poder reimprimir el acuerdo', async () => {
+    /*
+     * Sin plan no hay fila en `credit_plans`, así que si no se guardara acá
+     * el acuerdo reimpreso diría «queda debiendo $11.000» sin decir que
+     * $1.000 son el recargo que el cliente firmó.
+     */
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        clienteId,
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        recargoFiadoCentavos: 100_000,
+      }),
+    );
+
+    const [venta] = await db.select().from(sales).where(eq(sales.id, r.id));
+    expect(venta!.recargoFinanciacionCentavos).toBe(100_000);
+  });
+
+  it('un recargo mayor que lo fiado se frena: es un cero de más', async () => {
+    await expect(
+      confirmarVenta(
+        db,
+        solicitud({
+          clienteId,
+          pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+          recargoFiadoCentavos: 5_000_000,
+        }),
+      ),
+    ).rejects.toThrow(/sobra un cero|no puede ser mayor/i);
+  });
+
+  it('una venta vieja que manda el recargo dentro del plan sigue entrando', async () => {
+    // Las ventas cobradas sin conexión se guardan con la forma que tenía la
+    // pantalla ese día: rechazarlas porque el campo se mudó sería perder una
+    // venta que ya se cobró.
+    const r = await confirmarVenta(
+      db,
+      solicitud({
+        clienteId,
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+        plan: { cadencia: { frecuencia: 'mensual', dias: null }, cuotas: 3, recargoCentavos: 90_000 },
+      }),
+    );
+
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(1_090_000);
+    const [venta] = await db.select().from(sales).where(eq(sales.id, r.id));
+    expect(venta!.recargoFinanciacionCentavos).toBe(90_000);
+  });
+
+  it('sin recargo la deuda es lo fiado y nada más', async () => {
+    await confirmarVenta(
+      db,
+      solicitud({
+        clienteId,
+        pagos: [{ medio: 'cuenta_corriente', montoCentavos: 1_000_000 }],
+      }),
+    );
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(1_000_000);
   });
 });

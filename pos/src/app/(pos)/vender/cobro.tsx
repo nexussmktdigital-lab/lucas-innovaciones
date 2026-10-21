@@ -11,6 +11,26 @@ import {
   type Pago,
   type TotalesCarrito,
 } from '@/ventas/carrito';
+import { calcularRecargo, type RecargoEscrito } from '@/lib/recargo';
+import CampoRecargo from '../campo-recargo';
+
+/**
+ * Cuánto es el recargo de un pago, en pesos.
+ *
+ * La base es lo que ese pago cubre de la mercadería, no el total de la venta:
+ * en una venta mitad en efectivo y mitad con cheque, el recargo es del cheque
+ * y de nada más. Es lo que el local cobra —el costo del cheque— y no el de la
+ * operación entera.
+ */
+function recargoDe(p: { medio: MedioPago; montoCentavos: number; recargoEscrito?: RecargoEscrito | null }): number {
+  if (p.medio !== 'cheque') return 0;
+  try {
+    return calcularRecargo(p.montoCentavos, p.recargoEscrito ?? null);
+  } catch {
+    // Un porcentaje imposible: el campo lo dice y el botón se apaga aparte.
+    return 0;
+  }
+}
 import { nombreDelMedio } from '@/ventas/ticket';
 import type { registrarVenta } from '@/app/acciones-venta';
 import type { Cliente, Cuenta, LineaEnPantalla, ResultadoDelCobro } from './pantalla-venta';
@@ -89,6 +109,14 @@ function nuevaClave(): string {
 interface PagoEnPantalla extends Pago {
   clave: string;
   texto: string;
+  /**
+   * El recargo tal como se escribió: 5 si es 5%, 2000 si son $2.000.
+   *
+   * Se guarda la forma y no solo el monto para poder decirle al cliente lo
+   * mismo que escuchó: «te cobro un cinco por ciento» y en el papel $2.000,
+   * sin que tenga que creer de dónde salió.
+   */
+  recargoEscrito?: RecargoEscrito | null;
 }
 
 export default function Cobro({
@@ -106,6 +134,8 @@ export default function Cobro({
   const [pagos, setPagos] = useState<PagoEnPantalla[]>([]);
   /** El plan de cuotas de lo fiado. `null` es «cuando pueda», que es el de siempre. */
   const [plan, setPlan] = useState<PlanElegido | null>(null);
+  /** Lo que se cobra por fiar. Va aparte del plan: también se cobra sin cuotas. */
+  const [recargoFiado, setRecargoFiado] = useState<RecargoEscrito | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Precio sospechoso: quien está cobrando decide a sabiendas. */
@@ -123,17 +153,45 @@ export default function Cobro({
   const clave = useRef(nuevaClave());
   const primerCampo = useRef<HTMLInputElement>(null);
 
+  /*
+   * Los pagos con su recargo ya calculado, que es la forma en que viajan al
+   * servidor y la que usan todas las cuentas de esta pantalla.
+   *
+   * El recargo sube el total y sube lo pagado por igual: lo que el cliente
+   * entrega con el cheque cubre la mercadería y su propio recargo.
+   */
+  const pagosConRecargo = useMemo(
+    () =>
+      pagos.map((p) => ({
+        ...p,
+        recargoCentavos: recargoDe(p),
+      })),
+    [pagos],
+  );
+
+  const recargoTotalCentavos = useMemo(
+    () => pagosConRecargo.reduce((n, p) => n + p.recargoCentavos, 0),
+    [pagosConRecargo],
+  );
+
+  const totalConRecargo = totales.totalCentavos + recargoTotalCentavos;
+
+
   const cobro = useMemo(() => {
     try {
-      return calcularCobro(totales.totalCentavos, pagos);
+      return calcularCobro(totalConRecargo, pagosConRecargo);
     } catch {
       return null;
     }
-  }, [totales.totalCentavos, pagos]);
+  }, [totalConRecargo, pagosConRecargo]);
 
   const problemas = useMemo(
-    () => problemasDelCobro(totales, pagos, { hayCliente: Boolean(clienteId) }),
-    [totales, pagos, clienteId],
+    () =>
+      problemasDelCobro(totales, pagosConRecargo, {
+        hayCliente: Boolean(clienteId),
+        recargoCentavos: recargoTotalCentavos,
+      }),
+    [totales, pagosConRecargo, clienteId, recargoTotalCentavos],
   );
 
   useEffect(() => {
@@ -171,6 +229,20 @@ export default function Cobro({
     ? pesosAUsdExacto(fiadoCentavos, tcCentavos!)
     : fiadoCentavos;
   const cifraDeuda = ventaEnDolares ? formatearUSD : formatearARS;
+  /*
+   * El recargo por fiar, en la moneda de la DEUDA.
+   *
+   * No se suma al total de la venta —el comprobante lleva el precio del
+   * producto— así que viaja aparte y el servidor lo suma a la deuda.
+   */
+  const recargoFiadoCentavos = (() => {
+    try {
+      return calcularRecargo(fiadoEnDeudaCentavos, recargoFiado);
+    } catch {
+      return 0;
+    }
+  })();
+
 
   function cuentaPara(tipo: Cuenta['tipo'] | null): string | null {
     if (!tipo) return null;
@@ -296,9 +368,14 @@ export default function Cobro({
           l.precioEditable || l.precioTocado ? l.precioUnitarioCentavos : null,
         descuentoCentavos: l.descuentoCentavos,
       })),
-      pagos: pagos.map((p) => ({
+      pagos: pagosConRecargo.map((p) => ({
         medio: p.medio,
         montoCentavos: p.montoCentavos,
+        /*
+         * El recargo del cheque, ya calculado. Viaja como monto y no como
+         * porcentaje: lo que se guarda es el hecho, no la cuenta.
+         */
+        recargoCentavos: p.recargoCentavos,
         /*
          * Los dólares y la cotización viajan siempre que los haya.
          *
@@ -324,6 +401,9 @@ export default function Cobro({
       idempotencyKey: clave.current,
       // Sin fiado no hay nada que financiar, y el servidor lo ignora igual.
       plan: hayFiado ? plan : null,
+      // El recargo por fiar va aparte del plan: también se cobra «cuando
+      // pueda», que es el fiado más común del local.
+      recargoFiadoCentavos: hayFiado ? recargoFiadoCentavos : 0,
     });
 
     if (!r.ok) {
@@ -360,7 +440,20 @@ export default function Cobro({
         <p className="text-xs font-bold tracking-[0.08em] text-(--color-tinta-suave) uppercase">
           Total a cobrar
         </p>
-        <p className="cifra text-5xl leading-none">{formatearARS(totales.totalCentavos)}</p>
+        <p className="cifra text-5xl leading-none">{formatearARS(totalConRecargo)}</p>
+        {/* El recargo sube el total, así que el número grande ya lo incluye.
+            Acá se dice de dónde salió: un total que no coincide con la suma
+            del carrito, sin explicación, es la clase de cosa que hace dudar
+            de la pantalla con el cliente enfrente. */}
+        {recargoTotalCentavos > 0 ? (
+          <p className="mt-1 text-xs text-(--color-tinta-suave)">
+            {formatearARS(totales.totalCentavos)} de la compra y{' '}
+            <strong className="tabular text-(--color-tinta)">
+              {formatearARS(recargoTotalCentavos)}
+            </strong>{' '}
+            de recargo por el cheque.
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap gap-1.5">
           {(puedeFiar ? [...MEDIOS, CUENTA_CORRIENTE, CANJE] : [...MEDIOS, CANJE]).map(({ medio, tipoCuenta }) => (
@@ -433,6 +526,28 @@ export default function Cobro({
                     ✕
                   </button>
                 </div>
+
+                {/*
+                  El recargo del cheque: lo que cuesta cobrar con uno.
+                  Antes se resolvía subiendo el precio a mano, y entonces el
+                  comprobante decía que el producto valía otra cosa.
+                */}
+                {p.medio === 'cheque' ? (
+                  <div className="mt-2">
+                    <CampoRecargo
+                      id={`recargo-${p.clave}`}
+                      etiqueta="Recargo por el cheque"
+                      baseCentavos={p.montoCentavos}
+                      valor={p.recargoEscrito ?? null}
+                      onCambiar={(v) => actualizar(p.clave, { recargoEscrito: v })}
+                      cifra={formatearARS}
+                      resumen={(c) =>
+                        `El cheque se escribe por ${formatearARS(p.montoCentavos + c)}: ` +
+                        `${formatearARS(p.montoCentavos)} de la compra y ${formatearARS(c)} de recargo.`
+                      }
+                    />
+                  </div>
+                ) : null}
 
                 {/* En dólares, el número del campo no es el que suma contra el
                     total: acá se dice a cuántos pesos equivale y con qué dólar,
@@ -602,7 +717,9 @@ export default function Cobro({
             montoCentavos={fiadoEnDeudaCentavos}
             moneda={ventaEnDolares ? 'USD' : 'ARS'}
             plan={plan}
+            recargo={recargoFiado}
             onCambiar={setPlan}
+            onRecargo={setRecargoFiado}
           />
         ) : null}
 

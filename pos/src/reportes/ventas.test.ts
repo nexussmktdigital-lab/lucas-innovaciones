@@ -421,6 +421,33 @@ describe('qué se vendió', () => {
     expect(top[1]!.unidades).toBe(20);
   });
 
+  /*
+   * El recargo del cheque sube el total de la venta pero no el precio del
+   * producto: es el costo del cheque. Si entrara en el reparto, el ranking
+   * diría que el vidrio se vendió más caro de lo que salió y el margen de
+   * ese renglón saldría inflado.
+   */
+  it('el recargo por cheque no infla lo que figura vendido del producto', async () => {
+    await confirmarVenta(db, {
+      lineas: [{ productId: vidrio, cantidad: 2 }],
+      pagos: [
+        {
+          medio: 'cheque',
+          montoCentavos: 10_000_00,
+          recargoCentavos: 500_00,
+          monetaryAccountId: caja,
+        },
+      ],
+      vendedorId: duenio,
+      cashSessionId: sesionId,
+      terminal: 'T1',
+      idempotencyKey: clave(),
+    });
+
+    const [vidrios] = await productosVendidos(db, TODO);
+    expect(vidrios!.totalCentavos).toBe(10_000_00);
+  });
+
   it('junta las ventas del mismo producto', async () => {
     await vender({ cantidad: 2 });
     await vender({ cantidad: 3 });

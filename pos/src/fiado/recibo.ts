@@ -50,6 +50,15 @@ export interface DatosDelRecibo {
    * habla de dólares y no reconoce el número.
    */
   enCaja?: { montoCentavos: number; moneda: 'ARS' | 'USD' } | null;
+  /**
+   * Lo que se cobró de más, con su motivo, en la moneda de la deuda.
+   *
+   * **No bajó la deuda**: el cliente entregó monto + recargo y la cuenta bajó
+   * solo por el monto. El papel dice los dos números porque si dijera uno
+   * solo, el que pagó $22.000 y ve que le descontaron $20.000 va a creer que
+   * le faltaron dos mil.
+   */
+  recargo?: { centavos: number; motivo: string } | null;
   /** Lo que queda debiendo DESPUÉS de este pago, en la moneda de la deuda. */
   saldoCentavos: number;
   /**
@@ -90,6 +99,31 @@ export function generarRecibo(
    * Cuando se paga pesos de una deuda en pesos, los dos números son el mismo y
    * repetirlo sería ruido en un papel que tiene que leerse de un vistazo.
    */
+  const recargoCentavos = datos.recargo?.centavos ?? 0;
+  const PORQUE: Record<string, string> = {
+    cheque: 'Recargo por pagar con cheque',
+    demora: 'Recargo por la demora',
+    otro: 'Recargo',
+  };
+
+  const renglonDeRecargo =
+    recargoCentavos > 0
+      ? `
+      <div class="renglon">
+        <div>
+          <div class="producto">${escapar(PORQUE[datos.recargo!.motivo] ?? 'Recargo')}</div>
+          <div class="detalle-chico">No descuenta deuda</div>
+        </div>
+        <div class="importe">${escapar(cifraEn(recargoCentavos, datos.monedaDeuda))}</div>
+      </div>
+      <div class="renglon">
+        <div><div class="producto">Total entregado</div></div>
+        <div class="importe">${escapar(
+          cifraEn(datos.montoCentavos + recargoCentavos, datos.monedaDeuda),
+        )}</div>
+      </div>`
+      : '';
+
   const renglonDeCaja = datos.enCaja
     ? `
       <div class="renglon">
@@ -164,6 +198,7 @@ export function generarRecibo(
     </div>
     <div class="importe">${escapar(cifraEn(datos.montoCentavos, datos.monedaDeuda))}</div>
   </div>
+  ${renglonDeRecargo}
   ${renglonDeCaja}
 
   ${

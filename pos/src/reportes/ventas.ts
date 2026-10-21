@@ -34,9 +34,15 @@ import { instante, type Periodo } from './periodo';
  *
  * Así que se reparte proporcionalmente. Cuando no hubo descuento global el
  * factor es 1 y la cuenta no cambia nada.
+ *
+ * **El recargo por el medio de pago se saca antes de repartir.** Sube el
+ * total y no los renglones —es el costo del cheque, no el precio del
+ * producto—, así que dejarlo adentro haría el factor mayor que 1 y el ranking
+ * de productos diría que el vidrio se vendió más caro de lo que salió.
  */
 const COBRADO_POR_LINEA = sql`ROUND(
-  i.total_centavos::numeric * s.total_centavos / NULLIF(s.subtotal_centavos, 0)
+  i.total_centavos::numeric * (s.total_centavos - s.recargo_centavos)
+    / NULLIF(s.subtotal_centavos, 0)
 )::bigint`;
 
 export interface ResumenDeVentas {

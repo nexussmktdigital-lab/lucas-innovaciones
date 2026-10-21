@@ -184,6 +184,30 @@ describe('cómo se pagó lo facturado', () => {
     expect(medios.find((m) => m.medio === 'efectivo')?.esPlata).toBe(true);
   });
 
+  /*
+   * El recargo del cheque sube el total y sube el renglón del cheque por
+   * igual: el desglose sigue explicando el total entero, que es lo único que
+   * hace que la pantalla se pueda leer.
+   */
+  it('con recargo por cheque, el desglose sigue dando el total', async () => {
+    await vender([
+      { medio: 'efectivo', montoCentavos: 2_000_00, monetaryAccountId: caja },
+      {
+        medio: 'cheque',
+        montoCentavos: 3_000_00,
+        recargoCentavos: 150_00,
+        monetaryAccountId: banco,
+      },
+    ]);
+
+    const medios = await facturadoPorMedio(db, TODO);
+    const suma = medios.reduce((n, m) => n + m.totalCentavos, 0);
+
+    expect(suma).toBe((await resumenDeVentas(db, TODO)).totalCentavos);
+    expect(suma).toBe(5_150_00);
+    expect(medios.find((m) => m.medio === 'cheque')?.totalCentavos).toBe(3_150_00);
+  });
+
   it('el efectivo va neto de vuelto, igual que antes', async () => {
     await vender([{ medio: 'efectivo', montoCentavos: 10_000_00, monetaryAccountId: caja }]);
 

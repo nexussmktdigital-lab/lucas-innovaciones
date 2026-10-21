@@ -99,7 +99,10 @@ test('un iPhone fiado en cuotas se pacta en dólares', async ({ page }) => {
    * cosas antes de confirmar: cuánto va a deber y que el papel del cliente no
    * lo muestra.
    */
-  await cobro.getByLabel('Recargo por financiar (US$)').fill('150');
+  // El campo ahora toma porcentaje o monto; el signo del botón dice en qué
+  // moneda se escribe, que con una deuda en dólares no es un detalle.
+  await cobro.getByRole('button', { name: 'Recargo en monto fijo' }).click();
+  await cobro.getByLabel('Recargo por financiar').fill('150');
   await expect(cobro.getByText(/Debe US\$\s?670,05 en vez de US\$\s?520,05/)).toBeVisible();
   await expect(cobro.getByText(/El comprobante del cliente no muestra esto/)).toBeVisible();
   await expect(cobro.getByText(/3 cuotas de US\$\s?223,35/)).toBeVisible();

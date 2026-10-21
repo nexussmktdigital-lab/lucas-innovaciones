@@ -338,6 +338,15 @@ export interface Pago {
   montoUsdCentavos?: number | null;
   /** Solo `dolares`: la cotización con la que se convirtió, congelada. */
   cotizacionCentavos?: number | null;
+  /**
+   * Lo que se cobra de más por pagar con este medio. Hoy, el cheque.
+   *
+   * Va aparte de `montoCentavos` —que es lo que cubre de la mercadería— para
+   * que la pantalla pueda decir las dos cosas: «el cheque es por $40.000 de
+   * mercadería» y «escribilo por $42.000». Al guardar se suman: lo que vale
+   * ese cheque es lo que dice el papel que el cliente firma.
+   */
+  recargoCentavos?: number;
   monetaryAccountId?: string | null;
   /** Solo `canje`: el equipo que entró. Sin esto el canje no se puede grabar. */
   equipoRecibido?: EquipoRecibido | null;
@@ -358,6 +367,17 @@ export interface EstadoCobro {
   alcanza: boolean;
 }
 
+/**
+ * Lo que vale un pago: lo que cubre de la mercadería más su recargo.
+ *
+ * El cheque con recargo se escribe por los dos juntos, y es ese número el que
+ * tiene que sumar contra el total —que también subió por el mismo recargo—.
+ * Separarlos haría que la pantalla pida cobrar dos veces lo mismo.
+ */
+export function valorDelPago(p: Pago): number {
+  return p.montoCentavos + Math.max(0, Math.round(p.recargoCentavos ?? 0));
+}
+
 export function calcularCobro(totalCentavos: number, pagos: readonly Pago[]): EstadoCobro {
   let pagadoCentavos = 0;
   let efectivoCentavos = 0;
@@ -366,7 +386,7 @@ export function calcularCobro(totalCentavos: number, pagos: readonly Pago[]): Es
     if (p.montoCentavos <= 0) {
       throw new ErrorCarrito('Cada pago tiene que ser mayor a cero.');
     }
-    pagadoCentavos += p.montoCentavos;
+    pagadoCentavos += valorDelPago(p);
     if (p.medio === 'efectivo') efectivoCentavos += p.montoCentavos;
   }
 
@@ -389,7 +409,11 @@ export function calcularCobro(totalCentavos: number, pagos: readonly Pago[]): Es
 export function problemasDelCobro(
   totales: TotalesCarrito,
   pagos: readonly Pago[],
-  opciones: { hayCliente: boolean } = { hayCliente: false },
+  opciones: {
+    hayCliente: boolean;
+    /** Lo que suman los recargos de los pagos: sube el total a cubrir. */
+    recargoCentavos?: number;
+  } = { hayCliente: false },
 ): string[] {
   const problemas: string[] = [];
 
@@ -454,7 +478,10 @@ export function problemasDelCobro(
     return problemas;
   }
 
-  const cobro = calcularCobro(totales.totalCentavos, pagos);
+  // El recargo sube el total y sube lo pagado por igual, así que no cambia si
+  // alcanza o no. Se suma de los dos lados para que los números de la
+  // pantalla —el total y lo que falta— sean los que el cliente va a pagar.
+  const cobro = calcularCobro(totales.totalCentavos + (opciones.recargoCentavos ?? 0), pagos);
   if (!cobro.alcanza) problemas.push('El pago no cubre el total.');
 
   // Una venta a cuenta corriente no es contado: necesita cliente sí o sí.

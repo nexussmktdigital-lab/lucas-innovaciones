@@ -327,10 +327,25 @@ export default function PantallaVenta({
      * misma función pura que usa el servidor al confirmar. Sin esto, el papel
      * que el cliente firma sin conexión no diría cuándo tiene que volver.
      */
-    // El recargo por financiar viene en la moneda de la deuda y entra en las
-    // cuotas, igual que lo hace el servidor al confirmar.
-    const totalAPagarCentavos =
-      deudaCentavos + Math.min(datos.plan?.recargoCentavos ?? 0, deudaCentavos);
+    /*
+     * El recargo por financiar viene en la moneda de la deuda y entra en las
+     * cuotas, igual que lo hace el servidor al confirmar.
+     *
+     * Se lee del campo propio y, si no está, del plan: una venta guardada sin
+     * conexión con la forma vieja tiene que salir igual.
+     */
+    const recargoFiado = datos.recargoFiadoCentavos ?? datos.plan?.recargoCentavos ?? 0;
+    const totalAPagarCentavos = deudaCentavos + Math.min(recargoFiado, deudaCentavos);
+
+    /*
+     * El recargo por pagar con cheque sube el total que el cliente paga. Sin
+     * conexión el papel lo arma esta pantalla, así que también tiene que
+     * sumarlo: si no, el comprobante diría un total y el cheque otro.
+     */
+    const recargoDePagoCentavos = datos.pagos.reduce(
+      (n, p) => n + Math.max(0, Math.round(p.recargoCentavos ?? 0)),
+      0,
+    );
 
     const cuotas = (() => {
       if (!datos.plan || totalAPagarCentavos <= 0) return [];
@@ -364,10 +379,11 @@ export default function PantallaVenta({
       })),
       subtotalCentavos: totales.subtotalCentavos,
       descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
-      totalCentavos: totales.totalCentavos,
+      totalCentavos: totales.totalCentavos + recargoDePagoCentavos,
       fiadoCentavos,
       cuotas,
       monedaDeLaDeuda: (deudaEnDolares ? 'USD' : 'ARS') as 'USD' | 'ARS',
+      recargoDePagoCentavos,
       recargoCentavos: totalAPagarCentavos - deudaCentavos,
       provisional: true,
     };

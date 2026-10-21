@@ -951,3 +951,135 @@ describe('lo que se vende en dólares se debe en dólares (D62)', () => {
     });
   });
 });
+
+/**
+ * El recargo al cobrar una cuota.
+ *
+ * El local lo cobra en dos casos: el cliente paga con cheque, o paga tarde.
+ * Lo que no puede pasar es que el recargo se lleve parte de la deuda: el
+ * cliente pagaría de más y seguiría debiendo lo mismo.
+ */
+describe('cobrar con recargo', () => {
+  it('el recargo entra a la caja y NO baja la deuda', async () => {
+    await fiar(2); // debe $10.000
+
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 400_000,
+      recargoCentavos: 20_000,
+      recargoMotivo: 'cheque',
+      medio: 'cheque',
+      monetaryAccountId: cajaId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'cobro-recargo-1',
+    });
+
+    // La deuda baja por el monto, no por lo entregado.
+    expect(r.saldoCentavos).toBe(600_000);
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos).toBe(600_000);
+
+    // Y a la caja entran los dos juntos: es lo que el cliente dio.
+    expect(r.montoCajaCentavos).toBe(420_000);
+    const [mov] = await db.select().from(cashMovements);
+    expect(mov!.montoCentavos).toBe(420_000);
+  });
+
+  it('queda anotado cuánto fue de recargo y por qué', async () => {
+    await fiar(2);
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 100_000,
+      recargoCentavos: 15_000,
+      recargoMotivo: 'demora',
+      medio: 'efectivo',
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'cobro-recargo-2',
+    });
+
+    const [enBase] = await db
+      .select()
+      .from(creditPayments)
+      .where(eq(creditPayments.id, r.id));
+    expect(enBase!.recargoCentavos).toBe(15_000);
+    expect(enBase!.recargoMotivo).toBe('demora');
+  });
+
+  /*
+   * Un recargo sin motivo es un número que dentro de seis meses nadie le
+   * puede explicar al cliente que lo reclama.
+   */
+  it('un recargo sin motivo no se guarda', async () => {
+    await fiar(2);
+    await expect(
+      cobrarFiado(db, {
+        customerId: clienteId,
+        montoCentavos: 100_000,
+        recargoCentavos: 15_000,
+        medio: 'efectivo',
+        cashSessionId: sesionId,
+        usuarioId: duenioId,
+        idempotencyKey: 'cobro-recargo-3',
+      }),
+    ).rejects.toThrow(/por qué se cobra/);
+  });
+
+  it('la base tampoco deja un recargo sin motivo', async () => {
+    await fiar(2);
+    const cuenta = await cuentaDe(db, clienteId);
+    await rechazaCon(
+      db.insert(creditPayments).values({
+        creditAccountId: cuenta!.id,
+        montoCentavos: 100_000,
+        recargoCentavos: 15_000,
+        monedaDeuda: 'ARS',
+        medio: 'efectivo',
+        cobradoPorId: duenioId,
+        saldoResultanteCentavos: 900_000,
+        idempotencyKey: 'cobro-recargo-sql',
+      }),
+      /credit_payments_recargo_ck/,
+    );
+  });
+
+  it('sin recargo todo sigue igual que siempre', async () => {
+    await fiar(2);
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 400_000,
+      medio: 'efectivo',
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'cobro-recargo-4',
+    });
+    expect(r.recargoCentavos).toBe(0);
+    expect(r.recargoMotivo).toBeNull();
+    expect(r.montoCajaCentavos).toBe(400_000);
+  });
+
+  /*
+   * Con dos monedas, el recargo se convierte junto con el monto: son una
+   * sola entrega. Convertirlos por separado daría dos redondeos donde hay un
+   * solo billete.
+   */
+  it('cobrando una deuda en pesos con dólares, el recargo viaja con el monto', async () => {
+    await fiar(2); // $10.000 de deuda en pesos
+
+    const r = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 300_000, // $3.000 de deuda
+      recargoCentavos: 15_000, // $150 de recargo
+      recargoMotivo: 'demora',
+      medio: 'dolares',
+      cotizacionCentavos: 1_500_00,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'cobro-recargo-5',
+    });
+
+    // $3.150 a 1.500 son US$ 2,10: los dos juntos, un solo redondeo.
+    expect(r.montoCajaCentavos).toBe(210);
+    expect(r.saldoCentavos).toBe(700_000);
+  });
+});

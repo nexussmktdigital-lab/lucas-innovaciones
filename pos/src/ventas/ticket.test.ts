@@ -670,3 +670,66 @@ describe('la fecha corta de la tabla de cuotas', () => {
     expect([...papel.matchAll(/class="cuota-n"/g)]).toHaveLength(6);
   });
 });
+
+/**
+ * El recargo por fiar «cuando pueda», sin cuotas.
+ *
+ * Es el fiado más común del local y el que más se recarga, por no tener
+ * fecha de vuelta. Antes no se podía cobrar, así que el papel nunca había
+ * tenido que decirlo.
+ */
+describe('el acuerdo de un fiado sin plan con recargo', () => {
+  const SIN_PLAN: DatosDelTicket = {
+    ...BASE,
+    fiadoCentavos: 1_000_000,
+    cuotas: [],
+    recargoCentavos: 100_000,
+  };
+
+  it('el saldo que se firma incluye el recargo', () => {
+    const t = txt(generarTicket(SIN_PLAN, { copia: 'acuerdo' }));
+
+    expect(t).toContain('Recargo por financiar');
+    expect(t).toContain('Queda debiendo');
+    // $10.000 del producto más $1.000 de recargo.
+    expect(t).toContain('11.000,00');
+  });
+
+  it('el comprobante del cliente no dice nada de todo eso', () => {
+    // Ese papel lleva el precio del producto y nada de la deuda.
+    const t = txt(generarTicket(SIN_PLAN, { copia: 'cliente' }));
+    expect(t).not.toContain('Recargo por financiar');
+    expect(t).not.toContain('Queda debiendo');
+  });
+
+  it('sin recargo el saldo es lo fiado, como siempre', () => {
+    const t = txt(generarTicket({ ...SIN_PLAN, recargoCentavos: 0 }, { copia: 'acuerdo' }));
+    expect(t).toContain('Queda debiendo');
+    expect(t).toContain('10.000,00');
+    expect(t).not.toContain('11.000,00');
+  });
+});
+
+/**
+ * El recargo por pagar con cheque.
+ *
+ * A diferencia del de financiar, **este sí va en el comprobante del
+ * cliente**: no es el precio de pagar en el tiempo, es parte de lo que paga
+ * hoy. Un total que no coincide con la suma de los renglones, sin una línea
+ * que lo explique, es un papel que se discute en el mostrador.
+ */
+describe('el recargo por el medio de pago', () => {
+  it('sale como un renglón más y suma al total', () => {
+    const t = txt(
+      generarTicket({ ...BASE, recargoDePagoCentavos: 50_000, totalCentavos: 1_050_000 }),
+    );
+
+    expect(t).toContain('Recargo por pago con cheque');
+    expect(t).toContain('500,00');
+    expect(t).toContain('10.500,00');
+  });
+
+  it('sin recargo no aparece el renglón', () => {
+    expect(txt(generarTicket(BASE))).not.toContain('Recargo por pago con cheque');
+  });
+});

@@ -35,6 +35,7 @@ import {
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
 import { pesosAUsdExacto, usdAPesosExacto } from '@/lib/dinero';
+import { esMotivoDeRecargo, type MotivoDeRecargo } from '@/lib/recargo';
 import { imputarPago } from './plan';
 import type { MedioPago } from '@/ventas/carrito';
 import { tipoDeCuentaPara } from '@/ventas/confirmar';
@@ -219,6 +220,17 @@ export interface DatosCobro {
   customerId: string;
   /** Cuánto se le descuenta a la deuda, **en la moneda de esa deuda**. */
   montoCentavos: number;
+  /**
+   * Lo que se cobra de más al recibir este pago, en la moneda de la deuda.
+   *
+   * Dos casos y los dos los pidió el local: el cliente paga la cuota con
+   * cheque, o la paga tarde. **No baja la deuda**: entrega monto + recargo y
+   * la cuenta baja solo por el monto. Si descontara deuda no sería un
+   * recargo, sería un descuento sobre el pago.
+   */
+  recargoCentavos?: number;
+  /** `cheque`, `demora` u `otro`. Obligatorio si hay recargo. */
+  recargoMotivo?: MotivoDeRecargo | null;
   /** A cuál de las dos deudas se imputa. Por omisión, la de pesos. */
   monedaDeuda?: 'ARS' | 'USD';
   /**
@@ -239,6 +251,9 @@ export interface CobroRegistrado {
   id: string;
   /** Lo imputado a la deuda, en su moneda. */
   montoCentavos: number;
+  /** Lo cobrado de más, en la moneda de la deuda. No bajó la deuda. */
+  recargoCentavos: number;
+  recargoMotivo: MotivoDeRecargo | null;
   monedaDeuda: 'ARS' | 'USD';
   saldoAnteriorCentavos: number;
   saldoCentavos: number;
@@ -270,10 +285,14 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       return {
         id: existente.id,
         montoCentavos: existente.montoCentavos,
+        recargoCentavos: existente.recargoCentavos,
+        recargoMotivo: esMotivoDeRecargo(existente.recargoMotivo) ? existente.recargoMotivo : null,
         monedaDeuda: existente.monedaDeuda,
         saldoAnteriorCentavos: existente.saldoResultanteCentavos + existente.montoCentavos,
         saldoCentavos: existente.saldoResultanteCentavos,
-        montoCajaCentavos: existente.montoCajaCentavos ?? existente.montoCentavos,
+        // Lo entregado incluía el recargo; sin conversión son lo mismo.
+        montoCajaCentavos:
+          existente.montoCajaCentavos ?? existente.montoCentavos + existente.recargoCentavos,
         yaExistia: true,
       };
     }
@@ -313,7 +332,25 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
      */
     const pagaConDolares = datos.medio === 'dolares';
     const mismaMoneda = pagaConDolares === enDolares;
-    let montoCajaCentavos = datos.montoCentavos;
+
+    /*
+     * Lo que el cliente entrega es el monto MÁS el recargo.
+     *
+     * El recargo va en la moneda de la deuda, igual que el monto, y se
+     * convierte con él: son una sola entrega. Convertirlos por separado daría
+     * dos redondeos donde hay un solo billete.
+     */
+    const recargoCentavos = Math.max(0, Math.round(datos.recargoCentavos ?? 0));
+    const motivo = recargoCentavos > 0 ? (datos.recargoMotivo ?? null) : null;
+    if (recargoCentavos > 0 && !esMotivoDeRecargo(motivo)) {
+      throw new ErrorFiado(
+        'Un recargo tiene que decir por qué se cobra: con cheque, por la demora, u otro.',
+        'monto_invalido',
+      );
+    }
+
+    const entregadoCentavos = datos.montoCentavos + recargoCentavos;
+    let montoCajaCentavos = entregadoCentavos;
 
     if (!mismaMoneda) {
       const tc = datos.cotizacionCentavos;
@@ -326,8 +363,8 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
         );
       }
       montoCajaCentavos = enDolares
-        ? usdAPesosExacto(datos.montoCentavos, tc)
-        : pesosAUsdExacto(datos.montoCentavos, tc);
+        ? usdAPesosExacto(entregadoCentavos, tc)
+        : pesosAUsdExacto(entregadoCentavos, tc);
     }
 
     const saldoCentavos = deudaCentavos - datos.montoCentavos;
@@ -348,6 +385,8 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       .values({
         creditAccountId: cuenta.id,
         montoCentavos: datos.montoCentavos,
+        recargoCentavos,
+        recargoMotivo: motivo,
         monedaDeuda: enDolares ? 'USD' : 'ARS',
         montoCajaCentavos: mismaMoneda ? null : montoCajaCentavos,
         cotizacionCentavos: mismaMoneda ? null : (datos.cotizacionCentavos ?? null),
@@ -409,6 +448,8 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
       valorNuevo: {
         saldoCentavos,
         montoCentavos: datos.montoCentavos,
+        recargoCentavos,
+        recargoMotivo: motivo,
         monedaDeuda: enDolares ? 'USD' : 'ARS',
         montoCajaCentavos,
         medio: datos.medio,
@@ -418,6 +459,8 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
     return {
       id: cobro!.id,
       montoCentavos: datos.montoCentavos,
+      recargoCentavos,
+      recargoMotivo: motivo,
       monedaDeuda: enDolares ? 'USD' : 'ARS',
       saldoAnteriorCentavos: deudaCentavos,
       saldoCentavos,
