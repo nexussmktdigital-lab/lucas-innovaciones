@@ -26,6 +26,14 @@ export interface EstadoFiado {
   ok?: string;
   /** Id del cliente recién creado, para que la pantalla lo pueda seleccionar. */
   clienteId?: string;
+  /**
+   * Id del pago recién registrado, para imprimir su recibo.
+   *
+   * La pantalla abre `/recibo/<id>` con esto. Va en el estado y no en una
+   * redirección porque el formulario se queda donde está: el que cobra sigue
+   * atendiendo y el papel sale en una ventana aparte.
+   */
+  pagoId?: string;
 }
 
 const esquemaCliente = z.object({
@@ -253,6 +261,10 @@ export async function cobrarFiadoAccion(
         : '';
 
     return {
+      // El id va siempre, haya pedido o no el recibo al cobrar: si el cliente
+      // lo pide después de guardar, el enlace tiene que estar ahí y no obligar
+      // a buscar el pago en la ficha.
+      pagoId: r.id,
       ok:
         r.saldoCentavos === 0
           ? `Cobrado ${cifra(r.montoCentavos)}.${enCaja} Quedó al día${r.monedaDeuda === 'USD' ? ' con los dólares' : ''}.`

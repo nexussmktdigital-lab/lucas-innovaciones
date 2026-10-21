@@ -16,6 +16,17 @@ const PIN = process.env.SEED_PIN_VENDEDOR ?? '4827';
 
 test.describe.configure({ mode: 'serial' });
 
+/*
+ * El recibo del pago se manda a imprimir solo, igual que el comprobante de
+ * venta. En las pruebas se lo deja pasar: `window.print()` en un navegador sin
+ * pantalla cuelga la pestaña y no prueba nada.
+ */
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+});
+
 async function entrarComoDuenio(page: Page) {
   await page.goto('/ingresar');
   await page.getByRole('tab', { name: 'Dueño' }).click();
@@ -591,4 +602,102 @@ test('dos pagos seguidos del mismo cliente entran los dos', async ({ page }) => 
 
   // Y el segundo quedó anotado como pago propio, no como reintento del primero.
   await expect(tarjeta.getByText('ya estaba registrado')).toBeHidden();
+});
+
+/**
+ * El buscador de la lista.
+ *
+ * La lista está ordenada por urgencia —a quién llamar hoy— y para eso está
+ * bien. Para lo otro que pasa todos los días no servía: entra alguien a pagar
+ * y hay que encontrarlo entre cuarenta tarjetas ordenadas por otro criterio.
+ */
+test('se busca un deudor por nombre sin recargar la pantalla', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await page.goto('/fiado');
+
+  const buscar = page.getByLabel('Buscar un deudor por nombre');
+  await expect(buscar).toBeVisible();
+
+  const todas = await page.getByRole('listitem').count();
+  expect(todas).toBeGreaterThan(1);
+
+  await buscar.fill('rocio');
+
+  // Sin tildes encuentra igual: nadie las escribe en la tablet del mostrador.
+  await expect(page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' })).toBeVisible();
+  await expect(page.getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByText(/1 de \d+ clientes/)).toBeVisible();
+
+  // Y lo que no existe lo dice, en vez de dejar la pantalla vacía.
+  await buscar.fill('nadie se llama así');
+  await expect(page.getByText('Nadie con deuda coincide con eso.')).toBeVisible();
+
+  // Al borrar vuelven todas.
+  await buscar.fill('');
+  await expect(page.getByRole('listitem')).toHaveCount(todas);
+});
+
+/**
+ * El recibo del pago.
+ *
+ * El que venía a pagar una cuota se iba sin nada en la mano: el pago quedaba
+ * en el sistema y del lado del cliente no había constancia de nada. El papel
+ * contesta las dos preguntas que trae: cuánto entregué y cuánto me queda.
+ */
+test('cobrar una cuota imprime un recibo con el saldo que queda', async ({ page, context }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('20000');
+
+  // Viene tildado: es el caso de todos los días.
+  await expect(tarjeta.getByLabel(/Imprimir el recibo/)).toBeChecked();
+
+  const [recibo] = await Promise.all([
+    context.waitForEvent('page'),
+    tarjeta.getByRole('button', { name: 'Registrar el pago' }).click(),
+  ]);
+
+  await recibo.waitForURL(/\/recibo\//, { timeout: 15_000 });
+  const papel = (await recibo.locator('.hoja').innerText()).replace(/ /g, ' ');
+
+  expect(papel).toContain('RECIBO DE PAGO');
+  expect(papel).toContain('RC-');
+  expect(papel).toContain('Rocío Ferreyra');
+  expect(papel).toContain('$ 20.000,00');
+  expect(papel).toContain('SALDO QUE QUEDA');
+  expect(papel).toContain('Firma y sello del local');
+
+  /*
+   * El saldo del papel es el que queda en la tarjeta. Comparar los dos es lo
+   * que prueba que el número impreso es el de verdad y no uno de adorno: si
+   * el recibo leyera otra cosa, el cliente se iría con un papel que no
+   * coincide con lo que el local tiene anotado.
+   */
+  const saldo = papel.match(/SALDO QUE QUEDA[\s\S]*?(\$ [\d.]+,\d{2})/)?.[1];
+  expect(saldo).toBeTruthy();
+  await expect(tarjeta).toContainText(saldo!, { timeout: 15_000 });
+
+  // Y el enlace queda en pantalla para reimprimirlo sin buscar el pago.
+  await expect(tarjeta.getByRole('link', { name: 'Imprimir el recibo' })).toBeVisible();
+});
+
+test('se puede cobrar sin imprimir nada', async ({ page }) => {
+  // Destildar no puede impedir el cobro: la plata entra igual y el enlace
+  // queda, por si el cliente lo pide después de guardar.
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('5000');
+  await tarjeta.getByLabel(/Imprimir el recibo/).uncheck();
+  await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+
+  await expect(tarjeta.getByText(/Cobrado/)).toBeVisible({ timeout: 15_000 });
+  await expect(tarjeta.getByRole('link', { name: 'Imprimir el recibo' })).toBeVisible();
 });

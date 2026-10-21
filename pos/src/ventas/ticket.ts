@@ -146,7 +146,7 @@ export function nombreDelMedio(medio: string): string {
   return NOMBRE_DEL_MEDIO[medio] ?? medio;
 }
 
-function escapar(s: string): string {
+export function escapar(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -655,8 +655,13 @@ function hojaDelComprobante(
  *
  * Se imprime solo al abrir y se cierra al terminar: el mostrador no tiene que
  * hacer nada más que retirar las hojas.
+ *
+ * Está exportada porque el recibo de un pago de fiado (`@/fiado/recibo`) usa
+ * esta misma hoja: es el mismo papel, el mismo membrete y la misma impresora.
+ * Duplicar la hoja de estilos haría que un día el recibo y el comprobante se
+ * impriman distinto sin que nadie lo haya decidido.
  */
-function documento(titulo: string, hojas: readonly string[]): string {
+export function documento(titulo: string, hojas: readonly string[]): string {
   return `<!doctype html>
 <html lang="es-AR">
 <head>
@@ -780,6 +785,77 @@ function documento(titulo: string, hojas: readonly string[]): string {
   .acuerdo .firmas { margin-top: 5mm; }
   .acuerdo .pie { margin-top: 4mm; padding-top: 2mm; }
   .acuerdo .cuotas { margin-top: 4mm; padding: 3mm 5mm; }
+
+  /*
+   * El recibo de un pago entra dos veces en la misma hoja.
+   *
+   * Es un papel corto —tres renglones y una cifra grande— y llenaba la mitad de
+   * un A4: la otra mitad salía en blanco en cada pago, todos los días. Van el
+   * original y el duplicado, con una línea de corte en el medio: el cliente se
+   * lleva uno y el otro queda firmado en el local, que es para lo que sirve un
+   * recibo cuando después se discute cuánto se había pagado ya.
+   *
+   * La hoja sigue siendo una sola y de A4: lo que cambia es que adentro lleva
+   * dos mitades en vez de un cuerpo que se estira hasta el pie.
+   */
+  /*
+   * Las cuentas de la mitad, que tienen que cerrar o sale una página de más:
+   * 296mm de hoja − 20mm de padding − 10mm de la línea de corte = 266mm para
+   * las dos. 128 cada una deja ocho milímetros de aire para el redondeo del
+   * navegador, que es lo que parte la hoja en dos cuando no sobra nada.
+   */
+  /*
+   * Las cuentas de la mitad, que tienen que cerrar o sale una página de más:
+   * 296mm de hoja − 20mm de padding − 10mm de la línea de corte = 266mm para
+   * las dos, o sea 133 cada una. Suelto medía 155 y la hoja se iba a 341mm.
+   *
+   * Lo que se achica es todo lo que está para enmarcar —el logo, los aires,
+   * el pie— y nada de lo que se lee: los importes y las firmas quedan como
+   * estaban. Medido en el navegador, no a ojo.
+   */
+  .hoja.recibo { padding: 10mm 20mm; }
+  /*
+   * Una copia no se parte entre dos páginas.
+   *
+   * Las dos entran en una hoja en el caso de todos los días, pero un cliente
+   * con cuenta en las dos monedas lleva un aviso más y el papel se pasa. Sin esto, la segunda copia se cortaría al medio: media
+   * firma en una página y media en la otra, que en un papel que se firma es
+   * lo peor que puede pasar. Con esto, la que no entra se va entera a la
+   * segunda hoja.
+   */
+  .mitad {
+    display: flex; flex-direction: column; min-height: 128mm;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .mitad .marca { height: 8mm; }
+  .mitad .rubro { margin-top: 1mm; }
+  .mitad .domicilio { line-height: 1.4; }
+  .mitad .regla { margin-top: 2mm; }
+  .mitad .titulo { padding-top: 2mm; }
+  .mitad .datos { margin-top: 3mm; }
+  .mitad .regla-fina { margin-top: 3mm; }
+  .mitad .encabezado-detalle { padding: 2mm 0 1mm; }
+  .mitad .renglon { padding: 1.5mm 0 2mm; }
+  .mitad .total { margin-top: 3mm; padding: 3.5mm 6mm; }
+  .mitad .total .cifra { font-size: 19pt; }
+  .mitad .garantia { margin-top: 3mm; }
+  .mitad .garantia p { margin-top: 1mm; font-size: 8.5pt; }
+  .mitad .aviso { margin-top: 2.5mm; padding: 2mm 3mm; font-size: 8pt; }
+  .mitad .firmas { margin-top: 4mm; }
+  .mitad .pie { margin-top: 3mm; padding-top: 2mm; }
+
+  /* La línea de corte: se ve, se entiende y no gasta tinta de más. */
+  .corte {
+    border-top: 0.3mm dashed #9a9a9a;
+    margin: 3mm 0;
+    text-align: center;
+    font-size: 7.5pt;
+    color: #9a9a9a;
+    letter-spacing: 0.12em;
+  }
+  .corte span { position: relative; top: -2.2mm; background: #fff; padding: 0 3mm; }
+
+  .copia { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.1em; color: #6b6b6b; }
 
   .cuotas { border: 0.2mm solid #d9d9d9; margin-top: 5mm; padding: 4mm 5mm 4mm; }
   .cuotas-encabezado { display: flex; align-items: baseline; justify-content: space-between; }
