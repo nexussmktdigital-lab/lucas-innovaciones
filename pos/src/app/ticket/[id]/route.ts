@@ -63,6 +63,8 @@ export async function GET(
       fecha: sales.fecha,
       subtotalCentavos: sales.subtotalCentavos,
       descuentoCentavos: sales.descuentoCentavos,
+      recargoCentavos: sales.recargoCentavos,
+      recargoFinanciacionCentavos: sales.recargoFinanciacionCentavos,
       totalCentavos: sales.totalCentavos,
       tcAplicadoCentavos: sales.tcAplicadoCentavos,
       nota: sales.nota,
@@ -171,7 +173,14 @@ export async function GET(
     })),
     monedaDeLaDeuda,
     canje,
-    recargoCentavos: cuotas[0]?.recargoCentavos ?? 0,
+    recargoDePagoCentavos: venta.recargoCentavos,
+    /*
+     * El recargo por financiar sale del plan cuando hay plan, y de la venta
+     * cuando no lo hay: el fiado «cuando pueda» no tiene fila en
+     * `credit_plans`, y sin este respaldo el acuerdo reimpreso diría «queda
+     * debiendo $110.000» sin decir que $10.000 son el recargo que se firmó.
+     */
+    recargoCentavos: cuotas[0]?.recargoCentavos ?? venta.recargoFinanciacionCentavos,
     nota: venta.estado === 'cancelled' ? 'VENTA ANULADA' : venta.nota,
   };
 

@@ -647,6 +647,77 @@ Las reglas están en la transacción, no en la pantalla:
 - **Los cobros son inmutables y llevan clave de idempotencia**: reintentar el
   formulario no cobra dos veces.
 
+### Recargos: lo que se cobra de más
+
+El local cobra un recargo en tres momentos, y hasta hoy los tres se resolvían
+**subiendo el precio a mano**: el comprobante decía que el producto valía otra
+cosa y nadie podía reconstruir después de dónde salía la diferencia.
+
+| Cuándo | Qué sube | Dónde se guarda |
+|---|---|---|
+| Pagar la compra **con cheque** | el total de la venta | `sales.recargo_centavos` |
+| **Fiar** —con cuotas o «cuando pueda»— | la deuda, no la venta | `credit_plans.recargo_centavos` y `sales.recargo_financiacion_centavos` |
+| Pagar **una cuota** con cheque o tarde | lo que entra a la caja, no la deuda | `credit_payments.recargo_centavos` |
+
+Los tres usan **el mismo campo**: dos botones —`%` o `$`— y un número, con la
+cuenta hecha debajo. Tres campos parecidos que se calculan distinto es la
+forma de que un día uno de los tres quede mal sin que nadie lo note.
+
+**Se guarda el monto, nunca el porcentaje.** El porcentaje es una forma de
+escribirlo; el monto es el hecho. Guardar el porcentaje obligaría a recalcular
+para leer un papel viejo, y el día que cambie el redondeo los comprobantes
+firmados dejarían de coincidir con lo que el sistema dice. El porcentaje se
+redondea **al centavo más cercano**: sobre doscientos pagos al año, redondear
+siempre a favor del local es cobrar de más sin que nadie lo haya decidido.
+
+Y hay un tope de 100%, que no es una regla del negocio sino una guarda contra
+el cero de más: un 500% sobre un iPhone no es un recargo, es un error de tipeo
+que nadie revisa hasta que el cliente mira el papel.
+
+#### El cheque en una venta
+
+El recargo se calcula **sobre lo que paga el cheque**, no sobre la venta
+entera: en una compra mitad en efectivo y mitad con cheque, lo que se cobra es
+el costo del cheque y no el de la operación. La pantalla dice las dos cosas —«el
+cheque se escribe por $42.000: $40.000 de la compra y $2.000 de recargo»— y el
+comprobante del cliente lo lleva **como un renglón aparte**: es parte de lo que
+paga hoy, y un total que no coincide con la suma de los renglones, sin una
+línea que lo explique, es un papel que se discute en el mostrador.
+
+Sube el total y no queda al costado por una razón dura: los pagos de una venta
+suman exactamente su total, y un cheque escrito por más que el total se leería
+como vuelto. En los reportes el recargo se **saca antes** de repartir el total
+entre los renglones, porque no es el precio del producto: si no, el ranking
+diría que el vidrio se vendió más caro de lo que salió.
+
+#### El recargo por fiar «cuando pueda»
+
+El fiado sin fechas es el más común del local y es el que más se recarga, por
+no tener fecha de vuelta. Antes el campo solo aparecía al elegir una
+frecuencia, así que era justo el caso que no se podía cobrar.
+
+No sube el total de la venta —el comprobante del cliente lleva el precio del
+producto y nada de la deuda— y por eso tiene su propia columna. Sin plan no
+hay fila en `credit_plans`, así que el monto se guarda también en la venta:
+sin eso, el acuerdo reimpreso diría «queda debiendo $11.000» sin decir que
+$1.000 son el recargo que el cliente firmó.
+
+#### El recargo al cobrar una cuota
+
+Dos motivos: pagó con cheque, o pagó tarde. **No baja la deuda**: entrega monto
++ recargo y la cuenta baja solo por el monto. Si el recargo descontara deuda no
+sería un recargo, sería un descuento sobre el pago.
+
+El número **lo escribe quien atiende** —se negocia con el cliente enfrente y no
+sigue una tabla—, y al lado tiene lo que el sistema sí sabe: «Atrasado 39 días
+· $120.000 vencidos». El motivo es obligatorio cuando hay recargo, en el código
+y en la base: un número sin explicación no se le puede justificar al cliente
+que lo reclama seis meses después.
+
+El recibo lo muestra desglosado —pago, recargo, total entregado— y aclara «no
+descuenta deuda» debajo del renglón: el que pagó $54.000 y ve que le
+descontaron $50.000 tiene que poder leer por qué sin preguntar.
+
 ### Buscar a alguien en la lista
 
 La lista está ordenada **por urgencia** —a quién llamar hoy— y para eso está
@@ -2136,6 +2207,16 @@ E2E_URL=http://localhost:3000 npm run test:e2e   # en otra
 | Pagar en otra moneda imprime los dos números: lo imputado y lo que entró | `src/fiado/recibo.test.ts` |
 | El recibo no dice «no debe nada» cuando debe en la otra moneda | `src/fiado/recibo.test.ts` |
 | Una copia del recibo nunca se parte entre dos páginas, ni en el peor caso | `e2e/recibo.spec.ts` |
+| El recargo se calcula igual en los tres lugares, y redondea al centavo más cercano | `src/lib/recargo.test.ts` |
+| Un recargo de más del 100% se frena: es un cero de más, no un recargo | `src/lib/recargo.test.ts`, `e2e/venta.spec.ts` |
+| El recargo del cheque sube el total y el cheque se escribe por los dos juntos | `src/ventas/confirmar.test.ts`, `e2e/venta.spec.ts` |
+| Solo recarga lo que paga el cheque, no toda la venta | `src/ventas/confirmar.test.ts` |
+| El recargo del cheque no infla lo que figura vendido del producto | `src/reportes/ventas.test.ts` |
+| Con recargo, el desglose por medio de pago sigue dando el total | `src/reportes/plata.test.ts` |
+| Fiar «cuando pueda» con recargo sube la deuda y no el precio del comprobante | `src/ventas/confirmar.test.ts`, `e2e/fiado.spec.ts` |
+| El acuerdo de un fiado sin plan se reimprime con el recargo que se firmó | `src/ventas/ticket.test.ts`, `src/ventas/confirmar.test.ts` |
+| El recargo de una cuota entra a la caja y NO baja la deuda | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
+| Un recargo sin motivo no se guarda, ni por código ni por SQL directo | `src/fiado/cuenta.test.ts`, `e2e/fiado.spec.ts` |
 | Un iPhone fiado se pacta en cuotas de dólares desde la pantalla de cobro | `e2e/fiado-dolares.spec.ts` |
 | Se cobra una cuota en billetes de dólar y entra al cajón verde, sin conversión | `e2e/fiado-dolares.spec.ts` |
 | Cobrar en billetes verdes baja la deuda en dólares y sube el cajón verde | `src/fiado/cuenta.test.ts` |

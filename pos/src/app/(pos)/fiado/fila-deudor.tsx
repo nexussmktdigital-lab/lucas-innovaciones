@@ -4,6 +4,8 @@ import { useActionState, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { cobrarFiadoAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
+import { calcularRecargo, MOTIVOS_DE_RECARGO, type RecargoEscrito } from '@/lib/recargo';
+import CampoRecargo from '../campo-recargo';
 import { formatearFecha } from '@/lib/fecha';
 import type { DeudorEnLista } from '@/fiado/cuenta';
 import { comoSeDice, type Color, type EstadoDeDeuda, type Cadencia } from '@/fiado/plan';
@@ -190,8 +192,36 @@ export default function FilaDeudor({
   const [moneda, setMoneda] = useState<'ARS' | 'USD'>(masUrgente?.moneda ?? 'ARS');
   const [medio, setMedio] = useState<string>('efectivo');
 
+  /*
+   * El recargo de este cobro: por pagar con cheque, o por la demora.
+   *
+   * Lo escribe quien atiende —el sistema no lo propone— porque se negocia con
+   * el cliente enfrente y no sigue una tabla. El monto a pagar se usa de base
+   * para el porcentaje: es sobre lo que se está cobrando.
+   */
+  const [recargo, setRecargo] = useState<RecargoEscrito | null>(null);
+  const [motivo, setMotivo] = useState<string>('demora');
+  const [monto, setMonto] = useState<string>('');
+
   const aCobrar = deudas.find((d) => d.moneda === moneda) ?? masUrgente;
   const enDolares = aCobrar?.moneda === 'USD';
+
+  /** Lo que se está cobrando, en la moneda de la deuda. Base del porcentaje. */
+  const cifraDeLaDeuda = enDolares ? formatearUSD : formatearARS;
+  const montoCentavos = (() => {
+    try {
+      return monto.trim() === '' ? 0 : Math.round(Number(monto.replace(',', '.')) * 100);
+    } catch {
+      return 0;
+    }
+  })();
+  const recargoCentavos = (() => {
+    try {
+      return calcularRecargo(Number.isFinite(montoCentavos) ? montoCentavos : 0, recargo);
+    } catch {
+      return 0;
+    }
+  })();
 
   /*
    * Cruzar de moneda necesita la cotización del día.
@@ -218,10 +248,18 @@ export default function FilaDeudor({
    * abierto la clave no cambia, y eso es lo que impide que un doble clic cobre
    * dos veces el mismo pago.
    */
+  // Al abrir el cobro —o al cambiar de deuda— el campo arranca con el saldo
+  // de esa deuda, que es lo que antes hacía `defaultValue`.
+  useEffect(() => {
+    setMonto(String((deudas.find((d) => d.moneda === moneda)?.centavos ?? 0) / 100));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, moneda]);
+
   useEffect(() => {
     if (resultado.ok) {
       setAbierto(false);
       setClave(nuevaClave());
+      setRecargo(null);
     }
   }, [resultado.ok]);
 
@@ -456,7 +494,8 @@ export default function FilaDeudor({
                   inputMode="decimal"
                   required
                   autoFocus
-                  defaultValue={String((aCobrar?.centavos ?? 0) / 100)}
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
                   className="tabular min-h-11 w-36 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
                 />
               </div>
@@ -500,6 +539,64 @@ export default function FilaDeudor({
                 />
               </div>
             </div>
+
+            {/*
+              El recargo de este cobro.
+
+              Dos casos que pidió el local: el cliente paga la cuota con
+              cheque, o la paga tarde. No baja la deuda —entrega monto más
+              recargo y la cuenta baja solo por el monto— y por eso el
+              resumen dice los dos números.
+            */}
+            <div className="flex flex-wrap items-start gap-2">
+              <CampoRecargo
+                id={`recargo-${deudor.customerId}`}
+                etiqueta="Recargo (opcional)"
+                baseCentavos={montoCentavos}
+                valor={recargo}
+                onCambiar={setRecargo}
+                cifra={cifraDeLaDeuda}
+                simbolo={enDolares ? 'US$' : '$'}
+                resumen={(c) =>
+                  `Entrega ${cifraDeLaDeuda(montoCentavos + c)} y la deuda baja ${cifraDeLaDeuda(montoCentavos)}.`
+                }
+              />
+              {recargoCentavos > 0 ? (
+                <div>
+                  <label
+                    htmlFor={`motivo-recargo-${deudor.customerId}`}
+                    className="mb-1 block text-xs font-medium"
+                  >
+                    Por qué
+                  </label>
+                  <select
+                    id={`motivo-recargo-${deudor.customerId}`}
+                    name="recargoMotivo"
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                    className="min-h-11 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
+                  >
+                    {MOTIVOS_DE_RECARGO.map((m) => (
+                      <option key={m.valor} value={m.valor}>
+                        {m.etiqueta}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              <input type="hidden" name="recargo" value={recargoCentavos} />
+            </div>
+
+            {/* Lo que el sistema sí sabe y quien atiende necesita para decidir
+                el número: cuánto hace que está vencida y cuánto. El recargo no
+                se propone solo —se negocia con el cliente enfrente—. */}
+            {aCobrar?.estado?.color === 'rojo' && aCobrar.estado.vencidoCentavos > 0 ? (
+              <p className="text-xs text-(--color-tinta-suave)">
+                Atrasado {aCobrar.estado.diasDeAtraso}{' '}
+                {aCobrar.estado.diasDeAtraso === 1 ? 'día' : 'días'} ·{' '}
+                {cifraDeLaDeuda(aCobrar.estado.vencidoCentavos)} vencidos.
+              </p>
+            ) : null}
 
             {/* La deuda y el medio están en monedas distintas: el monto se
                 imputa a la deuda y a la caja entra lo que valga hoy. Se dice

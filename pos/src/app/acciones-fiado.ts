@@ -17,6 +17,7 @@ import { config } from '@/lib/config';
 import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { cotizacionVigente } from '@/cotizacion/cotizacion';
+import { esMotivoDeRecargo } from '@/lib/recargo';
 import { crearCliente, editarCliente, ErrorCliente } from '@/clientes/clientes';
 import { cobrarFiado, ErrorFiado, migrarFichaDePapel, ponerLimite } from '@/fiado/cuenta';
 import { ErrorDevolucion, marcarDevuelta } from '@/fiado/devoluciones';
@@ -210,6 +211,21 @@ export async function cobrarFiadoAccion(
    * necesita ninguna conversión y no tiene por qué depender de que el dólar esté
    * cargado.
    */
+  /*
+   * El recargo de este cobro, ya calculado por la pantalla.
+   *
+   * Viaja como monto y no como porcentaje: lo que se guarda es el hecho. El
+   * motivo es obligatorio cuando hay recargo —lo exige el dominio y lo exige
+   * la base— porque un número sin explicación no se le puede justificar al
+   * cliente que lo reclama seis meses después.
+   */
+  const recargoCentavos = Math.max(0, Math.round(Number(datos.get('recargo') ?? 0) || 0));
+  const motivoCrudo = String(datos.get('recargoMotivo') ?? '');
+  const recargoMotivo = esMotivoDeRecargo(motivoCrudo) ? motivoCrudo : null;
+  if (recargoCentavos > 0 && !recargoMotivo) {
+    return { error: 'Elegí por qué se cobra el recargo.' };
+  }
+
   const pagaConDolares = medio.data === 'dolares';
   const necesitaCotizacion = pagaConDolares !== (monedaDeuda === 'USD');
   const cotizacion = necesitaCotizacion ? await cotizacionVigente(db) : null;
@@ -218,6 +234,8 @@ export async function cobrarFiadoAccion(
     const r = await cobrarFiado(db, {
       customerId,
       montoCentavos,
+      recargoCentavos,
+      recargoMotivo,
       monedaDeuda,
       cotizacionCentavos: cotizacion?.valorCentavos ?? null,
       medio: medio.data,
@@ -260,6 +278,14 @@ export async function cobrarFiadoAccion(
         ? ` Entraron ${r.monedaDeuda === 'USD' ? formatearARS(r.montoCajaCentavos) : formatearUSD(r.montoCajaCentavos)} a la caja.`
         : '';
 
+    // Con recargo son dos números y los dos importan: lo que entregó y lo
+    // que le bajó la deuda. Decir solo el primero haría creer que pagó más
+    // de lo que descontó.
+    const conRecargo =
+      r.recargoCentavos > 0
+        ? ` Entregó ${cifra(r.montoCentavos + r.recargoCentavos)}, con ${cifra(r.recargoCentavos)} de recargo.`
+        : '';
+
     return {
       // El id va siempre, haya pedido o no el recibo al cobrar: si el cliente
       // lo pide después de guardar, el enlace tiene que estar ahí y no obligar
@@ -267,8 +293,8 @@ export async function cobrarFiadoAccion(
       pagoId: r.id,
       ok:
         r.saldoCentavos === 0
-          ? `Cobrado ${cifra(r.montoCentavos)}.${enCaja} Quedó al día${r.monedaDeuda === 'USD' ? ' con los dólares' : ''}.`
-          : `Cobrado ${cifra(r.montoCentavos)}.${enCaja} Le queda una deuda de ${cifra(r.saldoCentavos)}.`,
+          ? `Cobrado ${cifra(r.montoCentavos)}.${conRecargo}${enCaja} Quedó al día${r.monedaDeuda === 'USD' ? ' con los dólares' : ''}.`
+          : `Cobrado ${cifra(r.montoCentavos)}.${conRecargo}${enCaja} Le queda una deuda de ${cifra(r.saldoCentavos)}.`,
     };
   } catch (error) {
     if (error instanceof ErrorFiado) return { error: error.message };

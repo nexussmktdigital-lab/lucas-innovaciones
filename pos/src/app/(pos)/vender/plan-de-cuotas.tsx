@@ -14,6 +14,8 @@
 import { useMemo } from 'react';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
+import { calcularRecargo, type RecargoEscrito } from '@/lib/recargo';
+import CampoRecargo from '../campo-recargo';
 import {
   CUOTAS_MAXIMAS,
   cuotasDelPlan,
@@ -27,9 +29,10 @@ export interface PlanElegido extends Cadencia {
   /**
    * Lo que se cobra por financiar, en la moneda de la deuda.
    *
-   * Un monto escrito a mano, no un porcentaje: el local lo negocia con el
-   * cliente enfrente y no sigue una tabla. Cero es el fiado de siempre, que es
-   * como viene.
+   * Sigue acá por compatibilidad con lo que quedó guardado sin conexión: la
+   * pantalla ya no lo escribe en el plan, porque **el recargo también se
+   * cobra sin plan** —el fiado «cuando pueda» es el que más se recarga, por
+   * no tener fecha de vuelta— y entonces no es parte de la cadencia.
    */
   recargoCentavos: number;
 }
@@ -41,7 +44,9 @@ export default function PlanDeCuotas({
   montoCentavos,
   moneda = 'ARS',
   plan,
+  recargo,
   onCambiar,
+  onRecargo,
 }: {
   /** Lo que se fía, **en la moneda de la deuda**. */
   montoCentavos: number;
@@ -53,7 +58,17 @@ export default function PlanDeCuotas({
    */
   moneda?: 'ARS' | 'USD';
   plan: PlanElegido | null;
+  /**
+   * Lo que se cobra por financiar, escrito como porcentaje o como monto.
+   *
+   * Va fuera del plan porque **no depende de que haya cuotas**: fiar «cuando
+   * pueda» también se cobra, y antes el campo solo aparecía al elegir una
+   * frecuencia. Era el caso más común del local y el único sin forma de
+   * cobrarlo.
+   */
+  recargo: RecargoEscrito | null;
   onCambiar: (plan: PlanElegido | null) => void;
+  onRecargo: (recargo: RecargoEscrito | null) => void;
 }) {
   const hoy = fechaLocalISO();
   const cifra = moneda === 'USD' ? formatearUSD : formatearARS;
@@ -66,8 +81,17 @@ export default function PlanDeCuotas({
    * que firma. Por eso la vista previa reparte el TOTAL —financiado más
    * recargo—, con la misma función que usa el servidor al confirmar.
    */
-  const recargoCentavos = Math.min(Math.max(0, plan?.recargoCentavos ?? 0), montoCentavos);
+  const recargoCentavos = Math.min(Math.max(0, calcularSinRomper()), montoCentavos);
   const totalAPagarCentavos = montoCentavos + recargoCentavos;
+
+  function calcularSinRomper(): number {
+    try {
+      return calcularRecargo(montoCentavos, recargo);
+    } catch {
+      // Un porcentaje imposible: el campo lo dice, acá no se suma nada.
+      return 0;
+    }
+  }
 
   const cuotas = useMemo(() => {
     if (!plan) return [];
@@ -149,6 +173,31 @@ export default function PlanDeCuotas({
         </div>
       ) : null}
 
+      {/*
+        El recargo va fuera del `plan`: se cobra con cuotas y sin cuotas.
+        Antes solo aparecía al elegir una frecuencia, así que el fiado «cuando
+        pueda» —el más común, y el que más se recarga por no tener fecha de
+        vuelta— era el único que no se podía cobrar.
+      */}
+      <div className="mt-3">
+        <CampoRecargo
+          id="recargo-fiado"
+          etiqueta="Recargo por financiar"
+          baseCentavos={montoCentavos}
+          valor={recargo}
+          onCambiar={onRecargo}
+          cifra={cifra}
+          simbolo={moneda === 'USD' ? 'US$' : '$'}
+          resumen={(c) => `Debe ${cifra(montoCentavos + c)} en vez de ${cifra(montoCentavos)}.`}
+        />
+        {recargoCentavos > 0 ? (
+          <p className="mt-1 text-xs text-(--color-tinta-suave)">
+            El comprobante del cliente no muestra esto: sale con el precio del producto. El recargo
+            va en el acuerdo de pago, que es el papel que habla de la deuda.
+          </p>
+        ) : null}
+      </div>
+
       {plan ? (
         <>
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -180,45 +229,6 @@ export default function PlanDeCuotas({
             </label>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <label htmlFor="recargo" className="text-xs text-(--color-tinta-suave)">
-              Recargo por financiar ({moneda === 'USD' ? 'US$' : '$'})
-            </label>
-            <input
-              id="recargo"
-              type="number"
-              min={0}
-              step="any"
-              inputMode="decimal"
-              value={recargoCentavos === 0 ? '' : recargoCentavos / 100}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                onCambiar({
-                  ...plan,
-                  recargoCentavos: Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0,
-                });
-              }}
-              onFocus={(e) => e.currentTarget.select()}
-              placeholder="0"
-              className="tabular min-h-10 w-28 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right"
-            />
-            <span className="text-xs text-(--color-tinta-suave)">
-              {recargoCentavos > 0
-                ? `Debe ${cifra(totalAPagarCentavos)} en vez de ${cifra(montoCentavos)}.`
-                : 'Opcional. En blanco, paga lo mismo que de contado.'}
-            </span>
-          </div>
-
-          {/* Lo que el cliente NO va a ver en su comprobante: ese papel lleva
-              el precio del producto y nada de la deuda. El recargo y las
-              cuotas van en el acuerdo de pago, que se firma y queda acá. */}
-          {recargoCentavos > 0 ? (
-            <p className="mt-1 text-xs text-(--color-tinta-suave)">
-              El comprobante del cliente no muestra esto: sale con el precio del producto. El
-              recargo y las cuotas van en el acuerdo de pago.
-            </p>
-          ) : null}
-
           {primera && ultima ? (
             <p className="mt-2 text-sm">
               <strong className="tabular">
@@ -239,7 +249,8 @@ export default function PlanDeCuotas({
         </>
       ) : (
         <p className="mt-2 text-xs text-(--color-tinta-suave)">
-          Queda como saldo en su cuenta, sin fecha de cobro. Es el fiado de siempre.
+          Queda como saldo en su cuenta, sin fecha de cobro. Es el fiado de siempre
+          {recargoCentavos > 0 ? `, con el recargo ya sumado: debe ${cifra(totalAPagarCentavos)}` : ''}.
           {moneda === 'USD' ? ' El saldo queda en dólares, igual que la venta.' : ''}
         </p>
       )}

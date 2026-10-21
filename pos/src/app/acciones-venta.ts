@@ -81,6 +81,15 @@ const esquemaVenta = z.object({
          */
         montoUsdCentavos: z.number().int().positive().nullish(),
         cotizacionCentavos: z.number().int().positive().nullish(),
+        /**
+         * Lo que se cobra de más por pagar con este medio. Hoy, el cheque.
+         *
+         * Viene ya calculado desde la pantalla, que es donde se eligió el
+         * porcentaje; el servidor lo suma al total y al pago. Declararlo acá
+         * no es opcional: zod descarta en silencio lo que no declara, y un
+         * recargo perdido en el camino dejaría la venta cobrando de menos.
+         */
+        recargoCentavos: z.number().int().min(0).optional(),
         monetaryAccountId: z.string().uuid().nullish(),
         equipoRecibido: equipoRecibido.nullish(),
         marcaTarjeta: z.string().max(40).nullish(),
@@ -119,6 +128,14 @@ const esquemaVenta = z.object({
       recargoCentavos: z.number().int().min(0).optional(),
     })
     .nullish(),
+  /**
+   * Lo que se cobra por fiar, en la moneda de la deuda.
+   *
+   * Va fuera de `plan` porque **se cobra con plan y sin plan**: el fiado
+   * «cuando pueda» —el más común— también se recarga, y antes no había dónde
+   * ponerlo. El tope de verdad lo pone el dominio: no puede pasar lo fiado.
+   */
+  recargoFiadoCentavos: z.number().int().min(0).optional(),
 });
 
 export type DatosDeVenta = z.input<typeof esquemaVenta>;
@@ -238,6 +255,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
         montoCentavos: p.montoCentavos,
         montoUsdCentavos: p.montoUsdCentavos ?? null,
         cotizacionCentavos: p.cotizacionCentavos ?? null,
+        recargoCentavos: p.recargoCentavos ?? 0,
         monetaryAccountId: p.monetaryAccountId ?? null,
         equipoRecibido: p.equipoRecibido ?? null,
         marcaTarjeta: p.marcaTarjeta ?? null,
@@ -262,6 +280,7 @@ export async function registrarVenta(datos: DatosDeVenta): Promise<ResultadoDeVe
               recargoCentavos: validado.data.plan.recargoCentavos ?? 0,
             }
           : null,
+      recargoFiadoCentavos: hayFiado ? (validado.data.recargoFiadoCentavos ?? 0) : 0,
     });
 
     // La venta ya está firme. El ajuste a Woo viaja aparte y si falla, espera.
@@ -431,6 +450,7 @@ export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<R
         montoCentavos: p.montoCentavos,
         montoUsdCentavos: p.montoUsdCentavos ?? null,
         cotizacionCentavos: p.cotizacionCentavos ?? null,
+        recargoCentavos: p.recargoCentavos ?? 0,
         monetaryAccountId: p.monetaryAccountId ?? null,
         equipoRecibido: p.equipoRecibido ?? null,
         marcaTarjeta: p.marcaTarjeta ?? null,
@@ -454,6 +474,7 @@ export async function subirVentaDiferida(datos: DatosDeVentaDiferida): Promise<R
               recargoCentavos: d.plan.recargoCentavos ?? 0,
             }
           : null,
+      recargoFiadoCentavos: hayFiado ? (d.recargoFiadoCentavos ?? 0) : 0,
       diferida: {
         capturadaEn: new Date(d.capturadaEn),
         preciosCobradosCentavos: d.preciosCobradosCentavos,

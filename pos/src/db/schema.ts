@@ -436,6 +436,28 @@ export const sales = pgTable(
     tipo: tipoVentaEnum().notNull().default('contado'),
     subtotalCentavos: bigint({ mode: 'number' }).notNull(),
     descuentoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Lo que se cobro de mas por el medio de pago: hoy, el cheque.
+     *
+     * **Suma al total**: `total = subtotal - descuento + recargo`. Tiene que
+     * sumar ahi y no quedar aparte, porque los pagos de una venta suman
+     * exactamente su total y un cheque escrito por mas que el total se leeria
+     * como vuelto.
+     */
+    recargoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Lo que se cobro por fiar, en la moneda de la DEUDA.
+     *
+     * **No suma al total de la venta**: el comprobante del cliente lleva el
+     * precio del producto y nada de la deuda. Suma a lo que queda debiendo.
+     *
+     * Con un plan de cuotas el mismo numero vive ademas en
+     * `credit_plans.recargo_centavos`, que es de donde salen las cuotas. Acá
+     * se guarda igual para que el acuerdo de un fiado SIN plan —el «cuando
+     * pueda», que no tiene fila en `credit_plans`— se pueda reimprimir con el
+     * desglose que el cliente firmo.
+     */
+    recargoFinanciacionCentavos: bigint({ mode: 'number' }).notNull().default(0),
     totalCentavos: bigint({ mode: 'number' }).notNull(),
     /** TC congelado al confirmar. Una venta vieja nunca se recalcula. */
     tcAplicadoCentavos: bigint({ mode: 'number' }),
@@ -469,6 +491,8 @@ export const sales = pgTable(
     index('sales_vendedor_idx').on(t.vendedorId),
     index('sales_canal_idx').on(t.canal),
     check('sales_total_ck', sql`${t.totalCentavos} >= 0`),
+    check('sales_recargo_ck', sql`${t.recargoCentavos} >= 0`),
+    check('sales_recargo_financiacion_ck', sql`${t.recargoFinanciacionCentavos} >= 0`),
     check(
       'sales_offline_ck',
       sql`(${t.offline} AND ${t.offlineCapturadaEn} IS NOT NULL)
@@ -740,6 +764,17 @@ export const creditPayments = pgTable(
     montoCajaCentavos: bigint({ mode: 'number' }),
     cotizacionCentavos: bigint({ mode: 'number' }),
     medio: medioPagoEnum().notNull(),
+    /**
+     * Lo que se cobro de mas al recibir este pago, en la moneda de la deuda.
+     *
+     * Dos casos: el cliente paga la cuota con cheque, o la paga tarde. **No
+     * baja la deuda**: entrega monto + recargo y la cuenta baja solo por el
+     * monto. Si el recargo descontara deuda no seria un recargo, seria un
+     * descuento sobre el pago.
+     */
+    recargoCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /** `cheque`, `demora` u `otro`. Obligatorio si hay recargo. */
+    recargoMotivo: text(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
     cashSessionId: uuid().references(() => cashSessions.id),
     fecha: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -754,6 +789,18 @@ export const creditPayments = pgTable(
     uniqueIndex('credit_payments_idempotency_uq').on(t.idempotencyKey),
     index('credit_payments_cuenta_idx').on(t.creditAccountId),
     check('credit_payments_monto_ck', sql`${t.montoCentavos} > 0`),
+    /*
+     * Hay recargo si y solo si hay motivo. Un recargo sin motivo es un numero
+     * que dentro de seis meses nadie le puede explicar al cliente que lo
+     * reclama, y un motivo sin recargo es un campo que quedo de un intento
+     * anterior.
+     */
+    check(
+      'credit_payments_recargo_ck',
+      sql`(${t.recargoCentavos} > 0) = (${t.recargoMotivo} IS NOT NULL)
+          AND ${t.recargoCentavos} >= 0
+          AND (${t.recargoMotivo} IS NULL OR ${t.recargoMotivo} IN ('cheque', 'demora', 'otro'))`,
+    ),
   ],
 );
 

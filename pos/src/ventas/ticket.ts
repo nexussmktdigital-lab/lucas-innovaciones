@@ -101,6 +101,16 @@ export interface DatosDelTicket {
     moneda: 'ARS' | 'USD';
   } | null;
   /**
+   * Lo que se cobró de más por el medio de pago: hoy, el cheque.
+   *
+   * **Va en el comprobante del cliente**, a diferencia del recargo por
+   * financiar: esto no es el precio de pagar en el tiempo, es parte de lo que
+   * el cliente paga hoy por esta compra. Un total que no coincide con la suma
+   * de los renglones, sin una línea que lo explique, es la clase de papel que
+   * se discute en el mostrador.
+   */
+  recargoDePagoCentavos?: number;
+  /**
    * Lo que se cobró por financiar, en la moneda de la deuda.
    *
    * Va **solo en el acuerdo de pago**, desglosado: el que firma un saldo de
@@ -319,6 +329,13 @@ function hojaDelComprobante(
   /** Con qué signo se escribe ese renglón. */
   const cifraDeLinea = (l: LineaDeTicket) => (lineaEnDolares(l) ? formatearUSD : formatearARS);
 
+  /*
+   * El recargo por el medio de pago ya viene sumado en `totalCentavos`, que
+   * es lo que el cliente paga. En un comprobante en dólares no se suma: el
+   * recargo se cobra en pesos y el papel en dólares lleva el precio pactado.
+   */
+  const recargoDePagoCentavos = enDolares ? 0 : (datos.recargoDePagoCentavos ?? 0);
+
   const totalCentavos = enDolares
     ? datos.lineas.reduce((n, l) => n + totalDeLinea(l), 0)
     : datos.totalCentavos;
@@ -353,10 +370,19 @@ function hojaDelComprobante(
    * en otra, el papel lo aclara en una línea. Con cuotas no hace falta
    * aclarar nada: están impresas con su signo.
    */
+  /*
+   * Sin cuotas, el recargo por financiar se suma acá: es parte de lo que el
+   * cliente queda debiendo y el papel que firma tiene que decirlo.
+   *
+   * Con cuotas no hace falta, porque el recargo ya está repartido adentro de
+   * ellas y el saldo es su suma. Antes este caso no existía —no se podía
+   * cobrar recargo sin plan— y el acuerdo de un fiado «cuando pueda» decía
+   * «queda debiendo $5.000» debajo de un renglón que cobraba $500 más.
+   */
   const saldoCentavos =
     cuotas.length > 0
       ? cuotas.reduce((n, c) => n + c.montoCentavos, 0)
-      : totalCentavos - entregadoCentavos;
+      : totalCentavos - entregadoCentavos + (datos.recargoCentavos ?? 0);
   const cifraDelSaldo = cuotas.length > 0 ? cifraDeLaDeuda : cifra;
   const avisoDeMoneda =
     saldoCentavos > 0 && monedaDeLaDeuda === 'USD' && !enDolares
@@ -591,6 +617,16 @@ function hojaDelComprobante(
   </div>
 
   ${detalle}
+  ${
+    recargoDePagoCentavos > 0
+      ? `<div class="renglon">
+        <div>
+          <div class="producto">Recargo por pago con cheque</div>
+        </div>
+        <div class="importe">${escapar(formatearARS(recargoDePagoCentavos))}</div>
+      </div>`
+      : ''
+  }
 
   <div class="regla-fina"></div>
 

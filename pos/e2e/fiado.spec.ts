@@ -701,3 +701,139 @@ test('se puede cobrar sin imprimir nada', async ({ page }) => {
   await expect(tarjeta.getByText(/Cobrado/)).toBeVisible({ timeout: 15_000 });
   await expect(tarjeta.getByRole('link', { name: 'Imprimir el recibo' })).toBeVisible();
 });
+
+/**
+ * El recargo por fiar «cuando pueda».
+ *
+ * El fiado sin fechas es el más común del local y es el que más se recarga,
+ * porque no tiene fecha de vuelta. Antes el campo solo aparecía al elegir una
+ * frecuencia: era el único caso sin forma de cobrarlo.
+ */
+test('fiar «cuando pueda» con recargo sube la deuda y no el precio', async ({ page, context }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  // Sin la palabra «recargo» en el nombre: el papel se revisa buscándola.
+  const cliente = `Marta del fiado abierto ${Date.now().toString().slice(-5)}`;
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(cliente);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByRole('link', { name: cliente })).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await buscador.press('Enter');
+  await elegirCliente(page, cliente);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+
+  // «Cuando pueda» viene elegido, y ahora el recargo también está acá.
+  await cobro.getByLabel('Recargo por financiar').fill('10');
+  await expect(cobro).toContainText('Debe $ 5.500,00 en vez de $ 5.000,00');
+  await expect(cobro).toContainText('El comprobante del cliente no muestra esto');
+
+  const [papeles] = await Promise.all([
+    context.waitForEvent('page'),
+    cobro.getByRole('button', { name: /Confirmar venta/ }).click(),
+  ]);
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await papeles.waitForLoadState('domcontentloaded');
+  const hojas = papeles.locator('.hoja');
+  await expect(hojas).toHaveCount(2);
+
+  // El comprobante del cliente lleva el precio del producto y nada más.
+  const suyo = (await hojas.nth(0).innerText()).replace(/ /g, ' ');
+  expect(suyo).toContain('$ 5.000,00');
+  expect(suyo).not.toContain('Recargo');
+
+  // El acuerdo sí desglosa de dónde sale lo que firma.
+  const acuerdo = (await hojas.nth(1).innerText()).replace(/ /g, ' ');
+  expect(acuerdo).toContain('ACUERDO DE PAGO');
+  expect(acuerdo).toContain('Recargo por financiar');
+  expect(acuerdo).toContain('$ 500,00');
+  expect(acuerdo).toContain('Queda debiendo');
+  expect(acuerdo).toContain('$ 5.500,00');
+
+  // Y la deuda que queda es la del acuerdo.
+  await page.goto('/fiado');
+  await expect(page.getByRole('listitem').filter({ hasText: cliente })).toContainText(
+    '$ 5.500,00',
+  );
+});
+
+/**
+ * El recargo al cobrar una cuota: por cheque o por la demora.
+ *
+ * No baja la deuda. El cliente entrega monto + recargo y la cuenta baja solo
+ * por el monto: si descontara deuda no sería un recargo, sería un descuento.
+ */
+test('cobrar una cuota con recargo: entrega más y la deuda baja lo mismo', async ({
+  page,
+  context,
+}) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  const antes = aPesos(await tarjeta.innerText());
+
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('20000');
+  await tarjeta.getByLabel('Recargo (opcional)').fill('10');
+
+  // El motivo aparece recién cuando hay recargo: sin recargo no hay qué explicar.
+  await tarjeta.getByLabel('Por qué').selectOption('demora');
+  await expect(tarjeta).toContainText('Entrega $ 22.000,00 y la deuda baja $ 20.000,00');
+
+  const [recibo] = await Promise.all([
+    context.waitForEvent('page'),
+    tarjeta.getByRole('button', { name: 'Registrar el pago' }).click(),
+  ]);
+
+  await recibo.waitForURL(/\/recibo\//, { timeout: 15_000 });
+  const papel = (await recibo.locator('.mitad').first().innerText()).replace(/ /g, ' ');
+
+  expect(papel).toContain('$ 20.000,00');
+  expect(papel).toContain('Recargo por la demora');
+  expect(papel).toContain('$ 2.000,00');
+  expect(papel).toContain('No descuenta deuda');
+  expect(papel).toContain('Total entregado');
+  expect(papel).toContain('$ 22.000,00');
+
+  // La deuda bajó $20.000, no $22.000.
+  await page.goto('/fiado');
+  const despues = aPesos(
+    await page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' }).innerText(),
+  );
+  expect(antes - despues).toBe(20_000_00);
+});
+
+test('un recargo sin motivo no se puede guardar', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('1000');
+
+  // Sin recargo el selector de motivo ni siquiera está.
+  await expect(tarjeta.getByLabel('Por qué')).toHaveCount(0);
+
+  await tarjeta.getByLabel('Recargo (opcional)').fill('5');
+  await expect(tarjeta.getByLabel('Por qué')).toBeVisible();
+});
+
+/** El primer importe en pesos de un bloque, en centavos. */
+function aPesos(texto: string): number {
+  const m = texto.replace(/ /g, ' ').match(/\$ ([\d.]+),(\d{2})/);
+  if (!m) throw new Error(`No encontré un importe en: ${texto}`);
+  return Number(m[1]!.replace(/\./g, '')) * 100 + Number(m[2]);
+}

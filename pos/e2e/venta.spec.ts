@@ -562,3 +562,91 @@ test('el mostrador cobra menos que la tienda, con el recargo puesto', async ({ p
     await expect(page.getByText(/Sin recargo/)).toBeVisible();
   }
 });
+
+/**
+ * El recargo por pagar con cheque.
+ *
+ * Cobrar con cheque le cuesta al local y lo cobra. Hasta acá se resolvía
+ * subiendo el precio a mano, y entonces el comprobante del cliente decía que
+ * el vidrio valía otra cosa.
+ */
+test('un cheque con recargo sube el total y sale explicado en el comprobante', async ({
+  page,
+  context,
+}) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cheque' }).click();
+
+  // Un 5% sobre los $5.000 del vidrio son $250.
+  await cobro.getByLabel('Recargo por el cheque').fill('5');
+  await expect(cobro).toContainText('El cheque se escribe por $ 5.250,00');
+  await expect(cobro).toContainText('$ 250,00 de recargo por el cheque');
+
+  const [papeles] = await Promise.all([
+    context.waitForEvent('page'),
+    cobro.getByRole('button', { name: /Confirmar venta/ }).click(),
+  ]);
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await papeles.waitForLoadState('domcontentloaded');
+  const papel = (await papeles.locator('.hoja').first().innerText()).replace(/ /g, ' ');
+
+  // El recargo va en el comprobante del cliente: es parte de lo que paga hoy.
+  expect(papel).toContain('Recargo por pago con cheque');
+  expect(papel).toContain('$ 250,00');
+  expect(papel).toContain('$ 5.250,00');
+  // Y el producto sigue valiendo lo que vale.
+  expect(papel).toContain('$ 5.000,00');
+});
+
+test('el recargo en monto fijo se cobra tal cual', async ({ page, context }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await context.addInitScript(() => {
+    window.print = () => {};
+  });
+
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cheque' }).click();
+  await cobro.getByRole('button', { name: 'Recargo en monto fijo' }).click();
+  await cobro.getByLabel('Recargo por el cheque').fill('700');
+
+  await expect(cobro).toContainText('El cheque se escribe por $ 5.700,00');
+
+  await Promise.all([
+    context.waitForEvent('page'),
+    cobro.getByRole('button', { name: /Confirmar venta/ }).click(),
+  ]);
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+});
+
+test('un porcentaje imposible se frena antes de cobrar', async ({ page }) => {
+  // Un 500% sobre un iPhone no es un recargo, es un cero de más que nadie
+  // revisa hasta que el cliente mira el papel.
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/vender');
+  await agregar(page, 'vidrio templado', /Vidrio templado/);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cheque' }).click();
+  await cobro.getByLabel('Recargo por el cheque').fill('500');
+
+  await expect(cobro).toContainText('¿Sobra un cero?');
+});

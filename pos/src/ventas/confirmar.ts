@@ -39,6 +39,7 @@ import {
   calcularTotales,
   problemasDelCobro,
   stockDisponible,
+  valorDelPago,
   ventaEnDolares,
   type Descuento,
   type LineaCarrito,
@@ -156,6 +157,16 @@ export interface SolicitudDeVenta {
      */
     recargoCentavos?: number;
   } | null;
+  /**
+   * Lo que se cobra por fiar, en la moneda de la deuda.
+   *
+   * Va acá y no dentro de `plan` porque **se cobra con plan y sin plan**: el
+   * fiado «cuando pueda» —sin fechas, el más común del local— también se
+   * recarga, y antes no se podía. Dentro de `plan` sigue aceptándose por si
+   * llega una venta cobrada sin conexión con la forma vieja: no se puede
+   * rechazar una venta que ya se cobró porque el campo se mudó de lugar.
+   */
+  recargoFiadoCentavos?: number;
   ip?: string | null;
 }
 
@@ -578,13 +589,30 @@ export async function confirmarVenta(
 
     // 8. Totales y cobro, recalculados en el servidor.
     const totales = calcularTotales(lineas, solicitud.descuentoGlobal ?? null);
+
+    /*
+     * El recargo por el medio de pago —hoy, el cheque— **sube el total**.
+     *
+     * Tiene que subirlo y no quedar aparte: los pagos de una venta suman
+     * exactamente su total, y un cheque escrito por más que el total se
+     * leería como vuelto. El monto ya viene calculado desde la pantalla, que
+     * es donde se eligió el porcentaje, pero se recalcula la suma acá: lo que
+     * se guarda sale del servidor.
+     */
+    const recargoDePagoCentavos = solicitud.pagos.reduce(
+      (n, p) => n + Math.max(0, Math.round(p.recargoCentavos ?? 0)),
+      0,
+    );
+    const totalConRecargo = totales.totalCentavos + recargoDePagoCentavos;
+
     const problemas = problemasDelCobro(totales, solicitud.pagos, {
       hayCliente: Boolean(solicitud.clienteId),
+      recargoCentavos: recargoDePagoCentavos,
     });
     if (problemas.length > 0) {
       throw new ErrorVenta(problemas.join(' '), 'pago_insuficiente');
     }
-    const cobro = calcularCobro(totales.totalCentavos, solicitud.pagos);
+    const cobro = calcularCobro(totalConRecargo, solicitud.pagos);
 
     // 9. Número correlativo. El upsert es atómico y toma el candado de la fila.
     const [contador] = filasDe<{ ultimo: number }>(
@@ -610,7 +638,8 @@ export async function confirmarVenta(
         tipo: solicitud.pagos.some((p) => p.medio === 'cuenta_corriente') ? 'fiado' : 'contado',
         subtotalCentavos: totales.subtotalCentavos,
         descuentoCentavos: totales.descuentoGlobalCentavos + totales.descuentoLineasCentavos,
-        totalCentavos: totales.totalCentavos,
+        recargoCentavos: recargoDePagoCentavos,
+        totalCentavos: totalConRecargo,
         tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
         idempotencyKey: solicitud.idempotencyKey,
         syncedToWoo: false,
@@ -679,7 +708,15 @@ export async function confirmarVenta(
         saleId: ventaId,
         medio: p.medio,
         monetaryAccountId: p.monetaryAccountId ?? null,
-        montoCentavos: p.montoCentavos,
+        /*
+         * Lo que cubre más su recargo: es por lo que se escribió el cheque.
+         *
+         * Los pagos de una venta suman exactamente su total, y el total ya
+         * subió por el mismo recargo. Guardar acá solo la parte de mercadería
+         * dejaría la suma corta y el desglose por medio de pago del reporte
+         * no explicaría el total.
+         */
+        montoCentavos: valorDelPago(p),
         /*
          * Los dólares del canje se guardan igual que los de un pago en
          * billetes: lo entregado y lo que valía ese día son dos hechos
@@ -741,14 +778,43 @@ export async function confirmarVenta(
        *
        * Viene en la moneda de la deuda —lo escribe el mostrador mirando la
        * misma cifra que le dice al cliente— y suma a lo que el cliente debe,
-       * no al total de la venta. Sin plan no hay recargo: lo que se cobra es
-       * pagar en cuotas, y sin cuotas no hay qué cobrar.
+       * **no al total de la venta**: el teléfono vale lo que vale y esto es
+       * el precio de pagarlo en el tiempo.
+       *
+       * **También se cobra sin plan.** Antes no: «sin cuotas no hay qué
+       * cobrar», decía este comentario, y es falso en el local. El fiado
+       * «cuando pueda» —sin fechas, el más común— es justamente el que más se
+       * recarga, porque no tiene fecha de vuelta.
+       *
+       * Se sigue leyendo de `plan.recargoCentavos` si viene ahí: una venta
+       * cobrada sin conexión con la forma vieja no se puede rechazar porque
+       * el campo se mudó de lugar.
        */
-      const recargoCentavos = solicitud.plan
-        ? validarRecargo(solicitud.plan.recargoCentavos ?? 0, financiadoCentavos)
-        : 0;
+      const recargoCentavos = validarRecargo(
+        solicitud.recargoFiadoCentavos ?? solicitud.plan?.recargoCentavos ?? 0,
+        financiadoCentavos,
+      );
 
       const deudaCentavos = financiadoCentavos + recargoCentavos;
+
+      /*
+       * El recargo queda también en la venta, no solo en el plan.
+       *
+       * Es lo único que hace que el acuerdo de un fiado SIN plan se pueda
+       * reimprimir con el desglose que el cliente firmó: sin fila en
+       * `credit_plans` no hay de dónde leerlo, y el papel reimpreso diría
+       * «queda debiendo $110.000» sin decir que $10.000 son el recargo.
+       *
+       * Va en un UPDATE y no en el INSERT de más arriba porque recién acá se
+       * sabe cuánto se fió. Solo cuando hay recargo: una venta de contado no
+       * paga una escritura de más.
+       */
+      if (recargoCentavos > 0) {
+        await tx
+          .update(sales)
+          .set({ recargoFinanciacionCentavos: recargoCentavos })
+          .where(eq(sales.id, ventaId));
+      }
 
       const deuda = await anotarDeuda(tx, {
         customerId: solicitud.clienteId,
@@ -925,7 +991,8 @@ export async function confirmarVenta(
       entidadId: ventaId,
       valorNuevo: {
         numero,
-        totalCentavos: totales.totalCentavos,
+        totalCentavos: totalConRecargo,
+        recargoCentavos: recargoDePagoCentavos,
         unidades: totales.unidades,
         medios: solicitud.pagos.map((p) => p.medio),
         autorizadaPor: solicitud.autorizadaPorId ?? null,
@@ -966,7 +1033,7 @@ export async function confirmarVenta(
     return {
       id: ventaId,
       numero,
-      totalCentavos: totales.totalCentavos,
+      totalCentavos: totalConRecargo,
       vueltoCentavos: cobro.vueltoCentavos,
       tcAplicadoCentavos: lineas.some((l) => l.monedaOriginal === 'USD') ? tcCentavos : null,
       yaExistia: false,
