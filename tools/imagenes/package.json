@@ -8,7 +8,8 @@
     "buscar": "node imagenes.mjs buscar",
     "filtrar": "node imagenes.mjs filtrar",
     "revisar": "node imagenes.mjs revisar",
-    "subir": "node imagenes.mjs subir"
+    "subir": "node imagenes.mjs subir",
+    "chequear": "node filtro.chequeo.mjs"
   },
   "dependencies": {
     "sharp": "^0.34.0"
