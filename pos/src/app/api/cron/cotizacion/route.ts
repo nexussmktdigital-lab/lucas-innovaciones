@@ -7,10 +7,19 @@
  * alguien se acordara de cargar a mano en `F9`.
  *
  * Va aparte de `/api/cron/sincronizar` y no adentro, por dos razones. Una, los
- * ritmos no son el mismo: la cola hay que drenarla cada diez minutos porque es
- * stock que la tienda todavía no descontó, y el dólar cada dos horas sobra. La
- * otra, y más importante: si infodólar está caído, lo que no tiene que pasar es
- * que se frene el drenaje de la cola.
+ * ritmos no son el mismo: la cola hay que drenarla seguido porque es stock que
+ * la tienda todavía no descontó, y el dólar cada dos horas sobra. La otra, y
+ * más importante: si infodólar está caído, lo que no tiene que pasar es que se
+ * frene el drenaje de la cola.
+ *
+ * **Corre de 8 a 22 de Argentina y no las veinticuatro horas**, por la misma
+ * razón que el otro cron: la base se suspende a los cinco minutos y cada
+ * despertada se paga. De noche no hay quién mire un precio.
+ *
+ * La primera corrida del día es a las 8:07, casi una hora antes de que abra el
+ * local, así que a las 9 el dólar tiene menos de una hora. Eso importa: una
+ * cotización de más de seis horas (`HORAS_HASTA_VENCER`) sale avisada en la
+ * pantalla de inicio, y nadie quiere empezar el día con ese cartel.
  *
  * **Lo que esta tarea NO hace es forzar.** Guardar pasa por
  * `registrarCotizacion`, con sus guardas de banda plausible y de salto máximo,

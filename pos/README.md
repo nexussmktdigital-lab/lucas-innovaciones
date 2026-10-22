@@ -175,7 +175,7 @@ Todas van en `.env`, ninguna en el código. Ver [`.env.example`](.env.example).
 | `POS_TERMINAL` | Prefijo del número de venta, ej. `T1`. Una terminal por despliegue: define de dónde salió cada venta y a qué caja pertenece. Con una sola caja, dejar `T1`. |
 | `ANTHROPIC_API_KEY` | **Opcional.** Habilita la ayuda que arma la ficha de un producto nuevo a partir de una descripción suelta. Sin esto el alta funciona igual, a mano. Nunca propone precio, stock ni imágenes. |
 | `ANTHROPIC_MODELO` | **Opcional.** Modelo a usar; por defecto `claude-opus-5`. |
-| `CRON_SECRET` | Secreto del drenaje programado de la cola. La tarea de Vercel (ver `vercel.json`) pega en `/api/cron/sincronizar` con `Authorization: Bearer <CRON_SECRET>`. Sin esto la ruta devuelve 503 y la cola solo se mueve al vender o a mano. |
+| `CRON_SECRET` | Secreto del drenaje programado de la cola. La tarea de Vercel (ver `vercel.json`) pega en `/api/cron/sincronizar` con `Authorization: Bearer <CRON_SECRET>`. Sin esto la ruta devuelve 503 y la cola solo se mueve al vender o a mano. Las tareas corren de 8 a 22 de Argentina y **las expresiones están en UTC**: ver «Las tareas programadas y lo que cuestan». |
 
 ---
 
@@ -304,10 +304,40 @@ resta. Reintentarlo escribe el mismo número, así que es idempotente y se cura
 solo. Si Woo tiene un valor que no esperábamos, queda registrado en
 `sync_conflicts`.
 
-La cola se drena en tres momentos: después de cada venta, cada diez minutos por
-la tarea programada, y cuando el dueño toca «Sincronizar ahora» en la pantalla
-de **Sincronización**. Ahí también se ve qué está esperando, con qué error falló
-y se puede devolver a la cola lo que agotó los seis reintentos.
+La cola se drena en tres momentos: **después de cada venta**, cada media hora
+por la tarea programada, y cuando el dueño toca «Sincronizar ahora» en la
+pantalla de **Sincronización**. Ahí también se ve qué está esperando, con qué
+error falló y se puede devolver a la cola lo que agotó los seis reintentos.
+
+### Las tareas programadas y lo que cuestan
+
+Las dos tareas de `vercel.json` corren **de 8 a 22 hora de Argentina**, no las
+veinticuatro horas:
+
+| Tarea | Cuándo | Para qué |
+|---|---|---|
+| `/api/cron/sincronizar` | cada 30 min | drena la cola, trae los pedidos web, refresca el catálogo |
+| `/api/cron/cotizacion` | cada 2 h, a las :07 | el blue vendedor de Córdoba |
+
+**El horario no es una preferencia, es la factura.** Neon suspende la base a
+los cinco minutos de no recibir nada y cobra por hora de cómputo encendido. El
+cron de sincronización corría **cada diez minutos las veinticuatro horas**, así
+que la base nunca llegaba a dormir más de cinco minutos: quedaba despierta la
+mitad de cada hora de cada día —unas 365 horas por mes— y en octubre de 2026 se
+comió la cuota entera del plan libre sin que el local hubiera vendido nada.
+Dejar de despertarla de madrugada bajó el consumo de las tareas de unas 91
+CU-hora por mes a unas 21.
+
+Lo que se resigna, dicho: **un pedido de la tienda online que entre de noche se
+importa recién a las 8:07**. El local está cerrado, así que nadie puede vender
+esa unidad en el medio, y la cola se drena igual con la primera venta del día.
+
+> **Los cron de Vercel corren en UTC**, y no hay forma de declararles una zona
+> horaria. Por eso las expresiones se leen raras: `*/30 0-1,11-23 * * *` son las
+> 8:00 a 22:30 de Argentina, que está tres horas atrás. Escribir `8-22` ahí
+> sería de 5 de la mañana a 7 de la tarde hora local y **se perdería el turno de
+> la tarde entero**, en silencio. Argentina no mueve la hora en todo el año, así
+> que la cuenta no cambia con las estaciones.
 
 ---
 

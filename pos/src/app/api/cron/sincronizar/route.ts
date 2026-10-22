@@ -18,11 +18,24 @@
  *
  * El orden importa y no es casual: la cola es plata —stock que la tienda
  * todavía no descontó— y el refresco son precios. Si el tiempo no alcanza para
- * los dos, el que se saltea es el refresco, que se vuelve a intentar en diez
- * minutos.
+ * los dos, el que se saltea es el refresco, que se vuelve a intentar en la
+ * corrida siguiente.
  *
  * La llama el cron de Vercel (ver `vercel.json`) o cualquier cron externo con
  * el mismo encabezado.
+ *
+ * **Corre cada media hora y solo de 8 a 22 de Argentina**, no cada diez
+ * minutos las veinticuatro horas como al principio. El motivo es la factura:
+ * la base se suspende a los cinco minutos de no recibir nada, así que un cron
+ * cada diez minutos la dejaba despierta la mitad de cada hora de cada día
+ * —unas 365 horas por mes— y se comía la cuota de cómputo de Neon sin que el
+ * local vendiera nada. La cola además se drena sola después de cada venta
+ * (`drenarEnSegundoPlano`), así que esto es la red de seguridad y no el camino
+ * principal.
+ *
+ * La contrapartida, dicha: **un pedido de la tienda online que entre de noche
+ * se importa recién a las 8:07**. El local está cerrado, así que nadie puede
+ * vender esa unidad en el medio.
  *
  * No lleva sesion de usuario: se autentica con `CRON_SECRET`. Sin ese secreto
  * configurado la ruta no existe, para que nadie la pueda usar por accidente.
@@ -50,7 +63,13 @@ export const dynamic = 'force-dynamic';
  */
 export const maxDuration = 60;
 
-/** Cuantas operaciones por corrida. Con el cron cada 10 minutos, sobra. */
+/**
+ * Cuantas operaciones por corrida.
+ *
+ * Con el cron cada media hora son 1.500 por dia, y el local hace del orden de
+ * cien ventas: sobra. Lo que no entra queda en la cola y lo levanta la corrida
+ * siguiente, o la primera venta que se cobre.
+ */
 const TOPE = 50;
 
 /**
