@@ -236,6 +236,7 @@ export async function buscarProductos(
           precioCentavos: precioTiendaCentavos,
           precioLocalCentavos,
           soloMostrador: Boolean(f.solo_mostrador),
+          enDolares: f.moneda === 'USD',
         },
         recargoBp,
       ),

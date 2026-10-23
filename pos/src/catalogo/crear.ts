@@ -524,6 +524,7 @@ export async function buscarParecidos(
         precioLocalCentavos:
           f.precio_local_centavos === null ? null : Number(f.precio_local_centavos),
         soloMostrador: Boolean(f.solo_mostrador),
+        enDolares: f.moneda === 'USD',
       },
       recargoBp,
     ),

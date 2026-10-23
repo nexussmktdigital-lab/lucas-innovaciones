@@ -69,6 +69,27 @@ describe('armarLinea', () => {
     expect(l.monedaOriginal).toBe('USD');
   });
 
+  /*
+   * El caso que costó plata. El recargo de la tienda cubre la comisión de
+   * Mercado Pago sobre los precios en pesos; sobre un precio en dólares no
+   * corre, porque los pesos ya salen de la cotización. Con el recargo en 0
+   * —como estuvo hasta el 21/10— los dos caminos dan igual y el error no se
+   * ve, así que este test es el que lo tiene puesto.
+   */
+  it('el recargo de la tienda no toca un precio en dólares', () => {
+    const iphone = producto({
+      nombre: 'iPhone 14 Pro 256GB',
+      moneda: 'USD',
+      precioUsdCentavos: 137_000,
+      precioCentavos: 1,
+    });
+    const sinRecargo = armarLinea(iphone, 1, { tcCentavos: TC });
+    const conRecargo = armarLinea(iphone, 1, { tcCentavos: TC, recargoTiendaBp: 1500 });
+
+    expect(conRecargo.precioUnitarioCentavos).toBe(sinRecargo.precioUnitarioCentavos);
+    expect(conRecargo.precioUnitarioCentavos).toBe(213_900_000);
+  });
+
   it('se niega a vender en dólares sin cotización, en vez de inventar un precio', () => {
     const iphone = producto({ moneda: 'USD', precioUsdCentavos: 137_000 });
     expect(() => armarLinea(iphone, 1)).toThrow(/cotización/i);

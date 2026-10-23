@@ -37,6 +37,7 @@ import {
   armarLinea,
   calcularCobro,
   calcularTotales,
+  aMostrador,
   problemasDelCobro,
   stockDisponible,
   valorDelPago,
@@ -54,7 +55,6 @@ import { crearPlan, validarRecargo, type Cadencia } from '@/fiado/plan';
 import { pesosAUsdExacto } from '@/lib/dinero';
 import { fechaLocalISO } from '@/lib/fecha';
 import { recargoDeTienda } from '@/precios/config';
-import { precioDeMostrador } from '@/precios/mostrador';
 import { explicarSospechas, revisarPrecioEscrito, revisarVenta, type Sospecha } from './cordura';
 
 export class ErrorVenta extends Error {
@@ -530,7 +530,7 @@ export async function confirmarVenta(
           if (solicitud.lineas[i]?.precioManualCentavos == null) return [];
           const p = catalogo.get(l.productId)!;
           // La referencia es el precio de mostrador, no el de la tienda.
-          const referencia = precioDeMostrador(p, recargoTiendaBp);
+          const referencia = aMostrador(p, p.precioCentavos, recargoTiendaBp);
           const s = revisarPrecioEscrito(l.descripcion, l.precioUnitarioCentavos, referencia);
           return s ? [s] : [];
         }),
@@ -1023,7 +1023,7 @@ export async function confirmarVenta(
             centavos: l.precioUnitarioCentavos,
             referenciaCentavos: (() => {
               const p = catalogo.get(l.productId);
-              return p ? precioDeMostrador(p, recargoTiendaBp) : 0;
+              return p ? aMostrador(p, p.precioCentavos, recargoTiendaBp) : 0;
             })(),
           })),
       },

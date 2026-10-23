@@ -17,6 +17,7 @@ function producto(p: Partial<ProductoConPrecios> = {}): ProductoConPrecios {
     precioCentavos: 56_000_00,
     precioLocalCentavos: null,
     soloMostrador: false,
+    enDolares: false,
     ...p,
   };
 }
@@ -35,6 +36,27 @@ describe('precioDeMostrador', () => {
     expect(
       precioDeMostrador(producto({ precioCentavos: 7_050_00, soloMostrador: true }), RECARGO),
     ).toBe(7_050_00);
+  });
+
+  /*
+   * El otro lado de esta cuenta lo escribe `cambiarPrecioDeFicha`: cuando el
+   * precio se carga en dólares, guarda los pesos sin recargo. Si acá se lo
+   * descontáramos, un iPhone cargado a USD 820 con el dólar a 1.561 se
+   * cobraría $1.113.000 en el mostrador en vez de $1.280.000.
+   */
+  it('un precio en dólares no lleva recargo: el de pesos ya es el pactado', () => {
+    expect(
+      precioDeMostrador(producto({ precioCentavos: 1_280_000_00, enDolares: true }), RECARGO),
+    ).toBe(1_280_000_00);
+  });
+
+  it('en dólares y con precio propio de mostrador, manda el propio', () => {
+    expect(
+      precioDeMostrador(
+        producto({ precioCentavos: 1_280_000_00, enDolares: true, precioLocalCentavos: 1_200_000_00 }),
+        RECARGO,
+      ),
+    ).toBe(1_200_000_00);
   });
 
   it('un precio de mostrador escrito a mano manda sobre el cálculo', () => {
@@ -70,7 +92,7 @@ describe('precioDeTienda', () => {
     for (const mostrador of [5_000_00, 13_000_00, 50_000_00, 410_000_00]) {
       const tienda = precioDeTienda(mostrador, RECARGO);
       const vuelta = precioDeMostrador(
-        { precioCentavos: tienda, precioLocalCentavos: null, soloMostrador: false },
+        { precioCentavos: tienda, precioLocalCentavos: null, soloMostrador: false, enDolares: false },
         RECARGO,
       );
       // El redondeo a cien pesos puede correr el resultado, nunca más que eso.

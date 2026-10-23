@@ -148,8 +148,17 @@ export function armarLinea(
         `No hay cotización cargada y "${descripcion}" se vende en dólares. Cargá el tipo de cambio antes de vender.`,
       );
     }
-    // El precio en USD por el dolar da el de la tienda; el de mostrador sale
-    // de descontarle el recargo, igual que en un producto en pesos.
+    /*
+     * El precio en USD por el dólar da los pesos, y esos pesos se cobran tal
+     * cual en los dos lados: el recargo de la tienda no corre sobre un precio
+     * en dólares.
+     *
+     * Decía lo contrario hasta el 23/10, y el 21/10 —cuando el recargo pasó de
+     * 0 a 15%— eso se volvió plata: un iPhone cargado a USD 820 con el dólar a
+     * 1.561 se cobró $1.113.000 en el mostrador en vez de $1.280.000. El que
+     * escribe el precio ya lo guarda sin recargo (`cambiarPrecioDeFicha`);
+     * acá hay que leerlo igual. La regla vive en `precioDeMostrador`.
+     */
     precioUnitarioCentavos = aMostrador(
       p,
       usdAPesos(p.precioUsdCentavos, opciones.tcCentavos),
@@ -173,6 +182,9 @@ export function armarLinea(
             precioCentavos: v.precioCentavos,
             precioLocalCentavos: null,
             soloMostrador: p.soloMostrador,
+            // Un producto en dólares no llega acá: lo atajó la rama de arriba,
+            // que calcula el precio de la variación igual que el del padre.
+            enDolares: false,
           },
           opciones.recargoTiendaBp ?? 0,
         )
@@ -191,13 +203,25 @@ export function armarLinea(
   };
 }
 
-/** Aplica el recargo de la tienda a un precio de este producto. */
-function aMostrador(p: ProductoVendible, precioCentavos: number, recargoBp: number): number {
+/**
+ * Aplica el recargo de la tienda a un precio de este producto.
+ *
+ * Es el único lugar que traduce la moneda del producto al «lleva recargo o
+ * no» que espera `precioDeMostrador`. Quien tenga un `ProductoVendible` en la
+ * mano usa esto y no la función de abajo: la regla de los dólares se decide
+ * una sola vez.
+ */
+export function aMostrador(
+  p: ProductoVendible,
+  precioCentavos: number,
+  recargoBp: number,
+): number {
   return precioDeMostrador(
     {
       precioCentavos,
       precioLocalCentavos: p.precioLocalCentavos,
       soloMostrador: p.soloMostrador,
+      enDolares: p.moneda === 'USD',
     },
     recargoBp,
   );

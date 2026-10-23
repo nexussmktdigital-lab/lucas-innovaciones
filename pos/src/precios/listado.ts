@@ -91,7 +91,12 @@ export async function listarPrecios(
           f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
         precioTiendaCentavos,
         precioMostradorCentavos: precioDeMostrador(
-          { precioCentavos: precioTiendaCentavos, precioLocalCentavos, soloMostrador },
+          {
+            precioCentavos: precioTiendaCentavos,
+            precioLocalCentavos,
+            soloMostrador,
+            enDolares: f.moneda === 'USD',
+          },
           recargoBp,
         ),
         precioLocalCentavos,
