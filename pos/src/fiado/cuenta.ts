@@ -656,6 +656,17 @@ export type MovimientoDeCuenta =
       montoCentavos: number;
       descripcion: string;
       saldoResultanteCentavos: number;
+      /**
+       * El id del pago, que es el del recibo: `/recibo/<pagoId>`.
+       *
+       * Sin esto el recibo solo existía en el momento de cobrar. Si la
+       * impresora fallaba —o el cliente lo pedía al otro día— no había forma
+       * de volver a sacarlo, y el pago quedaba sin papel.
+       */
+      pagoId: string;
+      /** En qué moneda se pagó: una cuota del iPhone se cobra en dólares (D62). */
+      moneda: 'ARS' | 'USD';
+      medio: string;
     };
 
 /** La historia de la cuenta: lo que se fio y lo que se cobro, junto. */
@@ -703,6 +714,9 @@ export async function movimientosDe(
         montoCentavos: c.montoCentavos,
         descripcion: c.nota ?? 'Cobro',
         saldoResultanteCentavos: c.saldoResultanteCentavos,
+        pagoId: c.id,
+        moneda: c.monedaDeuda,
+        medio: c.medio,
       }),
     ),
   ];
