@@ -16,6 +16,12 @@
  *  - **Lo que no se publica no lleva recargo.** Servicios, chips y todo lo de
  *    «Solo mostrador» (D19) no se venden por la web: su precio de Woo ya es el
  *    de mostrador y se usa tal cual.
+ *  - **Un precio en dolares tampoco lleva recargo.** El precio que se pacto es
+ *    en dolares y el de pesos sale de multiplicarlo por la cotizacion, igual
+ *    en el mostrador que en la web. Quien escribe el precio ya lo sabe
+ *    —`cambiarPrecioDeFicha` guarda el de dolares sin recargo— y esta funcion
+ *    tiene que leerlo de la misma manera, o el mostrador cobra menos de lo que
+ *    se cargo.
  *  - **Se puede escribir un precio de mostrador propio** cuando el porcentaje
  *    no aplica: una promo, un producto que hay que igualar a la competencia.
  *  - **Se redondea a los cien pesos.** Dividir da numeros como $11.607,14 y en
@@ -40,6 +46,13 @@ export interface ProductoConPrecios {
   precioLocalCentavos: number | null;
   /** True si no se publica en la web: entonces su precio ya es el de mostrador. */
   soloMostrador: boolean;
+  /**
+   * True si el precio se pacto en dolares. Tampoco lleva recargo.
+   *
+   * Es obligatorio a proposito: con un opcional, cada lugar que se olvide de
+   * pasarlo vuelve a cobrar de menos sin avisar. Asi no compila.
+   */
+  enDolares: boolean;
 }
 
 export function validarRecargo(bp: number): number {
@@ -58,7 +71,7 @@ export function validarRecargo(bp: number): number {
  */
 export function precioDeMostrador(p: ProductoConPrecios, recargoBp: Recargo): number {
   if (p.precioLocalCentavos !== null) return Math.max(0, Math.round(p.precioLocalCentavos));
-  if (p.soloMostrador || recargoBp <= 0) return p.precioCentavos;
+  if (p.soloMostrador || p.enDolares || recargoBp <= 0) return p.precioCentavos;
 
   const exacto = (p.precioCentavos * 10_000) / (10_000 + recargoBp);
   return Math.round(exacto / REDONDEO_CENTAVOS) * REDONDEO_CENTAVOS;

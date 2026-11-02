@@ -685,6 +685,52 @@ test('cobrar una cuota imprime un recibo con el saldo que queda', async ({ page,
   await expect(tarjeta.getByRole('link', { name: 'Imprimir el recibo' })).toBeVisible();
 });
 
+/**
+ * Reimprimir el recibo de un pago viejo.
+ *
+ * El caso que lo pidió: la impresora falló en el momento de cobrar y el
+ * cliente se fue sin papel. Al rato hay que mandárselo igual. Hasta ahora el
+ * enlace vivía solo en la tarjeta del cobro recién hecho: se perdía al
+ * recargar la pantalla, y con él la única forma de llegar a ese recibo.
+ */
+test('el recibo de un pago se puede volver a imprimir desde la ficha', async ({ page, context }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+  await page.goto('/fiado');
+
+  const tarjeta = page.getByRole('listitem').filter({ hasText: 'Rocío Ferreyra' });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('7000');
+  await tarjeta.getByLabel('Nota (opcional)').fill('Cuota de noviembre');
+  // Como si la impresora hubiese fallado: el pago entra sin papel.
+  await tarjeta.getByLabel(/Imprimir el recibo/).uncheck();
+  await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+  await expect(tarjeta.getByText(/Cobrado/)).toBeVisible({ timeout: 15_000 });
+
+  // Más tarde, desde la ficha del cliente: el pago está, con su enlace.
+  await tarjeta.getByRole('link', { name: 'Rocío Ferreyra' }).click();
+  await expect(page.getByRole('heading', { name: 'Movimientos de la cuenta' })).toBeVisible();
+
+  const movimiento = page.getByRole('listitem').filter({ hasText: 'Cuota de noviembre' });
+  await expect(movimiento).toContainText('$ 7.000,00');
+  await expect(movimiento).toContainText('Efectivo');
+
+  const [recibo] = await Promise.all([
+    context.waitForEvent('page'),
+    movimiento.getByRole('link', { name: 'Imprimir recibo' }).click(),
+  ]);
+  await recibo.waitForURL(/\/recibo\//, { timeout: 15_000 });
+
+  // `\s` cubre el espacio duro que el importe lleva entre el signo y el
+  // número: compararlo contra un espacio común falla sin que se vea por qué.
+  const papel = (await recibo.locator('.hoja').innerText()).replace(/\s/g, ' ');
+  expect(papel).toContain('RECIBO DE PAGO');
+  expect(papel).toContain('Rocío Ferreyra');
+  expect(papel).toContain('$ 7.000,00');
+  expect(papel).toContain('Cuota de noviembre');
+  expect(papel).toContain('SALDO QUE QUEDA');
+});
+
 test('se puede cobrar sin imprimir nada', async ({ page }) => {
   // Destildar no puede impedir el cobro: la plata entra igual y el enlace
   // queda, por si el cliente lo pide después de guardar.

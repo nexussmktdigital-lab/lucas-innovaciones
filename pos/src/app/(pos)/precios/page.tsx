@@ -43,7 +43,7 @@ export default async function PaginaPrecios({
 
       <FormularioRecargo recargoBp={recargoBp} />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Dato
           titulo="Con recargo"
           valor={alcance.conRecargo.toLocaleString('es-AR')}
@@ -53,6 +53,11 @@ export default async function PaginaPrecios({
           titulo="Solo mostrador"
           valor={alcance.soloMostrador.toLocaleString('es-AR')}
           detalle="Servicios y lo que no va a la web: cobran el mismo precio"
+        />
+        <Dato
+          titulo="En dólares"
+          valor={alcance.enDolares.toLocaleString('es-AR')}
+          detalle="El precio sale de la cotización: tampoco llevan recargo"
         />
         <Dato
           titulo="Con precio propio"

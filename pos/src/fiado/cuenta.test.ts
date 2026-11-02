@@ -635,6 +635,32 @@ describe('consultas', () => {
       montoCentavos: 1_000_000,
     });
   });
+
+  /*
+   * El cobro trae el id de su pago porque ese id es el recibo: `/recibo/<id>`.
+   * Sin él, el recibo solo existía en el momento de cobrar, y si la impresora
+   * fallaba el pago se quedaba sin papel para siempre.
+   */
+  it('cada cobro trae con qué volver a imprimir su recibo', async () => {
+    await fiar(2);
+    const pago = await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 400_000,
+      medio: 'transferencia',
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'mov-recibo',
+    });
+
+    const [cobro] = await movimientosDe(db, clienteId);
+
+    expect(cobro).toMatchObject({
+      tipo: 'cobro',
+      pagoId: pago.id,
+      moneda: 'ARS',
+      medio: 'transferencia',
+    });
+  });
 });
 
 describe('lo que se vende en dólares se debe en dólares (D62)', () => {
@@ -737,6 +763,29 @@ describe('lo que se vende en dólares se debe en dólares (D62)', () => {
     const cuenta = await cuentaDe(db, clienteId);
     expect(cuenta!.saldoUsdCentavos).toBe(0);
     expect(cuenta!.saldoCentavos).toBe(total);
+  });
+
+  /*
+   * La ficha del cliente mostraba todos los cobros en pesos. Un pago de
+   * US$ 100 figuraba como «$ 100»: mil quinientas veces menos de lo que
+   * entró. El movimiento tiene que decir en qué moneda se pagó.
+   */
+  it('un cobro en dólares se declara en dólares, no en pesos', async () => {
+    await venderIphoneFiando(314_200_00);
+    await cobrarFiado(db, {
+      customerId: clienteId,
+      montoCentavos: 100_00,
+      monedaDeuda: 'USD',
+      medio: 'dolares',
+      monetaryAccountId: dolaresId,
+      cashSessionId: sesionId,
+      usuarioId: duenioId,
+      idempotencyKey: 'mov-usd',
+    });
+
+    const cobro = (await movimientosDe(db, clienteId)).find((m) => m.tipo === 'cobro');
+
+    expect(cobro).toMatchObject({ moneda: 'USD', montoCentavos: 100_00, medio: 'dolares' });
   });
 
   it('las dos deudas conviven y no se suman', async () => {

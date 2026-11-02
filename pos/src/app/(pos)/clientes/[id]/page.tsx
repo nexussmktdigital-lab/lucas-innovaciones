@@ -11,6 +11,7 @@ import { ajustesDeWhatsApp } from '@/whatsapp/config';
 import { armarRecordatorio, mensajesDe, ultimoRecordatorio } from '@/whatsapp/mensajes';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { fechaLocalISO, formatearFechaHora } from '@/lib/fecha';
+import { nombreDelMedio } from '@/ventas/ticket';
 import BotonWhatsApp from '../../boton-whatsapp';
 import Devoluciones from './devoluciones';
 import FormularioCliente from '../formulario-cliente';
@@ -256,21 +257,55 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   <span className="text-xs text-(--color-tinta-suave)">anulada</span>
                 ) : null}
 
+                {m.tipo === 'cobro' ? (
+                  <span className="text-xs text-(--color-tinta-suave)">
+                    {nombreDelMedio(m.medio)}
+                  </span>
+                ) : null}
+
                 <span
                   className={`tabular ml-auto font-semibold ${
                     m.tipo === 'cobro' ? 'text-(--color-ok)' : ''
                   }`}
                 >
                   {m.tipo === 'cobro' ? '−' : '+'}
-                  {formatearARS(m.montoCentavos)}
+                  {/* La moneda del cobro, no siempre pesos: una cuota del
+                      iPhone se debe y se cobra en dólares (D62), y escribir
+                      «$ 200» donde dice US$ 200 es un número 1.500 veces más
+                      chico. La venta sí es siempre en pesos: su total se
+                      guarda convertido. */}
+                  {m.tipo === 'cobro' && m.moneda === 'USD'
+                    ? formatearUSD(m.montoCentavos)
+                    : formatearARS(m.montoCentavos)}
                 </span>
+
                 {/* En pasado y con «en ese momento»: es el saldo de ese día,
                     congelado. Si después se anuló una venta, el saldo de arriba
                     ya no coincide, y decir «quedó debiendo» a secas hacía que
                     los dos números se leyeran como contradictorios. */}
                 {m.tipo === 'cobro' ? (
-                  <span className="tabular w-full text-right text-xs text-(--color-tinta-suave)">
-                    en ese momento quedaba debiendo {formatearARS(m.saldoResultanteCentavos)}
+                  <span className="flex w-full items-baseline justify-end gap-3 text-xs">
+                    <span className="tabular text-(--color-tinta-suave)">
+                      en ese momento quedaba debiendo{' '}
+                      {m.moneda === 'USD'
+                        ? formatearUSD(m.saldoResultanteCentavos)
+                        : formatearARS(m.saldoResultanteCentavos)}
+                    </span>
+                    {/*
+                      Reimprimir el recibo de un pago viejo.
+
+                      El recibo se arma del pago, no de la cuenta: sale con el
+                      saldo que quedó ese día, así que el que se imprime ahora
+                      dice lo mismo que el que se entregó entonces.
+                    */}
+                    <a
+                      href={`/recibo/${m.pagoId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 font-semibold underline underline-offset-2"
+                    >
+                      Imprimir recibo
+                    </a>
                   </span>
                 ) : null}
               </li>

@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { sePuedeFotografiar } from './filtro.mjs';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 // LI_DATOS permite una tanda aparte (p. ej. las fotos por color) sin mezclar el estado.
@@ -139,8 +140,6 @@ function consulta(p) {
 /* Pasos                                                               */
 /* ------------------------------------------------------------------ */
 
-const EXCLUIR_CATS = ['solo-mostrador', 'vapers'];
-
 async function exportar() {
 	requerir('WC_URL', 'WC_CONSUMER_KEY', 'WC_CONSUMER_SECRET');
 	const base = process.env.WC_URL.replace(/\/+$/, '');
@@ -161,9 +160,10 @@ async function exportar() {
 		await dormir(300);
 	}
 
-	const sinFoto = todos
-		.filter((p) => !p.images || p.images.length === 0)
-		.filter((p) => !(p.categories || []).some((c) => EXCLUIR_CATS.includes(c.slug)))
+	const todosSinFoto = todos.filter((p) => !p.images || p.images.length === 0);
+	const afuera = todosSinFoto.filter((p) => !sePuedeFotografiar(p));
+	const sinFoto = todosSinFoto
+		.filter(sePuedeFotografiar)
 		.map((p) => ({
 			id: p.id,
 			nombre: p.name,
@@ -175,8 +175,22 @@ async function exportar() {
 		.sort((a, b) => a.prioridad - b.prioridad || a.categoria.localeCompare(b.categoria) || a.nombre.localeCompare(b.nombre));
 
 	guardar('productos.json', sinFoto);
+	/*
+	 * Los que quedaron afuera se guardan igual. Un filtro por nombre se come
+	 * algo que no debía tarde o temprano, y la forma de enterarse es poder
+	 * leer la lista, no adivinar por qué faltan doce productos.
+	 */
+	guardar(
+		'excluidos.json',
+		afuera.map((p) => ({
+			id: p.id,
+			nombre: p.name,
+			categoria: (p.categories || []).map((c) => c.name).join(' | '),
+		})),
+	);
 	const p1 = sinFoto.filter((p) => p.prioridad === 1).length;
 	console.log(`\n${sinFoto.length} productos sin foto (${p1} con stock y precio, que van primero) -> datos/productos.json`);
+	console.log(`${afuera.length} quedaron afuera (teléfonos, solo mostrador, vapers, servicios) -> datos/excluidos.json`);
 }
 
 async function buscar() {

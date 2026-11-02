@@ -15,12 +15,27 @@ import { puede } from '@/auth/permisos';
 import { auditar } from '@/lib/auditoria';
 import { aCentavos, ErrorDinero } from '@/lib/dinero';
 import { products } from '@/db/schema';
-import { guardarRecargoDeTienda } from '@/precios/config';
+import { guardarRecargoDeTienda, recargoDeTienda } from '@/precios/config';
+import { calcularRebase } from '@/precios/rebase';
 import { ErrorPrecio, formatearRecargo } from '@/precios/mostrador';
+
+/** Lo que se va a reescribir, para mirarlo antes de aplicarlo. */
+export interface VistaPreviaRebase {
+  bpAnterior: number;
+  bpNuevo: number;
+  total: number;
+  muestra: {
+    nombre: string;
+    antesCentavos: number;
+    despuesCentavos: number;
+    mostradorCentavos: number;
+  }[];
+}
 
 export interface EstadoPrecios {
   error?: string;
   ok?: string;
+  vistaPrevia?: VistaPreviaRebase;
 }
 
 /** «12», «12,5» o «12.5» -> puntos basicos. */
@@ -43,19 +58,58 @@ export async function guardarRecargoAccion(
   }
 
   try {
-    const bp = await guardarRecargoDeTienda(db, {
-      bp: aPuntosBasicos(String(datos.get('recargo') ?? '')),
+    const pedido = aPuntosBasicos(String(datos.get('recargo') ?? ''));
+    const mantener = datos.get('mantenerMostrador') === 'si';
+    /*
+     * Lo que se confirma tiene que ser lo que se miró. Entre la vista previa y
+     * el botón se puede haber cambiado el porcentaje en la pantalla, y aplicar
+     * sobre ochocientos precios algo que nadie vio es justo lo que hay que
+     * evitar: si no coincide, se vuelve a mostrar en vez de escribir.
+     */
+    const previsto = Number(datos.get('bpPrevisto') ?? NaN);
+    const confirmado = datos.get('confirmado') === '1' && previsto === pedido;
+
+    if (mantener && !confirmado) {
+      const anterior = await recargoDeTienda(db);
+      const cambios = await calcularRebase(db, anterior, pedido);
+      if (cambios.length > 0) {
+        return {
+          vistaPrevia: {
+            bpAnterior: anterior,
+            bpNuevo: pedido,
+            total: cambios.length,
+            muestra: cambios.slice(0, 8).map((c) => ({
+              nombre: c.nombre,
+              antesCentavos: c.antesCentavos,
+              despuesCentavos: c.despuesCentavos,
+              mostradorCentavos: c.mostradorCentavos,
+            })),
+          },
+        };
+      }
+      // Nada que reajustar (mismo recargo, o catálogo vacío): se guarda y listo.
+    }
+
+    const { bp, reajustados } = await guardarRecargoDeTienda(db, {
+      bp: pedido,
       usuarioId: sesion.user.id,
+      mantenerMostrador: mantener,
     });
 
     revalidatePath('/precios');
     revalidatePath('/vender');
 
+    const base =
+      bp === 0
+        ? 'Sin recargo: el mostrador cobra lo mismo que la tienda.'
+        : `Recargo guardado en ${formatearRecargo(bp)}.`;
+
     return {
-      ok:
-        bp === 0
-          ? 'Sin recargo: el mostrador cobra lo mismo que la tienda.'
-          : `Recargo guardado en ${formatearRecargo(bp)}. El mostrador ya cobra con el descuento.`,
+      ok: reajustados
+        ? `${base} Se reajustaron ${reajustados.toLocaleString('es-AR')} precios de la web; el mostrador cobra lo mismo que antes.`
+        : bp === 0
+          ? base
+          : `${base} El mostrador ya cobra con el descuento.`,
     };
   } catch (error) {
     if (error instanceof ErrorPrecio) return { error: error.message };
