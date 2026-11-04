@@ -304,6 +304,8 @@ async function analizar(buf, marca, url) {
 }
 
 async function filtrar() {
+	// Lado mayor mínimo; --minimo lo baja en una pasada para los que quedaron sin opciones.
+	const MINIMO = parseInt(opcion('minimo', '800'), 10) || 800;
 	const sharp = (await import('sharp')).default;
 	const productos = leer('productos.json', []);
 	const busquedas = leer('busquedas.json', { productos: {} });
@@ -329,7 +331,7 @@ async function filtrar() {
 				const a = await analizar(buf, p.marca, op.url);
 				// Mínimo 800 px del lado mayor y 600 del menor: una foto apaisada de
 				// 1200×800 sirve; un ícono de 300×300, no.
-				if (Math.max(a.w, a.h) < 800 || Math.min(a.w, a.h) < 600) continue;
+				if (Math.max(a.w, a.h) < MINIMO || Math.min(a.w, a.h) < MINIMO * 0.75) continue;
 				ok.push({ ...a, url: op.url, fuente: op.fuente, buf });
 			} catch {
 				/* sin respuesta, formato raro o tiempo agotado: se descarta */
@@ -525,7 +527,7 @@ async function subir() {
 	const soloIds = opcion('ids') ? String(opcion('ids')).split(',').map((x) => parseInt(x, 10)) : null;
 	const limite = parseInt(opcion('limite', '0'), 10) || Infinity;
 	const cola = Object.entries(aprobadas)
-		.filter(([id, archivo]) => archivo && !subidas[id] && (!soloIds || soloIds.includes(parseInt(id, 10))))
+		.filter(([id, archivo]) => archivo && productos[id] && !subidas[id] && (!soloIds || soloIds.includes(parseInt(id, 10))))
 		.slice(0, limite);
 
 	let n = 0;
