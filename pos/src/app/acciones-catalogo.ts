@@ -35,7 +35,7 @@ import {
 } from '@/catalogo/entrega';
 import { ErrorIA, hayIA, sugerirFicha, type FichaSugerida } from '@/catalogo/ia';
 import { drenarEnSegundoPlano } from '@/woo/cola';
-import { ErrorStock, reactivarProducto, sumarStock } from '@/catalogo/stock';
+import { darDeBaja, ErrorStock, reactivarProducto, sumarStock } from '@/catalogo/stock';
 import { cambiarPrecio, ErrorPrecioFicha } from '@/catalogo/precio';
 import { recargoDeTienda } from '@/precios/config';
 
@@ -459,6 +459,47 @@ export async function cambiarPrecioAccion(
 }
 
 /** Volver a poner a la venta una ficha que estaba inactiva. */
+/**
+ * Sacar un producto del catálogo.
+ *
+ * Es la baja, no el borrado, y la diferencia importa: la ficha queda con su
+ * historial de ventas, su costo y lo que aportó a la rentabilidad del mes
+ * pasado. Lo que se quiere es que no se venda más, no que nunca haya
+ * existido. `darDeBaja` además lo pasa a borrador en WooCommerce, que es lo
+ * que hace que la baja dure: sin eso, el próximo `woo:sync` lo vuelve a traer
+ * activo porque Woo sigue diciendo `publish`.
+ *
+ * Se puede deshacer con `reactivarProductoAccion`.
+ */
+export async function darDeBajaAccion(
+  _previo: EstadoStock,
+  datos: FormData,
+): Promise<EstadoStock> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'producto.editar')) {
+    return { error: 'No tenés permiso para sacar un producto del catálogo.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  try {
+    const r = await darDeBaja(db, { productId: id.data, usuarioId: sesion.user.id });
+    revalidatePath('/catalogo');
+    revalidatePath('/vender');
+    return {
+      ok: r.yaEstaba
+        ? `«${r.nombre}» ya estaba dado de baja.`
+        : `«${r.nombre}» salió del catálogo. No se vende más y en la web quedó como borrador.`,
+    };
+  } catch (error) {
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[stock] Falló la baja:', error);
+    return { error: 'No se pudo dar de baja. Probá de nuevo.' };
+  }
+}
+
 export async function reactivarProductoAccion(
   _previo: EstadoStock,
   datos: FormData,

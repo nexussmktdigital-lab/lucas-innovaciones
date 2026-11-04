@@ -442,3 +442,77 @@ test('la planilla de Excel sigue funcionando en el mismo cuadro', async ({ page 
   await page.getByRole('button', { name: /Cargar los 1/ }).click();
   await expect(page.getByText(/Se cargaron 1 productos de la planilla/)).toBeVisible();
 });
+
+/**
+ * Sacar un producto del catálogo.
+ *
+ * Lo que el local pidió como «eliminar». Es la baja y no el borrado: la ficha
+ * se queda con su historial, pero deja de venderse y en la tienda web pasa a
+ * borrador. Lo que esta prueba mira es lo único que importa de la función —que
+ * el producto ya no se pueda vender— y que se pueda volver atrás, porque un
+ * botón que saca algo de la venta sin vuelta es un botón que nadie aprieta.
+ */
+test('un producto se saca del catálogo y deja de poder venderse', async ({ page }) => {
+  await entrarComoDuenio(page);
+
+  // Un producto propio, para no dejar el catálogo de las otras pruebas tocado.
+  const CONDENADO = `Soporte de prueba ${SUF}`;
+  await page.goto('/catalogo/nuevo');
+  const form = formularioAlta(page);
+  await form.getByLabel('Qué es').fill(CONDENADO);
+  await form.getByLabel('Cuánto sale en el local').fill('8000');
+  await form.getByLabel('Cuántos hay').fill('3');
+  await form.getByRole('button', { name: /Cargar y poder venderlo/ }).click();
+  await expect(page.getByText(/quedó cargado y se puede vender/)).toBeVisible({ timeout: 15_000 });
+
+  // Está a la venta.
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill(CONDENADO);
+  await expect(page.getByRole('button', { name: new RegExp(CONDENADO) })).toBeVisible();
+
+  // Se lo saca desde el buscador del catálogo, y pregunta antes.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(CONDENADO);
+  const ficha = page.getByRole('listitem').filter({ hasText: CONDENADO });
+  await ficha.getByRole('button', { name: 'Sacar del catálogo' }).click();
+
+  await expect(ficha.getByText(/¿Sacar «.*» del catálogo\?/)).toBeVisible();
+  await ficha.getByRole('button', { name: 'Sí, sacarlo' }).click();
+  await expect(ficha.getByText(/salió del catálogo/)).toBeVisible({ timeout: 15_000 });
+
+  // Ya no se puede vender: es para lo que sirve el botón.
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill(CONDENADO);
+  await expect(page.getByRole('button', { name: new RegExp(CONDENADO) })).toHaveCount(0);
+
+  // Pero sigue estando, marcado, y se puede volver atrás.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(CONDENADO);
+  const inactiva = page.getByRole('listitem').filter({ hasText: CONDENADO });
+  await expect(inactiva.getByText('Inactivo — no aparece al vender')).toBeVisible();
+
+  await inactiva.getByRole('button', { name: 'Volver a ponerlo a la venta' }).click();
+  await expect(inactiva.getByText(/volvió a estar a la venta/)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill(CONDENADO);
+  await expect(page.getByRole('button', { name: new RegExp(CONDENADO) })).toBeVisible();
+});
+
+test('arrepentirse no saca nada del catálogo', async ({ page }) => {
+  // El «No, dejalo» tiene que dejar las cosas como estaban: si igual diera de
+  // baja, el error se descubre recién cuando alguien va a vender el producto.
+  await entrarComoDuenio(page);
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(CABLE);
+
+  const ficha = page.getByRole('listitem').filter({ hasText: CABLE });
+  await ficha.getByRole('button', { name: 'Sacar del catálogo' }).click();
+  await ficha.getByRole('button', { name: 'No, dejalo' }).click();
+
+  await expect(ficha.getByRole('button', { name: 'Sacar del catálogo' })).toBeVisible();
+
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill(CABLE);
+  await expect(page.getByRole('button', { name: new RegExp(CABLE) })).toBeVisible();
+});

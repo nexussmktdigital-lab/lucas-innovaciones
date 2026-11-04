@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './nuevo/sumar-stock';
 import CambiarPrecio from './nuevo/cambiar-precio';
+import DarDeBaja from './dar-de-baja';
 
 const ESPERA_MS = 250;
 
@@ -32,15 +33,26 @@ export default function BuscadorCatalogo({
   puedeReactivar,
   puedeCargar,
   puedeCambiarPrecio,
+  puedeDarDeBaja,
 }: {
   puedeSumarStock: boolean;
   puedeReactivar: boolean;
   puedeCargar: boolean;
   puedeCambiarPrecio: boolean;
+  puedeDarDeBaja: boolean;
 }) {
   const [texto, setTexto] = useState('');
   const [consulta, setConsulta] = useState('');
   const campo = useRef<HTMLInputElement>(null);
+  const clienteDeConsultas = useQueryClient();
+  /*
+   * Lo que acabó de pasar con una ficha, para avisarlo donde se ve.
+   *
+   * Vive acá y no en el botón porque el botón desaparece con la baja: la
+   * lista se vuelve a dibujar con la ficha ya inactiva, y el aviso se iría
+   * junto con el control que lo produjo.
+   */
+  const [aviso, setAviso] = useState<{ id: string; texto: string } | null>(null);
 
   useEffect(() => {
     const reloj = setTimeout(() => setConsulta(texto.trim()), ESPERA_MS);
@@ -136,6 +148,12 @@ export default function BuscadorCatalogo({
                 )}
               </p>
 
+              {aviso?.id === p.id ? (
+                <p role="status" className="pt-2 text-sm font-semibold text-(--color-ok)">
+                  {aviso.texto}
+                </p>
+              ) : null}
+
               {puedeSumarStock && p.gestionaStock ? (
                 <div className="pt-2">
                   <SumarStock
@@ -154,6 +172,25 @@ export default function BuscadorCatalogo({
                     moneda={p.moneda}
                     precioUsdCentavos={p.precioUsdCentavos}
                     tcCentavos={data?.tcCentavos ?? null}
+                  />
+                </div>
+              ) : null}
+
+              {/* Solo en los que están a la venta: al inactivo le toca el
+                  botón de volver a ponerlo, que ya está más arriba. Se vuelve
+                  a buscar para que la ficha quede marcada como inactiva sin
+                  que haya que escribir el nombre de nuevo. */}
+              {puedeDarDeBaja && p.activo ? (
+                <div className="pt-2">
+                  <DarDeBaja
+                    productId={p.id}
+                    nombre={p.nombre}
+                    onListo={(texto) => {
+                      setAviso({ id: p.id, texto });
+                      void clienteDeConsultas.invalidateQueries({
+                        queryKey: ['catalogo-buscar'],
+                      });
+                    }}
                   />
                 </div>
               ) : null}
