@@ -14,6 +14,7 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
+import { leerEntregas } from '@/fiado/libreta';
 import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { cotizacionVigente } from '@/cotizacion/cotizacion';
@@ -331,16 +332,46 @@ export async function migrarFichaAccion(
     return { error: 'Escribí cuánto dice la libreta que debe.' };
   }
 
+  /*
+   * Las entregas se vuelven a leer acá aunque la pantalla ya las haya leído:
+   * lo que llega del navegador es texto, y la lectura del servidor es la que
+   * decide. Si algún renglón no se entiende no se carga nada —media libreta
+   * cargada es peor que ninguna, porque el saldo igual queda escrito y nadie
+   * se entera de lo que falta—.
+   */
+  const lectura = leerEntregas(String(datos.get('entregas') ?? ''));
+  if (lectura.conProblema > 0) {
+    const malos = lectura.lineas.filter((l) => l.problema);
+    return {
+      error:
+        `No pude leer ${malos.length} ${malos.length === 1 ? 'renglón' : 'renglones'}: ` +
+        malos.map((l) => `«${l.texto}» (${l.problema})`).join('; '),
+    };
+  }
+
   try {
     const cuenta = await migrarFichaDePapel(db, {
       customerId,
       saldoCentavos,
       usuarioId: sesion.user.id,
       nota: String(datos.get('nota') ?? '').trim() || null,
+      entregas: lectura.entregas,
     });
 
     refrescar();
-    return { ok: `Ficha cargada: debe ${formatearARS(cuenta.saldoCentavos)}.` };
+    /*
+     * Este texto casi no se ve, y está bien: al refrescar, la ficha se dibuja
+     * con la deuda puesta y el formulario desaparece porque ya no corresponde.
+     * La confirmación que queda es la pantalla —el saldo, la marca de que vino
+     * de la libreta y las entregas listadas—, que dura y se puede revisar.
+     */
+    return {
+      ok:
+        `Ficha cargada: debe ${formatearARS(cuenta.saldoCentavos)}.` +
+        (cuenta.entregasCargadas > 0
+          ? ` Se guardaron ${cuenta.entregasCargadas} entregas por ${formatearARS(lectura.totalCentavos)}.`
+          : ''),
+    };
   } catch (error) {
     if (error instanceof ErrorFiado) return { error: error.message };
     console.error('[fiado] Falló la migración:', error);

@@ -150,6 +150,11 @@ export async function cobrosDeFiadoPorMedio(
                       FILTER (WHERE c.medio =  'dolares'), 0) AS dolares
         FROM credit_payments c
        WHERE c.fecha >= ${instante(p.desde)} AND c.fecha < ${instante(p.hasta)}
+         -- Las entregas que el cliente ya habia hecho antes de entrar al
+         -- sistema no son plata que entro por caja: ocurrieron meses atras y
+         -- afuera. Contarlas pondria en el mes un ingreso que ninguna sesion
+         -- de caja respalda, y el arqueo de ese mes dejaria de cerrar.
+         AND NOT c.migrado
        GROUP BY c.medio
        ORDER BY 3 DESC, 4 DESC
     `),

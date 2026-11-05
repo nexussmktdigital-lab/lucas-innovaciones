@@ -470,25 +470,69 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
   });
 }
 
+/** Una entrega que el cliente ya habia hecho antes de entrar al sistema. */
+export interface EntregaDeLibreta {
+  fecha: Date;
+  montoCentavos: number;
+  medio: MedioPago;
+  nota?: string | null;
+}
+
 /**
- * Carga el saldo de una ficha de papel.
+ * Carga el saldo de una ficha de papel, con las entregas que ya habia hecho.
  *
  * No hay venta detras y no tiene que haberla: es lo que la libreta dice que el
  * cliente debe al dia que se migra. Queda marcado como `migrado_papel` para que
  * despues se pueda distinguir de lo que nacio en el sistema.
+ *
+ * **Las entregas viejas se guardan.** Un cliente de libreta trae meses de
+ * pagos, y sin ellos la cuenta arranca sin historia: no hay forma de contestar
+ * «cuando pago la ultima vez», que es justo lo que se mira antes de
+ * reclamarle. Se cargan con su fecha de verdad, marcadas con `migrado`, sin
+ * sesion de caja y sin cuenta de dinero, porque esa plata entro meses atras y
+ * fuera de este sistema: contarla hoy seria inventar un ingreso.
+ *
+ * `saldoCentavos` es **lo que debe hoy**, ya descontadas esas entregas: es el
+ * numero que el local tiene en la cabeza y el unico que puede confirmar. El
+ * cargo de apertura sale de sumarle las entregas, no al reves.
  */
 export async function migrarFichaDePapel(
   db: BaseDatos,
   datos: {
     customerId: string;
+    /** Lo que debe hoy, despues de las entregas de abajo. */
     saldoCentavos: number;
     usuarioId: string;
     nota?: string | null;
+    /** Las entregas ya hechas, en cualquier orden: se ordenan por fecha. */
+    entregas?: readonly EntregaDeLibreta[];
   },
-): Promise<CuentaCorriente> {
+): Promise<CuentaCorriente & { entregasCargadas: number }> {
   if (!Number.isInteger(datos.saldoCentavos) || datos.saldoCentavos <= 0) {
     throw new ErrorFiado('El saldo de la ficha tiene que ser mayor a cero.', 'monto_invalido');
   }
+
+  const entregas = [...(datos.entregas ?? [])].sort(
+    (a, b) => a.fecha.getTime() - b.fecha.getTime(),
+  );
+  for (const e of entregas) {
+    if (!Number.isInteger(e.montoCentavos) || e.montoCentavos <= 0) {
+      throw new ErrorFiado('Cada entrega de la libreta tiene que ser mayor a cero.', 'monto_invalido');
+    }
+    if (Number.isNaN(e.fecha.getTime())) {
+      throw new ErrorFiado('Una de las entregas no tiene una fecha valida.', 'monto_invalido');
+    }
+    if (e.medio === 'cuenta_corriente') {
+      throw new ErrorFiado('Una deuda no se paga con mas deuda.', 'monto_invalido');
+    }
+  }
+
+  /*
+   * Lo que se llevo en total: lo que debe hoy mas todo lo que ya entrego. De
+   * ahi para abajo las entregas van restando, y la cuenta termina justo en el
+   * saldo que se escribio.
+   */
+  const cargoCentavos = entregas.reduce((t, e) => t + e.montoCentavos, datos.saldoCentavos);
 
   return db.transaction(async (tx) => {
     const cuenta = await cuentaBloqueada(tx, datos.customerId, 'migrado_papel');
@@ -506,15 +550,44 @@ export async function migrarFichaDePapel(
       .set({ saldoCentavos: datos.saldoCentavos, origen: 'migrado_papel', updatedAt: new Date() })
       .where(eq(creditAccounts.id, cuenta.id));
 
+    let restante = cargoCentavos;
+    for (const [i, e] of entregas.entries()) {
+      restante -= e.montoCentavos;
+      await tx.insert(creditPayments).values({
+        creditAccountId: cuenta.id,
+        montoCentavos: e.montoCentavos,
+        monedaDeuda: 'ARS',
+        medio: e.medio,
+        fecha: e.fecha,
+        cobradoPorId: datos.usuarioId,
+        // El saldo que quedaba ese dia, no el de hoy: es lo que imprime el
+        // recibo si alguien lo saca despues.
+        saldoResultanteCentavos: restante,
+        nota: e.nota ?? 'De la libreta',
+        migrado: true,
+        idempotencyKey: `libreta:${cuenta.id}:${i}`,
+      });
+    }
+
     await tx.insert(auditLog).values({
       usuarioId: datos.usuarioId,
       accion: 'fiado.migrar_papel',
       entidad: 'credit_accounts',
       entidadId: cuenta.id,
-      valorNuevo: { saldoCentavos: datos.saldoCentavos, nota: datos.nota ?? null },
+      valorNuevo: {
+        saldoCentavos: datos.saldoCentavos,
+        cargoCentavos,
+        entregas: entregas.length,
+        nota: datos.nota ?? null,
+      },
     });
 
-    return { ...cuenta, saldoCentavos: datos.saldoCentavos, origen: 'migrado_papel' as const };
+    return {
+      ...cuenta,
+      saldoCentavos: datos.saldoCentavos,
+      origen: 'migrado_papel' as const,
+      entregasCargadas: entregas.length,
+    };
   });
 }
 

@@ -562,6 +562,135 @@ describe('migrar una ficha de papel', () => {
 
     expect(r.saldoCentavos).toBe(0);
   });
+
+  /*
+   * Las entregas que el cliente ya habia hecho.
+   *
+   * Un cliente de libreta trae meses de pagos. Sin ellos la cuenta arranca sin
+   * historia y no hay forma de contestar «cuando pago la ultima vez», que es
+   * lo que se mira antes de reclamarle. Van con su fecha de verdad y sin tocar
+   * ninguna caja: esa plata entro meses atras y fuera del sistema.
+   */
+  const ENTREGAS = [
+    { fecha: new Date('2026-06-16T12:00:00Z'), montoCentavos: 22_000_00, medio: 'efectivo' as const },
+    { fecha: new Date('2026-07-27T12:00:00Z'), montoCentavos: 106_000_00, medio: 'transferencia' as const },
+    { fecha: new Date('2026-10-27T12:00:00Z'), montoCentavos: 50_000_00, medio: 'transferencia' as const },
+  ];
+
+  it('el saldo que se escribe es el que queda, con las entregas ya descontadas', async () => {
+    const cuenta = await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenioId,
+      entregas: ENTREGAS,
+    });
+
+    expect(cuenta.saldoCentavos).toBe(1_801_400_00);
+    expect(cuenta.entregasCargadas).toBe(3);
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(1_801_400_00);
+  });
+
+  it('cada entrega queda guardada con su fecha y su medio', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenioId,
+      entregas: ENTREGAS,
+    });
+
+    const cobros = (await movimientosDe(db, clienteId)).filter((m) => m.tipo === 'cobro');
+
+    expect(cobros).toHaveLength(3);
+    // Del mas nuevo al mas viejo, como toda la lista de movimientos.
+    expect(cobros[0]).toMatchObject({ montoCentavos: 50_000_00, medio: 'transferencia' });
+    expect(cobros[2]).toMatchObject({ montoCentavos: 22_000_00, medio: 'efectivo' });
+    expect(cobros[2]!.fecha.toISOString()).toBe('2026-06-16T12:00:00.000Z');
+  });
+
+  /*
+   * El saldo de cada recibo es el de ese dia, no el de hoy: si alguien
+   * reimprime la entrega de junio, tiene que decir lo que decia en junio.
+   */
+  it('cada entrega deja anotado el saldo que quedaba ese dia', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenioId,
+      entregas: ENTREGAS,
+    });
+
+    const cobros = await db.select().from(creditPayments).orderBy(creditPayments.fecha);
+    // Se llevo 1.801.400 + 178.000 = 1.979.400 en total.
+    expect(cobros[0]!.saldoResultanteCentavos).toBe(1_957_400_00);
+    expect(cobros[1]!.saldoResultanteCentavos).toBe(1_851_400_00);
+    expect(cobros[2]!.saldoResultanteCentavos).toBe(1_801_400_00);
+  });
+
+  it('no tocan ninguna caja: esa plata entro antes y afuera', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenioId,
+      entregas: ENTREGAS,
+    });
+
+    const cobros = await db.select().from(creditPayments);
+    for (const c of cobros) {
+      expect(c.migrado).toBe(true);
+      expect(c.cashSessionId).toBeNull();
+      expect(c.monetaryAccountId).toBeNull();
+    }
+    expect(await db.select().from(cashMovements)).toHaveLength(0);
+  });
+
+  it('las entregas van en orden de fecha aunque vengan desordenadas', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 100_000_00,
+      usuarioId: duenioId,
+      entregas: [ENTREGAS[2]!, ENTREGAS[0]!, ENTREGAS[1]!],
+    });
+
+    const cobros = await db.select().from(creditPayments).orderBy(creditPayments.fecha);
+    expect(cobros.map((c) => c.montoCentavos)).toEqual([22_000_00, 106_000_00, 50_000_00]);
+    // Y el saldo baja parejo hasta el que se escribio.
+    expect(cobros.at(-1)!.saldoResultanteCentavos).toBe(100_000_00);
+  });
+
+  it('sin entregas se comporta como antes', async () => {
+    const cuenta = await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 4_500_000,
+      usuarioId: duenioId,
+    });
+
+    expect(cuenta.entregasCargadas).toBe(0);
+    expect(await db.select().from(creditPayments)).toHaveLength(0);
+  });
+
+  it('una entrega en cero o con fecha rota frena toda la carga', async () => {
+    await expect(
+      migrarFichaDePapel(db, {
+        customerId: clienteId,
+        saldoCentavos: 100_000_00,
+        usuarioId: duenioId,
+        entregas: [{ fecha: new Date('2026-06-16'), montoCentavos: 0, medio: 'efectivo' }],
+      }),
+    ).rejects.toBeInstanceOf(ErrorFiado);
+
+    await expect(
+      migrarFichaDePapel(db, {
+        customerId: clienteId,
+        saldoCentavos: 100_000_00,
+        usuarioId: duenioId,
+        entregas: [{ fecha: new Date('no es fecha'), montoCentavos: 1_000_00, medio: 'efectivo' }],
+      }),
+    ).rejects.toBeInstanceOf(ErrorFiado);
+
+    // Y no quedo nada a medio cargar.
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos ?? 0).toBe(0);
+    expect(await db.select().from(creditPayments)).toHaveLength(0);
+  });
 });
 
 describe('consultas', () => {

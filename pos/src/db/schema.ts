@@ -783,6 +783,16 @@ export const creditPayments = pgTable(
       .references(() => users.id),
     saldoResultanteCentavos: bigint({ mode: 'number' }).notNull(),
     nota: text(),
+    /**
+     * Una entrega que el cliente ya habia hecho antes de entrar al sistema.
+     *
+     * Viene de la libreta de papel: ocurrio meses atras y no paso por ninguna
+     * caja de este POS. Se guarda para que la cuenta del cliente tenga su
+     * historia —«cuando pago la ultima vez» es la pregunta que se hace al
+     * reclamar— pero queda afuera de los reportes de plata, porque contarla
+     * seria inventar un ingreso que ninguna sesion de caja respalda.
+     */
+    migrado: boolean().notNull().default(false),
     idempotencyKey: text().notNull(),
   },
   (t) => [

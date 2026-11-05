@@ -266,6 +266,80 @@ test('la ficha de papel entra una sola vez', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Cargar una ficha de papel' })).toHaveCount(0);
 });
 
+/**
+ * La libreta de un cliente de cuenta corriente, con sus entregas.
+ *
+ * El caso que lo pidió: un cliente que compra al por mayor y viene pagando
+ * desde junio. Lo que importa es que su historia no se pierda al entrar al
+ * sistema —«¿cuándo pagó la última vez?» es lo que se mira antes de
+ * reclamarle— y que esa plata vieja no se cuente como ingreso de hoy.
+ *
+ * Las entregas están copiadas de la libreta de verdad, con sus asteriscos y
+ * su «tranferencia» sin la s.
+ */
+test('la libreta entra con sus entregas, y no las cuenta como plata de hoy', async ({ page }) => {
+  const MAYORISTA = `Uriel de prueba ${SUFIJO}`;
+  await entrarComoDuenio(page);
+  await page.goto('/clientes');
+
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(MAYORISTA);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/quedó cargado/)).toBeVisible();
+
+  await page.getByRole('link', { name: MAYORISTA }).click();
+  await page.waitForURL(/\/clientes\//);
+  await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
+  await page.getByLabel('Saldo de la libreta').fill('1801400');
+
+  // Un renglón sin fecha frena todo, y lo dice antes de mandar nada.
+  await page.getByLabel(/Las entregas que ya hizo/).fill('*ENTREGA $97.000*');
+  await expect(page.getByText(/no lo entendí/)).toBeVisible();
+  await expect(page.getByText(/Falta la fecha/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cargar la ficha' })).toBeDisabled();
+
+  // Con las fechas puestas, dice cuántas leyó antes de guardar.
+  await page.getByLabel(/Las entregas que ya hizo/).fill(
+    [
+      '1 x Auricular NETMAK NM Live *$22.000*',
+      '*ENTREGA $22.000 (16/6/26)*',
+      '*ENTREGA $21.000 (19/06/26) (efectivo)*',
+      '*ENTREGA $44.000 (19/06/26) (tranferencia)*',
+      '*ENTREGA $50.000 (27/10/26) (tranferencia)*',
+    ].join('\n'),
+  );
+  await expect(page.getByText(/Leí 4 entregas por .*137\.000/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Cargar la ficha' }).click();
+
+  /*
+   * La confirmación es la ficha misma, no un cartel: al cargarla, la pantalla
+   * se vuelve a dibujar con la deuda puesta y el formulario desaparece —ya no
+   * corresponde—, así que un mensaje dentro del formulario se iría con él.
+   */
+  await expect(page.getByText('Viene de una ficha de papel migrada')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText('$ 1.801.400,00').first()).toBeVisible();
+
+  // Las entregas quedaron en la cuenta, con su fecha y su medio, y se reimprimen.
+  const movimientos = page.getByRole('listitem').filter({ hasText: 'De la libreta' });
+  await expect(movimientos).toHaveCount(4);
+  await expect(movimientos.filter({ hasText: '16/06/2026' })).toContainText('Efectivo');
+  await expect(movimientos.filter({ hasText: '27/10/2026' })).toContainText('Transferencia');
+  await expect(
+    movimientos.first().getByRole('link', { name: 'Imprimir recibo' }),
+  ).toBeVisible();
+
+  /*
+   * Y lo que importa de los números: esa plata entró meses atrás y fuera del
+   * sistema. Contarla en el reporte sería inventar un ingreso que ninguna
+   * sesión de caja respalda.
+   */
+  await page.goto('/reportes');
+  await expect(page.getByText(/137\.000/)).toHaveCount(0);
+});
+
 /*
  * Hallazgo 21 de la auditoría.
  *
