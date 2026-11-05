@@ -6,11 +6,11 @@
  * asteriscos de WhatsApp y sus renglones sin fecha.
  */
 import { describe, expect, it } from 'vitest';
-import { leerEntregas } from './libreta';
+import { leerLibreta } from './libreta';
 
 describe('leer la libreta', () => {
   it('lee el renglón tal como lo escribe el local', () => {
-    const r = leerEntregas('*ENTREGA $21.000 (19/06/26) (efectivo)*');
+    const r = leerLibreta('*ENTREGA $21.000 (19/06/26) (efectivo)*');
 
     expect(r.conProblema).toBe(0);
     expect(r.entregas).toHaveLength(1);
@@ -21,12 +21,12 @@ describe('leer la libreta', () => {
 
   it('perdona el error de tipeo de siempre', () => {
     // «tranferencia», sin la s, está escrito así en toda la libreta.
-    const r = leerEntregas('*ENTREGA $44.000 (19/06/26) (tranferencia)*');
+    const r = leerLibreta('*ENTREGA $44.000 (19/06/26) (tranferencia)*');
     expect(r.entregas[0]!.medio).toBe('transferencia');
   });
 
   it('un día de un dígito también es una fecha', () => {
-    const r = leerEntregas('*ENTREGA $22.000 (16/6/26)*');
+    const r = leerLibreta('*ENTREGA $22.000 (16/6/26)*');
     expect(r.entregas[0]!.fecha.toISOString()).toBe('2026-06-16T12:00:00.000Z');
   });
 
@@ -36,7 +36,7 @@ describe('leer la libreta', () => {
    * saldría diciendo el 15 donde el cuaderno dice el 16.
    */
   it('la fecha no se corre un día al leerla en Argentina', () => {
-    const r = leerEntregas('ENTREGA $22.000 (16/06/26)');
+    const r = leerLibreta('ENTREGA $22.000 (16/06/26)');
     const enCordoba = r.entregas[0]!.fecha.toLocaleDateString('es-AR', {
       timeZone: 'America/Argentina/Cordoba',
     });
@@ -44,7 +44,7 @@ describe('leer la libreta', () => {
   });
 
   it('sin medio escrito, asume efectivo', () => {
-    const r = leerEntregas('ENTREGA $97.000 (21/08/26)');
+    const r = leerLibreta('ENTREGA $97.000 (21/08/26)');
     expect(r.entregas[0]!.medio).toBe('efectivo');
   });
 
@@ -54,7 +54,7 @@ describe('leer la libreta', () => {
    * de hoy sería inventarla.
    */
   it('una entrega sin fecha no se carga, y dice por qué', () => {
-    const r = leerEntregas('*ENTREGA $97.000*');
+    const r = leerLibreta('*ENTREGA $97.000*');
 
     expect(r.entregas).toHaveLength(0);
     expect(r.conProblema).toBe(1);
@@ -63,13 +63,13 @@ describe('leer la libreta', () => {
   });
 
   it('una fecha imposible tampoco pasa', () => {
-    const r = leerEntregas('ENTREGA $10.000 (31/02/26)');
+    const r = leerLibreta('ENTREGA $10.000 (31/02/26)');
     expect(r.entregas).toHaveLength(0);
     expect(r.lineas[0]!.problema).toMatch(/no existe/i);
   });
 
-  it('los renglones de mercadería se saltean, no son errores', () => {
-    const r = leerEntregas(
+  it('la mercadería de arriba es una compra con la fecha de la entrega de abajo', () => {
+    const r = leerLibreta(
       [
         '1 x Auricular NETMAK NM Live *$22.000*',
         '2 x Glass *$6.000*',
@@ -81,10 +81,103 @@ describe('leer la libreta', () => {
     expect(r.conProblema).toBe(0);
     expect(r.entregas).toHaveLength(1);
     expect(r.entregas[0]!.montoCentavos).toBe(50_000_00);
+
+    expect(r.compras).toHaveLength(1);
+    expect(r.compras[0]!.montoCentavos).toBe(28_000_00);
+    expect(r.compras[0]!.fechaEstimada).toBe(false);
+    expect(r.compras[0]!.fecha.toISOString()).toBe('2026-10-27T12:00:00.000Z');
+    expect(r.compras[0]!.renglones.map((x) => x.texto)).toEqual([
+      '1 x Auricular NETMAK NM Live $22.000',
+      '2 x Glass $6.000',
+    ]);
+  });
+
+  /*
+   * Cada entrega cierra la compra de arriba. Sin esto, todo el cuaderno
+   * terminaría siendo una sola compra gigante con la última fecha.
+   */
+  it('cada entrega corta: dos bloques son dos compras con fechas distintas', () => {
+    const r = leerLibreta(
+      [
+        '1 x Auricular *$22.000*',
+        '*ENTREGA $10.000 (16/06/26)*',
+        '1 x Glass *$3.500*',
+        '1 x funda *$6.000*',
+        '*ENTREGA $5.000 (19/06/26)*',
+      ].join('\n'),
+    );
+
+    expect(r.compras).toHaveLength(2);
+    expect(r.compras[0]!.montoCentavos).toBe(22_000_00);
+    expect(r.compras[0]!.fecha.toISOString()).toBe('2026-06-16T12:00:00.000Z');
+    expect(r.compras[1]!.montoCentavos).toBe(9_500_00);
+    expect(r.compras[1]!.fecha.toISOString()).toBe('2026-06-19T12:00:00.000Z');
+    expect(r.totalComprasCentavos).toBe(31_500_00);
+  });
+
+  /*
+   * El cuaderno de Uriel termina con tres renglones sin ninguna entrega
+   * debajo. Heredan la última fecha conocida y quedan marcados, que es lo
+   * que permite decirlo en la pantalla en vez de hacerla pasar por exacta.
+   */
+  it('lo que queda al final hereda la última fecha, y se marca', () => {
+    const r = leerLibreta(
+      [
+        '*ENTREGA $50.000 (27/10/26)*',
+        '1 x joystick ps4 *$32.000*',
+        '1 x power bank Xiaomi *$21.000*',
+        '1 x power bank IBEK *$36.000*',
+      ].join('\n'),
+    );
+
+    expect(r.conProblema).toBe(0);
+    expect(r.compras).toHaveLength(1);
+    expect(r.compras[0]!.montoCentavos).toBe(89_000_00);
+    expect(r.compras[0]!.fechaEstimada).toBe(true);
+    expect(r.compras[0]!.fecha.toISOString()).toBe('2026-10-27T12:00:00.000Z');
+  });
+
+  it('mercadería sin ninguna entrega en todo el texto no se puede fechar', () => {
+    const r = leerLibreta('1 x joystick ps4 *$32.000*');
+
+    expect(r.compras).toHaveLength(0);
+    expect(r.conProblema).toBe(1);
+    expect(r.lineas.at(-1)!.problema).toMatch(/no hay ninguna entrega con fecha/i);
+  });
+
+  it('un renglón de mercadería sin importe se avisa, no se pierde', () => {
+    // Suma a la deuda: perderlo en silencio es deuda que nadie ve faltar.
+    const r = leerLibreta(['1 x cable sin precio', '*ENTREGA $5.000 (19/06/26)*'].join('\n'));
+
+    expect(r.conProblema).toBe(1);
+    expect(r.lineas[0]!.problema).toMatch(/importe/i);
+    expect(r.compras).toHaveLength(0);
+  });
+
+  /* El cuaderno entero: las cuentas tienen que dar lo que dan a mano. */
+  it('lee un pedazo real del cuaderno y lo suma', () => {
+    const r = leerLibreta(
+      [
+        '1 x Glass $3.500',
+        '1 x cargador universal $17.000',
+        '1 x álbum $15.000',
+        '1 x Glass 17 pro $3.500',
+        '1 x funda $6.000',
+        '',
+        '*ENTREGA $21.000 (19/06/26) (efectivo)*',
+        '*ENTREGA $44.000 (19/06/26) (tranferencia)*',
+      ].join('\n'),
+    );
+
+    expect(r.conProblema).toBe(0);
+    expect(r.compras).toHaveLength(1);
+    expect(r.compras[0]!.montoCentavos).toBe(45_000_00);
+    expect(r.entregas).toHaveLength(2);
+    expect(r.totalCentavos).toBe(65_000_00);
   });
 
   it('lee la tanda entera y la suma', () => {
-    const r = leerEntregas(
+    const r = leerLibreta(
       [
         '*ENTREGA $22.000 (16/6/26)*',
         '*ENTREGA $21.000 (19/06/26) (efectivo)*',
@@ -99,7 +192,7 @@ describe('leer la libreta', () => {
   });
 
   it('un renglón ilegible no se lleva puestos a los demás', () => {
-    const r = leerEntregas(
+    const r = leerLibreta(
       ['*ENTREGA $22.000 (16/6/26)*', '*ENTREGA $97.000*', '*ENTREGA $50.000 (27/10/26)*'].join(
         '\n',
       ),
@@ -111,7 +204,7 @@ describe('leer la libreta', () => {
   });
 
   it('un texto vacío no es un error, es nada', () => {
-    const r = leerEntregas('   \n\n  ');
+    const r = leerLibreta('   \n\n  ');
     expect(r.lineas).toEqual([]);
     expect(r.entregas).toEqual([]);
     expect(r.totalCentavos).toBe(0);

@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useState } from 'react';
 import { migrarFichaAccion, type EstadoFiado } from '@/app/acciones-fiado';
-import { leerEntregas } from '@/fiado/libreta';
+import { leerLibreta } from '@/fiado/libreta';
 import { formatearARS } from '@/lib/dinero';
 
 const INICIAL: EstadoFiado = {};
@@ -37,7 +37,7 @@ export default function FormularioFicha({
 
   // La misma lectura que hace el servidor, mientras se escribe. El servidor la
   // repite igual: esto es para ver, no para decidir.
-  const lectura = useMemo(() => leerEntregas(entregas), [entregas]);
+  const lectura = useMemo(() => leerLibreta(entregas), [entregas]);
   const malos = lectura.lineas.filter((l) => l.problema);
 
   // Lo de la libreta se suma a lo que la cuenta ya debe, así que el total se
@@ -47,6 +47,12 @@ export default function FormularioFicha({
     const n = Number(saldo.trim().replace(/\./g, '').replace(',', '.'));
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
   })();
+  const estimadas = lectura.compras.filter((c) => c.fechaEstimada).length;
+  const resultadoCentavos =
+    saldoActualCentavos +
+    deLaLibretaCentavos +
+    lectura.totalComprasCentavos -
+    lectura.totalCentavos;
 
   if (estado.ok) {
     return (
@@ -72,8 +78,7 @@ export default function FormularioFicha({
     <form action={accion} className="space-y-2 rounded-(--radius-caja) bg-(--color-papel) p-3">
       <input type="hidden" name="clienteId" value={clienteId} />
       <p className="text-sm">
-        ¿Cuánto dice la libreta que debe <strong>{nombre}</strong>, <strong>aparte</strong> de lo
-        que ya está en el sistema? Se carga una sola vez, al pasar la ficha.
+        Pasá la libreta de <strong>{nombre}</strong> al sistema. Se hace una sola vez.
       </p>
 
       {saldoActualCentavos > 0 ? (
@@ -87,15 +92,15 @@ export default function FormularioFicha({
       <div className="flex flex-wrap items-end gap-2">
         <div>
           <label htmlFor={`saldo-${clienteId}`} className="mb-1 block text-xs font-medium">
-            Saldo de la libreta
+            Saldo anterior (si el cuaderno arrastra uno)
           </label>
           <input
             id={`saldo-${clienteId}`}
             name="saldo"
             type="text"
             inputMode="decimal"
-            required
             autoFocus
+            placeholder="0"
             value={saldo}
             onChange={(e) => setSaldo(e.target.value)}
             className="tabular min-h-11 w-40 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
@@ -118,47 +123,68 @@ export default function FormularioFicha({
 
       <div>
         <label htmlFor={`entregas-${clienteId}`} className="mb-1 block text-xs font-medium">
-          Las entregas que ya hizo (opcional)
+          La libreta
         </label>
         <textarea
           id={`entregas-${clienteId}`}
           name="entregas"
-          rows={4}
           value={entregas}
           onChange={(e) => setEntregas(e.target.value)}
-          placeholder={'ENTREGA $22.000 (16/6/26)\nENTREGA $44.000 (19/06/26) (transferencia)'}
+          rows={8}
+          placeholder={
+            '1 x Auricular NETMAK NM Live *$22.000*\n1 x Silla oficina *$87.000*\nENTREGA $22.000 (16/6/26)\n1 x Glass $3.500\nENTREGA $44.000 (19/06/26) (transferencia)'
+          }
           className="w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) p-2 font-mono text-sm"
         />
         <p className="mt-1 text-xs text-(--color-tinta-suave)">
-          Pegalas como están en el cuaderno. Los renglones de mercadería se saltean solos. Cada
-          entrega necesita su fecha: sin ella no se puede saber cuándo pagó.
+          Pegala entera, como está escrita. La mercadería entre dos entregas queda como una compra,
+          con la fecha de la entrega de abajo. Cada entrega necesita su fecha: sin ella no se puede
+          saber cuándo pagó.
         </p>
       </div>
 
-      {deLaLibretaCentavos > 0 ? (
+      {resultadoCentavos > 0 ? (
         <p className="rounded-(--radius-caja) bg-(--color-papel) px-3 py-2 text-sm">
-          {saldoActualCentavos > 0 ? (
-            <>
-              <span className="tabular">{formatearARS(saldoActualCentavos)}</span> que ya debe +{' '}
-              <span className="tabular">{formatearARS(deLaLibretaCentavos)}</span> de la libreta ={' '}
-            </>
-          ) : (
-            <>Va a quedar debiendo </>
-          )}
-          <strong className="tabular">
-            {formatearARS(saldoActualCentavos + deLaLibretaCentavos)}
-          </strong>
-          .
+          {[
+            saldoActualCentavos > 0
+              ? `${formatearARS(saldoActualCentavos)} que ya debe`
+              : null,
+            deLaLibretaCentavos > 0 ? `${formatearARS(deLaLibretaCentavos)} de saldo anterior` : null,
+            lectura.totalComprasCentavos > 0
+              ? `${formatearARS(lectura.totalComprasCentavos)} de compras`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' + ')}
+          {lectura.totalCentavos > 0 ? ` − ${formatearARS(lectura.totalCentavos)} de entregas` : ''}{' '}
+          = <strong className="tabular">{formatearARS(resultadoCentavos)}</strong>.
         </p>
       ) : null}
 
-      {lectura.entregas.length > 0 ? (
-        <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) px-3 py-2 text-sm">
-          Leí <strong>{lectura.entregas.length}</strong>{' '}
-          {lectura.entregas.length === 1 ? 'entrega' : 'entregas'} por{' '}
-          <strong className="tabular">{formatearARS(lectura.totalCentavos)}</strong>. Se guardan con
-          su fecha y no tocan la caja de hoy.
-        </p>
+      {lectura.compras.length > 0 || lectura.entregas.length > 0 ? (
+        <div className="rounded-(--radius-caja) bg-(--color-ok-fondo) px-3 py-2 text-sm">
+          <p>
+            Leí{' '}
+            <strong>
+              {lectura.compras.length} {lectura.compras.length === 1 ? 'compra' : 'compras'}
+            </strong>{' '}
+            por <span className="tabular">{formatearARS(lectura.totalComprasCentavos)}</span> y{' '}
+            <strong>
+              {lectura.entregas.length} {lectura.entregas.length === 1 ? 'entrega' : 'entregas'}
+            </strong>{' '}
+            por <span className="tabular">{formatearARS(lectura.totalCentavos)}</span>.
+          </p>
+          <p className="mt-1 text-xs text-(--color-tinta-media)">
+            Las compras no tocan el stock ni la facturación: la mercadería salió del local antes
+            de que el sistema la conociera.
+          </p>
+          {estimadas > 0 ? (
+            <p className="mt-1 text-xs">
+              {estimadas === 1 ? 'Una compra queda' : `${estimadas} compras quedan`} con la fecha
+              de la última entrega, porque abajo no hay ninguna de dónde sacarla.
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {malos.length > 0 ? (

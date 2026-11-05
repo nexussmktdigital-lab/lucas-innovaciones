@@ -250,7 +250,7 @@ test('la ficha de papel entra una sola vez', async ({ page }) => {
   await page.waitForURL(/\/clientes\//);
 
   await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
-  await page.getByLabel('Saldo de la libreta').fill('45000');
+  await page.getByLabel(/Saldo anterior/).fill('45000');
   await page.getByLabel('De dónde sale (opcional)').fill('Libreta, hoja 12');
   await page.getByRole('button', { name: 'Cargar la ficha' }).click();
 
@@ -290,25 +290,30 @@ test('la libreta entra con sus entregas, y no las cuenta como plata de hoy', asy
   await page.getByRole('link', { name: MAYORISTA }).click();
   await page.waitForURL(/\/clientes\//);
   await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
-  await page.getByLabel('Saldo de la libreta').fill('1801400');
+  await page.getByLabel(/Saldo anterior/).fill('205500');
 
   // Un renglón sin fecha frena todo, y lo dice antes de mandar nada.
-  await page.getByLabel(/Las entregas que ya hizo/).fill('*ENTREGA $97.000*');
+  await page.getByLabel('La libreta').fill('*ENTREGA $97.000*');
   await expect(page.getByText(/no lo entendí/)).toBeVisible();
   await expect(page.getByText(/Falta la fecha/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cargar la ficha' })).toBeDisabled();
 
-  // Con las fechas puestas, dice cuántas leyó antes de guardar.
-  await page.getByLabel(/Las entregas que ya hizo/).fill(
+  // Con las fechas puestas, dice qué leyó antes de guardar.
+  await page.getByLabel('La libreta').fill(
     [
       '1 x Auricular NETMAK NM Live *$22.000*',
+      '1 x Silla oficina *$87.000*',
       '*ENTREGA $22.000 (16/6/26)*',
+      '1 x Glass *$3.500*',
       '*ENTREGA $21.000 (19/06/26) (efectivo)*',
       '*ENTREGA $44.000 (19/06/26) (tranferencia)*',
       '*ENTREGA $50.000 (27/10/26) (tranferencia)*',
+      '1 x power bank IBEK *$36.000*',
     ].join('\n'),
   );
-  await expect(page.getByText(/Leí 4 entregas por .*137\.000/)).toBeVisible();
+  await expect(page.getByText(/Leí 3 compras por .*148\.500.*4 entregas por .*137\.000/s)).toBeVisible();
+  // La del final no tiene entrega debajo: lo dice en vez de inventar la fecha.
+  await expect(page.getByText(/queda con la fecha de la última entrega/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Cargar la ficha' }).click();
 
@@ -320,10 +325,21 @@ test('la libreta entra con sus entregas, y no las cuenta como plata de hoy', asy
   await expect(page.getByText('Viene de una ficha de papel migrada')).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText('$ 1.801.400,00').first()).toBeVisible();
+  // 205.500 + 148.500 de compras − 137.000 de entregas = 217.000.
+  await expect(page.getByText('$ 217.000,00').first()).toBeVisible();
 
-  // Las entregas quedaron en la cuenta, con su fecha y su medio, y se reimprimen.
-  const movimientos = page.getByRole('listitem').filter({ hasText: 'De la libreta' });
+  // Las compras quedaron, con su detalle a la vista.
+  const compras = page.getByRole('listitem').filter({ hasText: 'Compra de la libreta' });
+  await expect(compras).toHaveCount(3);
+  await compras.first().getByText('Ver qué se llevó').click();
+  await expect(compras.first()).toContainText('power bank IBEK');
+  await expect(compras.first()).toContainText('fecha aproximada');
+
+  // Y las entregas, con su fecha y su medio, y se reimprimen. Se filtran por
+  // el enlace del recibo: «Compra de la libreta» también dice «la libreta».
+  const movimientos = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: 'Imprimir recibo' }) });
   await expect(movimientos).toHaveCount(4);
   await expect(movimientos.filter({ hasText: '16/06/2026' })).toContainText('Efectivo');
   await expect(movimientos.filter({ hasText: '27/10/2026' })).toContainText('Transferencia');
@@ -389,7 +405,7 @@ test('la libreta entra aunque el cliente ya tenga ventas, y se suma', async ({ p
 
   // Avisa lo que ya debe, para que no se escriba el total del cuaderno.
   await expect(page.getByText(/Esta cuenta ya debe/)).toBeVisible();
-  await page.getByLabel('Saldo de la libreta').fill('100000');
+  await page.getByLabel(/Saldo anterior/).fill('100000');
   await expect(page.getByText(/que ya debe \+/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Cargar la ficha' }).click();
