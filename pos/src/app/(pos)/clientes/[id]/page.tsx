@@ -192,10 +192,22 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
         {puedeFiar ? (
           <div className="mt-4 space-y-3 border-t border-(--color-borde) pt-3">
             <FormularioLimite clienteId={cliente.id} limiteCentavos={cliente.limiteCentavos} />
-            {cliente.saldoCentavos === 0 &&
-            cliente.saldoUsdCentavos === 0 &&
-            movimientos.length === 0 ? (
-              <FormularioFicha clienteId={cliente.id} nombre={cliente.nombre} />
+            {/*
+              Mientras la libreta de este cliente no se haya cargado.
+
+              Antes esto además exigía que la cuenta estuviera en cero, y la
+              realidad lo rompió: el cliente volvió al local y se llevó
+              mercadería antes de que alguien cargara su libreta. Esas ventas
+              sacaron la cuenta de cero y cerraron la única puerta que había
+              para meter el saldo viejo. Lo que impide cargarla dos veces es
+              la marca de la cuenta, no el saldo.
+            */}
+            {cuenta?.origen !== 'migrado_papel' ? (
+              <FormularioFicha
+                clienteId={cliente.id}
+                nombre={cliente.nombre}
+                saldoActualCentavos={cliente.saldoCentavos}
+              />
             ) : null}
           </div>
         ) : null}
@@ -250,9 +262,19 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                 <span className="text-xs text-(--color-tinta-suave)">
                   {formatearFechaHora(m.fecha)}
                 </span>
-                <span className={m.tipo === 'venta' && m.anulada ? 'line-through opacity-60' : ''}>
-                  {m.descripcion}
-                </span>
+                {/* La venta lleva a su detalle: desde la cuenta corriente, «qué
+                    se llevó» es la pregunta que sigue a «cuánto debe», y hasta
+                    ahora había que ir a buscar la venta por número. */}
+                {m.tipo === 'venta' ? (
+                  <Link
+                    href={`/ventas/${m.ventaId}`}
+                    className={`underline underline-offset-2 ${m.anulada ? 'line-through opacity-60' : ''}`}
+                  >
+                    {m.descripcion}
+                  </Link>
+                ) : (
+                  <span>{m.descripcion}</span>
+                )}
                 {m.tipo === 'venta' && m.anulada ? (
                   <span className="text-xs text-(--color-tinta-suave)">anulada</span>
                 ) : null}

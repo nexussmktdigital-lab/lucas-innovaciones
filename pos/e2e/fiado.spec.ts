@@ -331,6 +331,10 @@ test('la libreta entra con sus entregas, y no las cuenta como plata de hoy', asy
     movimientos.first().getByRole('link', { name: 'Imprimir recibo' }),
   ).toBeVisible();
 
+  // Ya cargada, no se ofrece de nuevo: sumar dos veces la misma deuda es el
+  // error a evitar, y ahora lo que lo impide es la marca y no el saldo.
+  await expect(page.getByRole('button', { name: 'Cargar una ficha de papel' })).toHaveCount(0);
+
   /*
    * Y lo que importa de los números: esa plata entró meses atrás y fuera del
    * sistema. Contarla en el reporte sería inventar un ingreso que ninguna
@@ -338,6 +342,63 @@ test('la libreta entra con sus entregas, y no las cuenta como plata de hoy', asy
    */
   await page.goto('/reportes');
   await expect(page.getByText(/137\.000/)).toHaveCount(0);
+});
+
+/**
+ * La libreta de un cliente que ya venía comprando en el sistema.
+ *
+ * Pasó de verdad: el cliente volvió al local y se llevó mercadería antes de
+ * que nadie cargara su libreta. Esas ventas sacaron la cuenta de cero y, con
+ * la regla vieja, cerraban la única puerta que había para meter el saldo
+ * viejo. Lo que impide cargarla dos veces es la marca de la cuenta.
+ */
+test('la libreta entra aunque el cliente ya tenga ventas, y se suma', async ({ page }) => {
+  const CLIENTE = `Uriel con ventas ${SUFIJO}`;
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(CLIENTE);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/quedó cargado/)).toBeVisible();
+
+  // Después una venta fiada de verdad, como las tres de octubre.
+  await page.addInitScript(() => {
+    window.print = () => {};
+  });
+  await page.goto('/vender');
+  await page.getByPlaceholder('Buscar por nombre').fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await page.getByPlaceholder('Buscar por nombre').press('Enter');
+  await elegirCliente(page, CLIENTE);
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/clientes');
+  await page.getByRole('link', { name: CLIENTE }).click();
+  await page.waitForURL(/\/clientes\//);
+
+  // La cuenta ya no está en cero, y el formulario sigue estando.
+  const ficha = page.getByRole('button', { name: 'Cargar una ficha de papel' });
+  await expect(ficha).toBeVisible();
+  await ficha.click();
+
+  // Avisa lo que ya debe, para que no se escriba el total del cuaderno.
+  await expect(page.getByText(/Esta cuenta ya debe/)).toBeVisible();
+  await page.getByLabel('Saldo de la libreta').fill('100000');
+  await expect(page.getByText(/que ya debe \+/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Cargar la ficha' }).click();
+  await expect(page.getByText('Viene de una ficha de papel migrada')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // La venta sigue contada: el saldo es la suma, no el reemplazo.
+  await expect(page.getByText('$ 105.000,00')).toBeVisible();
 });
 
 /*
