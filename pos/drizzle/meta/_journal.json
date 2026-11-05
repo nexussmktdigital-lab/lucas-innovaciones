@@ -155,6 +155,13 @@
       "when": 1789495144197,
       "tag": "0021_recargos",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793000000000,
+      "tag": "0022_libreta_con_pagos",
+      "breakpoints": true
     }
   ]
 }

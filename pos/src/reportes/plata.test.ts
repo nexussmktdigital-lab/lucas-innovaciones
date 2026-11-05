@@ -21,7 +21,7 @@ import {
 } from '@/db/schema';
 import { abrirCaja } from '@/caja/sesion';
 import { confirmarVenta } from '@/ventas/confirmar';
-import { cobrarFiado } from '@/fiado/cuenta';
+import { cobrarFiado, migrarFichaDePapel } from '@/fiado/cuenta';
 import { registrarGasto } from '@/gastos/gastos';
 import { periodoEntre } from './periodo';
 import {
@@ -309,6 +309,57 @@ describe('los cobros de fiado son plata del período', () => {
 
     const otroMes = periodoEntre('2021-03-01', '2021-03-31');
     expect(await cobrosDeFiadoPorMedio(db, otroMes)).toEqual([]);
+  });
+
+  /*
+   * Las entregas que venían de la libreta de papel.
+   *
+   * Ocurrieron meses antes de que el cliente entrara al sistema y no pasaron
+   * por ninguna caja. Contarlas pondría en ese mes un ingreso que ninguna
+   * sesión de caja respalda, y el arqueo de ese mes dejaría de cerrar.
+   */
+  it('las entregas migradas de la libreta no son plata que entró', async () => {
+    const [uriel] = await db.insert(customers).values({ nombre: 'Uriel Duarte' }).returning();
+    await migrarFichaDePapel(db, {
+      customerId: uriel!.id,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenio,
+      entregas: [
+        { fecha: new Date('2026-06-16T12:00:00Z'), montoCentavos: 22_000_00, medio: 'efectivo' },
+        { fecha: new Date('2026-10-27T12:00:00Z'), montoCentavos: 50_000_00, medio: 'transferencia' },
+      ],
+    });
+
+    expect(await cobrosDeFiadoPorMedio(db, TODO)).toEqual([]);
+    expect((await flujoDelPeriodo(db, TODO)).cobrosDeFiadoCentavos).toBe(0);
+  });
+
+  it('pero un cobro de verdad al mismo cliente sí cuenta', async () => {
+    // La marca separa la historia de la plata; no apaga al cliente.
+    const [uriel] = await db.insert(customers).values({ nombre: 'Uriel Duarte' }).returning();
+    await migrarFichaDePapel(db, {
+      customerId: uriel!.id,
+      saldoCentavos: 1_801_400_00,
+      usuarioId: duenio,
+      entregas: [
+        { fecha: new Date('2026-06-16T12:00:00Z'), montoCentavos: 22_000_00, medio: 'efectivo' },
+      ],
+    });
+
+    await cobrarFiado(db, {
+      customerId: uriel!.id,
+      montoCentavos: 80_000_00,
+      medio: 'efectivo',
+      monetaryAccountId: caja,
+      cashSessionId: sesionId,
+      usuarioId: duenio,
+      idempotencyKey: 'cobro-real-uriel',
+    });
+
+    const cobros = await cobrosDeFiadoPorMedio(db, TODO);
+    expect(cobros).toEqual([
+      { medio: 'efectivo', cantidad: 1, totalCentavos: 80_000_00, totalUsdCentavos: 0 },
+    ]);
   });
 });
 
