@@ -742,6 +742,54 @@ export const installments = pgTable(
   ],
 );
 
+/**
+ * Las compras que el cliente hizo antes de entrar al sistema.
+ *
+ * **No son ventas, y la diferencia es el motivo de que esta tabla exista.**
+ * Una venta descuenta stock y entra en la facturacion del mes. Esta
+ * mercaderia salio del local hace meses: el stock ya se descento entonces, y
+ * facturarla ahora pondria medio millon de pesos en el mes equivocado. Sus
+ * renglones ademas son texto del cuaderno y no fichas del catalogo —«1 x vaso
+ * un poco de ruido» no tiene SKU ni precio de lista, y nunca lo va a tener—.
+ *
+ * Entonces es lo que es: un cargo a la cuenta corriente, con su fecha y su
+ * detalle. Los reportes de plata leen `sales` y `credit_payments`, asi que
+ * esta tabla les es invisible por construccion.
+ */
+export const creditCharges = pgTable(
+  'credit_charges',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    creditAccountId: uuid()
+      .notNull()
+      .references(() => creditAccounts.id),
+    fecha: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    descripcion: text().notNull(),
+    /** Los renglones del cuaderno, tal como estaban escritos, uno por linea. */
+    detalle: text(),
+    montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /** El saldo que quedaba ese dia. Congelado, igual que en los pagos. */
+    saldoResultanteCentavos: bigint({ mode: 'number' }).notNull(),
+    /**
+     * True cuando la fecha se dedujo y no estaba escrita.
+     *
+     * Los bloques del final del cuaderno no tienen ninguna entrega debajo de
+     * donde sacarla y heredan la ultima fecha conocida. Se marca para poder
+     * decirlo en la pantalla en vez de hacerla pasar por exacta.
+     */
+    fechaEstimada: boolean().notNull().default(false),
+    cargadoPorId: uuid()
+      .notNull()
+      .references(() => users.id),
+    nota: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('credit_charges_cuenta_idx').on(t.creditAccountId),
+    check('credit_charges_monto_ck', sql`${t.montoCentavos} > 0`),
+  ],
+);
+
 export const creditPayments = pgTable(
   'credit_payments',
   {

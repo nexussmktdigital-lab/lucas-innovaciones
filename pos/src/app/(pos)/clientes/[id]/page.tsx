@@ -285,6 +285,15 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   </span>
                 ) : null}
 
+                {m.tipo === 'compra' && m.fechaEstimada ? (
+                  <span
+                    className="text-xs text-(--color-tinta-suave)"
+                    title="El cuaderno no tenía fecha para esta compra: quedó con la de la última entrega."
+                  >
+                    fecha aproximada
+                  </span>
+                ) : null}
+
                 <span
                   className={`tabular ml-auto font-semibold ${
                     m.tipo === 'cobro' ? 'text-(--color-ok)' : ''
@@ -305,6 +314,23 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                     congelado. Si después se anuló una venta, el saldo de arriba
                     ya no coincide, y decir «quedó debiendo» a secas hacía que
                     los dos números se leyeran como contradictorios. */}
+                {/*
+                  Los renglones del cuaderno. Es lo que el local pidió ver: la
+                  compra sola dice «$731.700» y no qué se llevó. Van en un
+                  desplegable porque una compra son cuarenta renglones y la
+                  lista tiene que seguir leyéndose de un vistazo.
+                */}
+                {m.tipo === 'compra' && m.detalle ? (
+                  <details className="w-full">
+                    <summary className="cursor-pointer text-xs text-(--color-tinta-suave)">
+                      Ver qué se llevó
+                    </summary>
+                    <pre className="mt-1 font-ui text-xs whitespace-pre-wrap text-(--color-tinta-media)">
+                      {m.detalle}
+                    </pre>
+                  </details>
+                ) : null}
+
                 {m.tipo === 'cobro' ? (
                   <span className="flex w-full items-baseline justify-end gap-3 text-xs">
                     <span className="tabular text-(--color-tinta-suave)">

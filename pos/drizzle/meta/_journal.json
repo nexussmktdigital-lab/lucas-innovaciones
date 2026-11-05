@@ -162,6 +162,13 @@
       "when": 1793000000000,
       "tag": "0022_libreta_con_pagos",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793200000000,
+      "tag": "0023_compras_de_la_libreta",
+      "breakpoints": true
     }
   ]
 }

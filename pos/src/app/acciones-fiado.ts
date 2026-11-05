@@ -14,7 +14,7 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
-import { leerEntregas } from '@/fiado/libreta';
+import { leerLibreta } from '@/fiado/libreta';
 import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { cotizacionVigente } from '@/cotizacion/cotizacion';
@@ -325,11 +325,19 @@ export async function migrarFichaAccion(
     return { error: 'No se reconoce ese cliente.' };
   }
 
-  let saldoCentavos: number;
-  try {
-    saldoCentavos = aCentavos(String(datos.get('saldo') ?? ''));
-  } catch {
-    return { error: 'Escribí cuánto dice la libreta que debe.' };
+  /*
+   * El saldo anterior puede ser cero: cuando el cuaderno empieza de cero, lo
+   * que hay para cargar son las compras. El dominio rechaza el caso de que no
+   * haya ni una cosa ni la otra.
+   */
+  const crudo = String(datos.get('saldo') ?? '').trim();
+  let saldoCentavos = 0;
+  if (crudo !== '') {
+    try {
+      saldoCentavos = aCentavos(crudo);
+    } catch {
+      return { error: `«${crudo}» no es un saldo.` };
+    }
   }
 
   /*
@@ -339,7 +347,7 @@ export async function migrarFichaAccion(
    * cargada es peor que ninguna, porque el saldo igual queda escrito y nadie
    * se entera de lo que falta—.
    */
-  const lectura = leerEntregas(String(datos.get('entregas') ?? ''));
+  const lectura = leerLibreta(String(datos.get('entregas') ?? ''));
   if (lectura.conProblema > 0) {
     const malos = lectura.lineas.filter((l) => l.problema);
     return {
@@ -356,6 +364,12 @@ export async function migrarFichaAccion(
       usuarioId: sesion.user.id,
       nota: String(datos.get('nota') ?? '').trim() || null,
       entregas: lectura.entregas,
+      compras: lectura.compras.map((c) => ({
+        fecha: c.fecha,
+        fechaEstimada: c.fechaEstimada,
+        montoCentavos: c.montoCentavos,
+        detalle: c.renglones.map((r) => r.texto).join('\n'),
+      })),
     });
 
     refrescar();
@@ -365,13 +379,18 @@ export async function migrarFichaAccion(
      * La confirmación que queda es la pantalla —el saldo, la marca de que vino
      * de la libreta y las entregas listadas—, que dura y se puede revisar.
      */
-    return {
-      ok:
-        `Ficha cargada: debe ${formatearARS(cuenta.saldoCentavos)}.` +
-        (cuenta.entregasCargadas > 0
-          ? ` Se guardaron ${cuenta.entregasCargadas} entregas por ${formatearARS(lectura.totalCentavos)}.`
-          : ''),
-    };
+    const partes = [`Ficha cargada: debe ${formatearARS(cuenta.saldoCentavos)}.`];
+    if (cuenta.comprasCargadas > 0) {
+      partes.push(
+        `Se guardaron ${cuenta.comprasCargadas} compras por ${formatearARS(lectura.totalComprasCentavos)}`,
+      );
+    }
+    if (cuenta.entregasCargadas > 0) {
+      partes.push(
+        `${cuenta.comprasCargadas > 0 ? 'y' : 'Se guardaron'} ${cuenta.entregasCargadas} entregas por ${formatearARS(lectura.totalCentavos)}.`,
+      );
+    }
+    return { ok: partes.join(' ') };
   } catch (error) {
     if (error instanceof ErrorFiado) return { error: error.message };
     console.error('[fiado] Falló la migración:', error);

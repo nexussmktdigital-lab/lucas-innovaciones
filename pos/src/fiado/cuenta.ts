@@ -28,6 +28,7 @@ import {
   auditLog,
   cashMovements,
   creditAccounts,
+  creditCharges,
   creditPayments,
   customers,
   monetaryAccounts,
@@ -470,6 +471,15 @@ export async function cobrarFiado(db: BaseDatos, datos: DatosCobro): Promise<Cob
   });
 }
 
+/** Una compra que el cliente hizo antes de entrar al sistema. */
+export interface CompraDeLibretaParaCargar {
+  fecha: Date;
+  fechaEstimada: boolean;
+  montoCentavos: number;
+  /** Los renglones del cuaderno, uno por linea. */
+  detalle: string;
+}
+
 /** Una entrega que el cliente ya habia hecho antes de entrar al sistema. */
 export interface EntregaDeLibreta {
   fecha: Date;
@@ -513,16 +523,37 @@ export async function migrarFichaDePapel(
   db: BaseDatos,
   datos: {
     customerId: string;
-    /** Lo que debe hoy, despues de las entregas de abajo. */
+    /**
+     * Lo que ya debia **antes** de todo lo que se pega: el saldo que el
+     * cuaderno arrastra de una hoja anterior. Cero si no arrastra nada.
+     */
     saldoCentavos: number;
     usuarioId: string;
     nota?: string | null;
     /** Las entregas ya hechas, en cualquier orden: se ordenan por fecha. */
     entregas?: readonly EntregaDeLibreta[];
+    /** La mercaderia que se llevo, agrupada por fecha. */
+    compras?: readonly CompraDeLibretaParaCargar[];
   },
-): Promise<CuentaCorriente & { entregasCargadas: number }> {
-  if (!Number.isInteger(datos.saldoCentavos) || datos.saldoCentavos <= 0) {
-    throw new ErrorFiado('El saldo de la ficha tiene que ser mayor a cero.', 'monto_invalido');
+): Promise<CuentaCorriente & { entregasCargadas: number; comprasCargadas: number }> {
+  const compras = [...(datos.compras ?? [])].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+
+  if (!Number.isInteger(datos.saldoCentavos) || datos.saldoCentavos < 0) {
+    throw new ErrorFiado('El saldo anterior no puede ser negativo.', 'monto_invalido');
+  }
+  if (datos.saldoCentavos === 0 && compras.length === 0) {
+    throw new ErrorFiado(
+      'No hay nada que cargar: escribí el saldo anterior o pegá las compras del cuaderno.',
+      'monto_invalido',
+    );
+  }
+  for (const c of compras) {
+    if (!Number.isInteger(c.montoCentavos) || c.montoCentavos <= 0) {
+      throw new ErrorFiado('Cada compra de la libreta tiene que ser mayor a cero.', 'monto_invalido');
+    }
+    if (Number.isNaN(c.fecha.getTime())) {
+      throw new ErrorFiado('Una de las compras no tiene una fecha valida.', 'monto_invalido');
+    }
   }
 
   const entregas = [...(datos.entregas ?? [])].sort(
@@ -541,13 +572,31 @@ export async function migrarFichaDePapel(
   }
 
   /*
-   * Lo que se llevo en total: lo que debe hoy mas todo lo que ya entrego. De
-   * ahi para abajo las entregas van restando, y la cuenta termina justo en el
-   * saldo que se escribio.
+   * Compras y entregas en una sola linea de tiempo.
+   *
+   * Hace falta recorrerlas juntas y en orden porque cada fila anota el saldo
+   * que quedaba ese dia, y ese numero sale de todo lo que paso antes. Con una
+   * misma fecha, primero la compra: el cliente se lleva la mercaderia y
+   * despues paga, que es el orden en que esta escrito el cuaderno.
    */
-  const cargoDeLaLibretaCentavos = entregas.reduce(
-    (t, e) => t + e.montoCentavos,
-    datos.saldoCentavos,
+  type Paso =
+    | { tipo: 'compra'; fecha: Date; compra: CompraDeLibretaParaCargar }
+    | { tipo: 'entrega'; fecha: Date; entrega: EntregaDeLibreta };
+
+  /*
+   * Las entregas se arman primero a proposito. `sort` es estable, asi que si
+   * las compras fueran primero el orden saldria bien por como se armo el
+   * arreglo y no por el desempate de abajo —que quedaria sin hacer nada y
+   * sin que ningun test lo note—. Armandolas al reves, el desempate es lo
+   * unico que pone la compra antes, que es lo que se quiere probar.
+   */
+  const pasos: Paso[] = [
+    ...entregas.map((entrega): Paso => ({ tipo: 'entrega', fecha: entrega.fecha, entrega })),
+    ...compras.map((compra): Paso => ({ tipo: 'compra', fecha: compra.fecha, compra })),
+  ].sort(
+    (a, b) =>
+      a.fecha.getTime() - b.fecha.getTime() ||
+      (a.tipo === b.tipo ? 0 : a.tipo === 'compra' ? -1 : 1),
   );
 
   return db.transaction(async (tx) => {
@@ -567,33 +616,46 @@ export async function migrarFichaDePapel(
       );
     }
 
-    const saldoFinal = cuenta.saldoCentavos + datos.saldoCentavos;
+    // Lo que debia antes de todo esto: lo que la cuenta ya tenia por ventas
+    // del sistema, mas el saldo que el cuaderno arrastra de una hoja anterior.
+    let saldo = cuenta.saldoCentavos + datos.saldoCentavos;
+
+    for (const [i, paso] of pasos.entries()) {
+      if (paso.tipo === 'compra') {
+        saldo += paso.compra.montoCentavos;
+        await tx.insert(creditCharges).values({
+          creditAccountId: cuenta.id,
+          fecha: paso.fecha,
+          descripcion: 'Compra de la libreta',
+          detalle: paso.compra.detalle,
+          montoCentavos: paso.compra.montoCentavos,
+          saldoResultanteCentavos: saldo,
+          fechaEstimada: paso.compra.fechaEstimada,
+          cargadoPorId: datos.usuarioId,
+        });
+      } else {
+        saldo -= paso.entrega.montoCentavos;
+        await tx.insert(creditPayments).values({
+          creditAccountId: cuenta.id,
+          montoCentavos: paso.entrega.montoCentavos,
+          monedaDeuda: 'ARS',
+          medio: paso.entrega.medio,
+          fecha: paso.fecha,
+          cobradoPorId: datos.usuarioId,
+          // El saldo que quedaba ese dia, no el de hoy: es lo que imprime el
+          // recibo si alguien lo saca despues.
+          saldoResultanteCentavos: saldo,
+          nota: paso.entrega.nota ?? 'De la libreta',
+          migrado: true,
+          idempotencyKey: `libreta:${cuenta.id}:${i}`,
+        });
+      }
+    }
 
     await tx
       .update(creditAccounts)
-      .set({ saldoCentavos: saldoFinal, origen: 'migrado_papel', updatedAt: new Date() })
+      .set({ saldoCentavos: saldo, origen: 'migrado_papel', updatedAt: new Date() })
       .where(eq(creditAccounts.id, cuenta.id));
-
-    // El saldo de cada recibo arranca del cargo de la libreta mas lo que la
-    // cuenta ya debia: es lo que el cliente debia ese dia en total.
-    let restante = cuenta.saldoCentavos + cargoDeLaLibretaCentavos;
-    for (const [i, e] of entregas.entries()) {
-      restante -= e.montoCentavos;
-      await tx.insert(creditPayments).values({
-        creditAccountId: cuenta.id,
-        montoCentavos: e.montoCentavos,
-        monedaDeuda: 'ARS',
-        medio: e.medio,
-        fecha: e.fecha,
-        cobradoPorId: datos.usuarioId,
-        // El saldo que quedaba ese dia, no el de hoy: es lo que imprime el
-        // recibo si alguien lo saca despues.
-        saldoResultanteCentavos: restante,
-        nota: e.nota ?? 'De la libreta',
-        migrado: true,
-        idempotencyKey: `libreta:${cuenta.id}:${i}`,
-      });
-    }
 
     await tx.insert(auditLog).values({
       usuarioId: datos.usuarioId,
@@ -601,20 +663,23 @@ export async function migrarFichaDePapel(
       entidad: 'credit_accounts',
       entidadId: cuenta.id,
       valorNuevo: {
-        saldoDeLaLibretaCentavos: datos.saldoCentavos,
-        saldoAnteriorCentavos: cuenta.saldoCentavos,
-        saldoFinalCentavos: saldoFinal,
-        cargoDeLaLibretaCentavos,
+        saldoAnteriorDelCuadernoCentavos: datos.saldoCentavos,
+        saldoPrevioDeLaCuentaCentavos: cuenta.saldoCentavos,
+        saldoFinalCentavos: saldo,
+        compras: compras.length,
+        comprasCentavos: compras.reduce((t, c) => t + c.montoCentavos, 0),
         entregas: entregas.length,
+        entregasCentavos: entregas.reduce((t, e) => t + e.montoCentavos, 0),
         nota: datos.nota ?? null,
       },
     });
 
     return {
       ...cuenta,
-      saldoCentavos: saldoFinal,
+      saldoCentavos: saldo,
       origen: 'migrado_papel' as const,
       entregasCargadas: entregas.length,
+      comprasCargadas: compras.length,
     };
   });
 }
@@ -752,6 +817,17 @@ export type MovimientoDeCuenta =
       anulada: boolean;
     }
   | {
+      /** Una compra de la libreta: mercaderia de antes de entrar al sistema. */
+      tipo: 'compra';
+      fecha: Date;
+      montoCentavos: number;
+      descripcion: string;
+      /** Los renglones del cuaderno, uno por linea. */
+      detalle: string | null;
+      /** True si la fecha se dedujo porque el cuaderno no la tenia. */
+      fechaEstimada: boolean;
+    }
+  | {
       tipo: 'cobro';
       fecha: Date;
       montoCentavos: number;
@@ -797,6 +873,14 @@ export async function movimientosDe(
         .orderBy(desc(creditPayments.fecha))
     : [];
 
+  const cargos = cuenta
+    ? await db
+        .select()
+        .from(creditCharges)
+        .where(eq(creditCharges.creditAccountId, cuenta.id))
+        .orderBy(desc(creditCharges.fecha))
+    : [];
+
   const movimientos: MovimientoDeCuenta[] = [
     ...ventas.map(
       (v): MovimientoDeCuenta => ({
@@ -806,6 +890,16 @@ export async function movimientosDe(
         descripcion: `Venta ${v.numero}`,
         ventaId: v.id,
         anulada: v.estado === 'cancelled',
+      }),
+    ),
+    ...cargos.map(
+      (c): MovimientoDeCuenta => ({
+        tipo: 'compra',
+        fecha: c.fecha,
+        montoCentavos: c.montoCentavos,
+        descripcion: c.descripcion,
+        detalle: c.detalle,
+        fechaEstimada: c.fechaEstimada,
       }),
     ),
     ...cobros.map(

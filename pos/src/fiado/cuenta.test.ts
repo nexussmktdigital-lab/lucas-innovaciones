@@ -12,11 +12,13 @@ import {
   cashMovements,
   cashSessions,
   creditAccounts,
+  creditCharges,
   creditPayments,
   exchangeRates,
   customers,
   monetaryAccounts,
   products,
+  sales,
   users,
 } from '@/db/schema';
 import { confirmarVenta, ErrorVenta } from '@/ventas/confirmar';
@@ -577,10 +579,11 @@ describe('migrar una ficha de papel', () => {
     { fecha: new Date('2026-10-27T12:00:00Z'), montoCentavos: 50_000_00, medio: 'transferencia' as const },
   ];
 
-  it('el saldo que se escribe es el que queda, con las entregas ya descontadas', async () => {
+  it('el saldo que se escribe es el de antes, y las entregas lo bajan', async () => {
+    // 1.979.400 de arrastre − 178.000 de entregas = 1.801.400.
     const cuenta = await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 1_801_400_00,
+      saldoCentavos: 1_979_400_00,
       usuarioId: duenioId,
       entregas: ENTREGAS,
     });
@@ -593,7 +596,7 @@ describe('migrar una ficha de papel', () => {
   it('cada entrega queda guardada con su fecha y su medio', async () => {
     await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 1_801_400_00,
+      saldoCentavos: 1_979_400_00,
       usuarioId: duenioId,
       entregas: ENTREGAS,
     });
@@ -614,13 +617,13 @@ describe('migrar una ficha de papel', () => {
   it('cada entrega deja anotado el saldo que quedaba ese dia', async () => {
     await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 1_801_400_00,
+      saldoCentavos: 1_979_400_00,
       usuarioId: duenioId,
       entregas: ENTREGAS,
     });
 
     const cobros = await db.select().from(creditPayments).orderBy(creditPayments.fecha);
-    // Se llevo 1.801.400 + 178.000 = 1.979.400 en total.
+    // Debía 1.979.400 y fue bajando: −22.000, −106.000, −50.000.
     expect(cobros[0]!.saldoResultanteCentavos).toBe(1_957_400_00);
     expect(cobros[1]!.saldoResultanteCentavos).toBe(1_851_400_00);
     expect(cobros[2]!.saldoResultanteCentavos).toBe(1_801_400_00);
@@ -629,7 +632,7 @@ describe('migrar una ficha de papel', () => {
   it('no tocan ninguna caja: esa plata entro antes y afuera', async () => {
     await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 1_801_400_00,
+      saldoCentavos: 1_979_400_00,
       usuarioId: duenioId,
       entregas: ENTREGAS,
     });
@@ -646,14 +649,14 @@ describe('migrar una ficha de papel', () => {
   it('las entregas van en orden de fecha aunque vengan desordenadas', async () => {
     await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 100_000_00,
+      saldoCentavos: 278_000_00,
       usuarioId: duenioId,
       entregas: [ENTREGAS[2]!, ENTREGAS[0]!, ENTREGAS[1]!],
     });
 
     const cobros = await db.select().from(creditPayments).orderBy(creditPayments.fecha);
     expect(cobros.map((c) => c.montoCentavos)).toEqual([22_000_00, 106_000_00, 50_000_00]);
-    // Y el saldo baja parejo hasta el que se escribio.
+    // Y el saldo baja parejo: 278.000 − 178.000 = 100.000.
     expect(cobros.at(-1)!.saldoResultanteCentavos).toBe(100_000_00);
   });
 
@@ -694,14 +697,15 @@ describe('migrar una ficha de papel', () => {
 
     await migrarFichaDePapel(db, {
       customerId: clienteId,
-      saldoCentavos: 100_000_00,
+      saldoCentavos: 120_000_00,
       usuarioId: duenioId,
       entregas: [
         { fecha: new Date('2026-06-16T12:00:00Z'), montoCentavos: 20_000_00, medio: 'efectivo' },
       ],
     });
 
-    // Debía 10.000 + (100.000 + 20.000) = 130.000; tras la entrega, 110.000.
+    // Debía 10.000 de la venta + 120.000 del cuaderno = 130.000; tras la
+    // entrega, 110.000.
     const [cobro] = await db.select().from(creditPayments);
     expect(cobro!.saldoResultanteCentavos).toBe(110_000_00);
     expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(110_000_00);
@@ -724,6 +728,146 @@ describe('migrar una ficha de papel', () => {
 
     // Y no sumó nada en el intento.
     expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(100_000_00);
+  });
+
+  /*
+   * Las compras del cuaderno.
+   *
+   * Es lo que el local pidió ver: qué se llevó y cuándo, no solo cuánto debe.
+   * No son ventas —no tocan stock ni facturación— porque salieron del local
+   * meses antes de que el sistema existiera.
+   */
+  const COMPRAS = [
+    {
+      fecha: new Date('2026-06-16T12:00:00Z'),
+      fechaEstimada: false,
+      montoCentavos: 731_700_00,
+      detalle: '1 x Auricular NETMAK NM Live $22.000\n1 x Silla oficina $87.000',
+    },
+    {
+      fecha: new Date('2026-06-19T12:00:00Z'),
+      fechaEstimada: false,
+      montoCentavos: 45_000_00,
+      detalle: '1 x Glass $3.500\n1 x funda $6.000',
+    },
+  ];
+
+  it('las compras suben la deuda y las entregas la bajan, en orden', async () => {
+    const cuenta = await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 205_500_00,
+      usuarioId: duenioId,
+      compras: COMPRAS,
+      entregas: [ENTREGAS[0]!], // 22.000 el 16/06
+    });
+
+    // 205.500 + 731.700 + 45.000 − 22.000 = 960.200.
+    expect(cuenta.saldoCentavos).toBe(960_200_00);
+    expect(cuenta.comprasCargadas).toBe(2);
+  });
+
+  it('cada compra queda con su detalle, su fecha y el saldo de ese día', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 205_500_00,
+      usuarioId: duenioId,
+      compras: COMPRAS,
+      entregas: [ENTREGAS[0]!],
+    });
+
+    const cargos = await db.select().from(creditCharges).orderBy(creditCharges.fecha);
+    expect(cargos).toHaveLength(2);
+    expect(cargos[0]!.detalle).toContain('Silla oficina');
+    // 205.500 + 731.700 = 937.200 justo después de la primera compra.
+    expect(cargos[0]!.saldoResultanteCentavos).toBe(937_200_00);
+    expect(cargos[0]!.fecha.toISOString()).toBe('2026-06-16T12:00:00.000Z');
+  });
+
+  /*
+   * Con la misma fecha, primero la compra: el cliente se lleva la mercadería
+   * y después paga, que es el orden del cuaderno. Al revés, el saldo anotado
+   * en cada papel sería otro.
+   */
+  it('con la misma fecha, la compra va antes que la entrega', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 100_000_00,
+      usuarioId: duenioId,
+      compras: [COMPRAS[0]!],
+      entregas: [ENTREGAS[0]!], // misma fecha: 16/06
+    });
+
+    const [cargo] = await db.select().from(creditCharges);
+    const [cobro] = await db.select().from(creditPayments);
+    expect(cargo!.saldoResultanteCentavos).toBe(831_700_00); // 100.000 + 731.700
+    expect(cobro!.saldoResultanteCentavos).toBe(809_700_00); // − 22.000
+  });
+
+  it('las compras se ven en los movimientos, con su detalle', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 205_500_00,
+      usuarioId: duenioId,
+      compras: COMPRAS,
+    });
+
+    const compras = (await movimientosDe(db, clienteId)).filter((m) => m.tipo === 'compra');
+    expect(compras).toHaveLength(2);
+    // De la más nueva a la más vieja, como toda la lista.
+    expect(compras[0]!.montoCentavos).toBe(45_000_00);
+    expect(compras[1]!.detalle).toContain('Auricular NETMAK NM Live');
+  });
+
+  it('una compra con fecha deducida queda marcada como tal', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 100_000_00,
+      usuarioId: duenioId,
+      compras: [{ ...COMPRAS[0]!, fechaEstimada: true }],
+    });
+
+    const [compra] = (await movimientosDe(db, clienteId)).filter((m) => m.tipo === 'compra');
+    expect(compra!.fechaEstimada).toBe(true);
+  });
+
+  /*
+   * La razón de que esto no sean ventas: la mercadería salió del local hace
+   * meses. Descontarla de nuevo dejaría el stock en menos de lo que hay.
+   */
+  it('cargar la libreta no toca el stock ni factura nada', async () => {
+    const antes = (await db.select().from(products))[0]!.stock;
+
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 205_500_00,
+      usuarioId: duenioId,
+      compras: COMPRAS,
+      entregas: ENTREGAS,
+    });
+
+    expect((await db.select().from(products))[0]!.stock).toBe(antes);
+    expect(await db.select().from(sales)).toHaveLength(0);
+    expect(await db.select().from(cashMovements)).toHaveLength(0);
+  });
+
+  it('sin saldo anterior ni compras no hay nada que cargar', async () => {
+    await expect(
+      migrarFichaDePapel(db, { customerId: clienteId, saldoCentavos: 0, usuarioId: duenioId }),
+    ).rejects.toBeInstanceOf(ErrorFiado);
+  });
+
+  it('una compra en cero frena toda la carga', async () => {
+    await expect(
+      migrarFichaDePapel(db, {
+        customerId: clienteId,
+        saldoCentavos: 100_000_00,
+        usuarioId: duenioId,
+        compras: [{ ...COMPRAS[0]!, montoCentavos: 0 }],
+      }),
+    ).rejects.toBeInstanceOf(ErrorFiado);
+
+    expect(await db.select().from(creditCharges)).toHaveLength(0);
+    expect((await cuentaDe(db, clienteId))?.saldoCentavos ?? 0).toBe(0);
   });
 
   it('una entrega en cero o con fecha rota frena toda la carga', async () => {
