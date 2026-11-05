@@ -7,6 +7,7 @@
  * resolver: código desplegado contra un esquema que no está, y el mostrador
  * sin poder cobrar.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { decidir } from './migrar-al-desplegar';
 
@@ -80,4 +81,36 @@ describe('decidir si esta construcción migra', () => {
       );
     }
   });
+});
+
+/**
+ * Qué comando corre Vercel.
+ *
+ * La guarda de arriba decide bien, pero solo si alguien la ejecuta. Dos veces
+ * en dos días salió un despliegue con el esquema atrasado porque el paso que
+ * la ejecuta no corrió: el proyecto tiene un Build Command escrito a mano en
+ * el panel, y Vercel usa `vercel-build` solo cuando no hay ninguno. El
+ * override apuntaba a `build`, que era `next build` pelado.
+ *
+ * Entonces los dos scripts migran. No es redundancia: es que cuál de los dos
+ * corre no se decide en este repositorio, y el que quede sin migrar vuelve a
+ * poner el POS contra un esquema que no está.
+ */
+describe('el despliegue migra, corra el script que corra', () => {
+  const paquete = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { scripts: Record<string, string> };
+
+  for (const script of ['build', 'vercel-build']) {
+    it(`«${script}» migra antes de construir`, () => {
+      const comando = paquete.scripts[script];
+      expect(comando, `falta el script ${script}`).toBeTruthy();
+      expect(comando).toContain('migrar-al-desplegar');
+      // Antes de construir, no después: construir primero y migrar
+      // después deja la ventana abierta igual.
+      expect(comando!.indexOf('migrar-al-desplegar')).toBeLessThan(
+        comando!.indexOf('next build'),
+      );
+    });
+  }
 });

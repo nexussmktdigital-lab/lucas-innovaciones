@@ -102,6 +102,24 @@ function leerFecha(d: string, m: string, a: string): Date | null {
   return fecha;
 }
 
+/**
+ * El importe de un renglon de entrega.
+ *
+ * No alcanza con tomar el primer numero: «ENTREGA SALDO IPHONE 13 PRO
+ * $247.000» tiene un 13 antes del importe, y leerlo daria trece pesos donde
+ * hay doscientos cuarenta y siete mil. Paso de verdad, y lo peor es que no
+ * se ve: el renglon entra como valido con el numero equivocado.
+ *
+ * Entonces manda el signo. La fecha se saca primero porque sus numeros
+ * compiten igual cuando el renglon no tiene signo.
+ */
+function montoDeEntrega(linea: string): number | null {
+  const sinFecha = linea.replace(/\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{2,4}/g, ' ');
+  const conSigno = sinFecha.match(/\$\s*(\d[\d.]*(?:,\d+)?)/);
+  const cualquiera = conSigno ?? sinFecha.match(/(\d[\d.]*(?:,\d+)?)/);
+  return cualquiera ? leerMonto(cualquiera[1]!) : null;
+}
+
 /** `$22.000`, `22000`, `$ 1.801.400` -> centavos. */
 function leerMonto(crudo: string): number | null {
   const limpio = crudo.replace(/[.\s]/g, '').replace(',', '.');
@@ -173,14 +191,28 @@ export function leerLibreta(texto: string): LecturaDeLibreta {
     }
 
     const sinAsteriscos = linea.replace(/\*/g, ' ');
-    const monto = sinAsteriscos.match(/\$?\s*(\d[\d.]*(?:,\d+)?)/);
-    if (!monto) {
-      lineas.push({ texto: linea, entrega: null, problema: 'No encontré el importe.' });
+
+    /*
+     * Los renglones de «SALDO» del cuaderno son dos cosas distintas y el
+     * sistema no puede elegir por nadie: «SALDO $183.500» es una anotacion de
+     * cuanto iba debiendo —no es un movimiento y no va—, y «SALDO IPHONE 13
+     * PRO $247.200» es mercaderia que se llevo. Se avisa con las dos salidas
+     * en vez de adivinar: adivinar mal son doscientos mil pesos.
+     */
+    if (/^\s*saldo\b/i.test(sinAsteriscos.trim())) {
+      lineas.push({
+        texto: linea,
+        entrega: null,
+        problema:
+          'No sé si es mercadería o una anotación de saldo. Si se llevó algo, escribilo ' +
+          'como «1 x lo que sea $importe»; si es solo la cuenta de cuánto iba debiendo, borralo.',
+      });
       continue;
     }
-    const montoCentavos = leerMonto(monto[1]!);
+
+    const montoCentavos = montoDeEntrega(sinAsteriscos);
     if (montoCentavos === null) {
-      lineas.push({ texto: linea, entrega: null, problema: 'El importe no se entiende.' });
+      lineas.push({ texto: linea, entrega: null, problema: 'No encontré el importe.' });
       continue;
     }
 
