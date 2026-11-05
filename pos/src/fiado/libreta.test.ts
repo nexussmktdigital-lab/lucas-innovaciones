@@ -62,6 +62,44 @@ describe('leer la libreta', () => {
     expect(r.lineas[0]!.texto).toBe('*ENTREGA $97.000*');
   });
 
+  /*
+   * El renglón que casi carga un número mal. «SALDO IPHONE 13 PRO $247.000»
+   * tiene un 13 antes del importe, y tomar el primer número daba trece pesos
+   * donde hay doscientos cuarenta y siete mil. Lo peor no era el error: era
+   * que el renglón entraba como válido, sin avisar nada.
+   */
+  it('manda el importe con signo, no el primer número que aparezca', () => {
+    const r = leerLibreta('*ENTREGA SALDO IPHONE 13 PRO $247.000 (11/08/26) (tranferencia)*');
+
+    expect(r.conProblema).toBe(0);
+    expect(r.entregas[0]!.montoCentavos).toBe(247_000_00);
+    expect(r.entregas[0]!.medio).toBe('transferencia');
+  });
+
+  it('los números de la fecha no se confunden con el importe', () => {
+    // Con la fecha adelante y sin signo, «16/06/26» ofrece tres números
+    // antes que el importe, y el primero ganaría.
+    const r = leerLibreta('16/06/26 entrega 97000');
+    expect(r.conProblema).toBe(0);
+    expect(r.entregas[0]!.montoCentavos).toBe(97_000_00);
+  });
+
+  /*
+   * «SALDO» en el cuaderno es dos cosas distintas y el sistema no puede
+   * elegir por nadie: una anotación de cuánto iba debiendo, o mercadería.
+   * Adivinar mal son doscientos mil pesos.
+   */
+  it('un renglón de SALDO se pregunta, no se adivina', () => {
+    const r = leerLibreta(['*SALDO $183.500*', '*SALDO IPHONE 13 PRO $247.200*'].join('\n'));
+
+    expect(r.entregas).toHaveLength(0);
+    expect(r.compras).toHaveLength(0);
+    expect(r.conProblema).toBe(2);
+    for (const l of r.lineas) {
+      expect(l.problema).toMatch(/mercadería o una anotación de saldo/i);
+    }
+  });
+
   it('una fecha imposible tampoco pasa', () => {
     const r = leerLibreta('ENTREGA $10.000 (31/02/26)');
     expect(r.entregas).toHaveLength(0);
