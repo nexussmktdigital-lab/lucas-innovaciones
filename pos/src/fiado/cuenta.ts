@@ -492,9 +492,22 @@ export interface EntregaDeLibreta {
  * sesion de caja y sin cuenta de dinero, porque esa plata entro meses atras y
  * fuera de este sistema: contarla hoy seria inventar un ingreso.
  *
- * `saldoCentavos` es **lo que debe hoy**, ya descontadas esas entregas: es el
- * numero que el local tiene en la cabeza y el unico que puede confirmar. El
- * cargo de apertura sale de sumarle las entregas, no al reves.
+ * `saldoCentavos` es **lo que debe de la libreta**, ya descontadas esas
+ * entregas: es el numero que el local tiene en la cabeza y el unico que puede
+ * confirmar. El cargo de apertura sale de sumarle las entregas, no al reves.
+ *
+ * **Se suma a lo que la cuenta ya tenga.** Al principio esto exigia que la
+ * cuenta estuviera en cero, y la realidad lo rompio: el cliente volvio al
+ * local y se llevo mercaderia antes de que alguien cargara la libreta. Esas
+ * ventas sacaron la cuenta de cero y cerraron la unica puerta que habia para
+ * meter el saldo viejo. Ahora lo que impide cargar dos veces la misma deuda no
+ * es el saldo sino la marca: una cuenta ya migrada no se migra de nuevo.
+ *
+ * Ojo con lo que eso implica para quien escribe el numero: si parte de lo que
+ * dice la libreta ya entro al sistema como venta, hay que escribir **solo la
+ * diferencia**. La pantalla muestra el saldo actual y el total que va a
+ * quedar, porque esa resta no la puede hacer el sistema: solo el local sabe
+ * que renglon del cuaderno es cual venta.
  */
 export async function migrarFichaDePapel(
   db: BaseDatos,
@@ -532,25 +545,38 @@ export async function migrarFichaDePapel(
    * ahi para abajo las entregas van restando, y la cuenta termina justo en el
    * saldo que se escribio.
    */
-  const cargoCentavos = entregas.reduce((t, e) => t + e.montoCentavos, datos.saldoCentavos);
+  const cargoDeLaLibretaCentavos = entregas.reduce(
+    (t, e) => t + e.montoCentavos,
+    datos.saldoCentavos,
+  );
 
   return db.transaction(async (tx) => {
-    const cuenta = await cuentaBloqueada(tx, datos.customerId, 'migrado_papel');
+    /*
+     * La cuenta se abre como `sistema` aunque esto sea una migracion: la marca
+     * de migrada se pone recien en el UPDATE de abajo. Si se creara ya marcada,
+     * la guarda que sigue la leeria en la misma corrida y rechazaria la primera
+     * carga de todas, que es justo la que tiene que dejar pasar.
+     */
+    const cuenta = await cuentaBloqueada(tx, datos.customerId, 'sistema');
 
-    if (cuenta.saldoCentavos !== 0) {
+    if (cuenta.origen === 'migrado_papel') {
       throw new ErrorFiado(
-        'Ese cliente ya tiene saldo en el sistema. Cargá la ficha solo la primera vez, ' +
-          'para no sumar dos veces la misma deuda.',
+        'La libreta de este cliente ya se cargó. Se carga una sola vez, para no sumar ' +
+          'dos veces la misma deuda.',
         'monto_invalido',
       );
     }
 
+    const saldoFinal = cuenta.saldoCentavos + datos.saldoCentavos;
+
     await tx
       .update(creditAccounts)
-      .set({ saldoCentavos: datos.saldoCentavos, origen: 'migrado_papel', updatedAt: new Date() })
+      .set({ saldoCentavos: saldoFinal, origen: 'migrado_papel', updatedAt: new Date() })
       .where(eq(creditAccounts.id, cuenta.id));
 
-    let restante = cargoCentavos;
+    // El saldo de cada recibo arranca del cargo de la libreta mas lo que la
+    // cuenta ya debia: es lo que el cliente debia ese dia en total.
+    let restante = cuenta.saldoCentavos + cargoDeLaLibretaCentavos;
     for (const [i, e] of entregas.entries()) {
       restante -= e.montoCentavos;
       await tx.insert(creditPayments).values({
@@ -575,8 +601,10 @@ export async function migrarFichaDePapel(
       entidad: 'credit_accounts',
       entidadId: cuenta.id,
       valorNuevo: {
-        saldoCentavos: datos.saldoCentavos,
-        cargoCentavos,
+        saldoDeLaLibretaCentavos: datos.saldoCentavos,
+        saldoAnteriorCentavos: cuenta.saldoCentavos,
+        saldoFinalCentavos: saldoFinal,
+        cargoDeLaLibretaCentavos,
         entregas: entregas.length,
         nota: datos.nota ?? null,
       },
@@ -584,7 +612,7 @@ export async function migrarFichaDePapel(
 
     return {
       ...cuenta,
-      saldoCentavos: datos.saldoCentavos,
+      saldoCentavos: saldoFinal,
       origen: 'migrado_papel' as const,
       entregasCargadas: entregas.length,
     };

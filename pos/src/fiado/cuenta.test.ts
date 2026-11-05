@@ -668,6 +668,64 @@ describe('migrar una ficha de papel', () => {
     expect(await db.select().from(creditPayments)).toHaveLength(0);
   });
 
+  /*
+   * El caso de Uriel, tal como pasó. El cliente volvió al local y se llevó
+   * mercadería antes de que nadie cargara su libreta: tres ventas por
+   * $201.000 sacaron la cuenta de cero y, con la regla vieja, cerraron la
+   * única puerta que había para meter el saldo viejo.
+   */
+  it('la libreta entra aunque el cliente ya tenga ventas en el sistema', async () => {
+    await fiar(2); // $10.000 de una venta de verdad
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(1_000_000);
+
+    const cuenta = await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 1_600_400_00,
+      usuarioId: duenioId,
+    });
+
+    // Se suma, no reemplaza: la venta del sistema sigue estando.
+    expect(cuenta.saldoCentavos).toBe(1_000_000 + 1_600_400_00);
+    expect(cuenta.origen).toBe('migrado_papel');
+  });
+
+  it('con ventas previas, cada entrega anota el saldo total de ese día', async () => {
+    await fiar(2); // $10.000
+
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 100_000_00,
+      usuarioId: duenioId,
+      entregas: [
+        { fecha: new Date('2026-06-16T12:00:00Z'), montoCentavos: 20_000_00, medio: 'efectivo' },
+      ],
+    });
+
+    // Debía 10.000 + (100.000 + 20.000) = 130.000; tras la entrega, 110.000.
+    const [cobro] = await db.select().from(creditPayments);
+    expect(cobro!.saldoResultanteCentavos).toBe(110_000_00);
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(110_000_00);
+  });
+
+  it('pero una libreta ya cargada no se carga de nuevo', async () => {
+    await migrarFichaDePapel(db, {
+      customerId: clienteId,
+      saldoCentavos: 100_000_00,
+      usuarioId: duenioId,
+    });
+
+    await expect(
+      migrarFichaDePapel(db, {
+        customerId: clienteId,
+        saldoCentavos: 50_000_00,
+        usuarioId: duenioId,
+      }),
+    ).rejects.toThrow(/ya se cargó/i);
+
+    // Y no sumó nada en el intento.
+    expect((await cuentaDe(db, clienteId))!.saldoCentavos).toBe(100_000_00);
+  });
+
   it('una entrega en cero o con fecha rota frena toda la carga', async () => {
     await expect(
       migrarFichaDePapel(db, {

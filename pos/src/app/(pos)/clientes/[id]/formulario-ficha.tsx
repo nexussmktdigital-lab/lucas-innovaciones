@@ -24,9 +24,12 @@ const INICIAL: EstadoFiado = {};
 export default function FormularioFicha({
   clienteId,
   nombre,
+  saldoActualCentavos,
 }: {
   clienteId: string;
   nombre: string;
+  /** Lo que la cuenta ya debe por ventas hechas en el sistema. */
+  saldoActualCentavos: number;
 }) {
   const [estado, accion, pendiente] = useActionState(migrarFichaAccion, INICIAL);
   const [abierto, setAbierto] = useState(false);
@@ -36,6 +39,14 @@ export default function FormularioFicha({
   // repite igual: esto es para ver, no para decidir.
   const lectura = useMemo(() => leerEntregas(entregas), [entregas]);
   const malos = lectura.lineas.filter((l) => l.problema);
+
+  // Lo de la libreta se suma a lo que la cuenta ya debe, así que el total se
+  // muestra antes de guardar: es la cuenta que nadie quiere hacer de cabeza.
+  const [saldo, setSaldo] = useState('');
+  const deLaLibretaCentavos = (() => {
+    const n = Number(saldo.trim().replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+  })();
 
   if (estado.ok) {
     return (
@@ -61,9 +72,17 @@ export default function FormularioFicha({
     <form action={accion} className="space-y-2 rounded-(--radius-caja) bg-(--color-papel) p-3">
       <input type="hidden" name="clienteId" value={clienteId} />
       <p className="text-sm">
-        ¿Cuánto dice la libreta que debe <strong>{nombre}</strong> hoy? Se carga una sola vez, al
-        pasar la ficha al sistema.
+        ¿Cuánto dice la libreta que debe <strong>{nombre}</strong>, <strong>aparte</strong> de lo
+        que ya está en el sistema? Se carga una sola vez, al pasar la ficha.
       </p>
+
+      {saldoActualCentavos > 0 ? (
+        <p className="rounded-(--radius-caja) bg-(--color-alerta-fondo) px-3 py-2 text-sm">
+          Esta cuenta ya debe <strong className="tabular">{formatearARS(saldoActualCentavos)}</strong>{' '}
+          por ventas hechas en el sistema. Si alguno de esos renglones también está en el cuaderno,
+          escribí solo la diferencia: el saldo de abajo se suma, no reemplaza.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-end gap-2">
         <div>
@@ -77,6 +96,8 @@ export default function FormularioFicha({
             inputMode="decimal"
             required
             autoFocus
+            value={saldo}
+            onChange={(e) => setSaldo(e.target.value)}
             className="tabular min-h-11 w-40 rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 text-right text-lg"
           />
         </div>
@@ -113,6 +134,23 @@ export default function FormularioFicha({
           entrega necesita su fecha: sin ella no se puede saber cuándo pagó.
         </p>
       </div>
+
+      {deLaLibretaCentavos > 0 ? (
+        <p className="rounded-(--radius-caja) bg-(--color-papel) px-3 py-2 text-sm">
+          {saldoActualCentavos > 0 ? (
+            <>
+              <span className="tabular">{formatearARS(saldoActualCentavos)}</span> que ya debe +{' '}
+              <span className="tabular">{formatearARS(deLaLibretaCentavos)}</span> de la libreta ={' '}
+            </>
+          ) : (
+            <>Va a quedar debiendo </>
+          )}
+          <strong className="tabular">
+            {formatearARS(saldoActualCentavos + deLaLibretaCentavos)}
+          </strong>
+          .
+        </p>
+      ) : null}
 
       {lectura.entregas.length > 0 ? (
         <p className="rounded-(--radius-caja) bg-(--color-ok-fondo) px-3 py-2 text-sm">
