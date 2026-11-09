@@ -208,3 +208,120 @@ function li_banners_render( ?array $slides = null ): void {
 	</section>
 	<?php
 }
+
+
+/* -------------------------------------------------------------------------
+   Carrusel de imágenes de la portada (Matias 04/11/2026)
+   -------------------------------------------------------------------------
+   Banners ya diseñados (Claude Design, versión oscura, 1920×1080) que
+   reemplazan al hero mientras haya diapositivas cargadas. Se editan en la
+   opción `li_home_carrusel`: lista de array( 'img' => ID de medios,
+   'url' => destino, 'alt' => texto alternativo ). Vacía: vuelve el hero.
+   Usa el mismo JS que los banners de texto (data-li-banners): giro
+   automático, flechas, puntos y deslizar con el dedo.
+   ------------------------------------------------------------------------- */
+
+/**
+ * Diapositivas válidas del carrusel de la portada.
+ *
+ * @return array<int,array{img:int,url:string,alt:string}>
+ */
+function li_carrusel_slides(): array {
+	$crudo  = get_option( 'li_home_carrusel', array() );
+	$slides = array();
+
+	if ( ! is_array( $crudo ) ) {
+		return $slides;
+	}
+
+	foreach ( $crudo as $s ) {
+		$img = (int) ( $s['img'] ?? 0 );
+		if ( ! $img || ! wp_attachment_is_image( $img ) ) {
+			continue;
+		}
+		$slides[] = array(
+			'img' => $img,
+			'url' => (string) ( $s['url'] ?? '' ),
+			'alt' => (string) ( $s['alt'] ?? '' ),
+		);
+	}
+
+	return $slides;
+}
+
+/**
+ * Dibuja el carrusel de la portada.
+ *
+ * @return bool true si dibujó algo (la portada entonces no muestra el hero).
+ */
+function li_carrusel_home(): bool {
+	$slides = li_carrusel_slides();
+	if ( ! $slides ) {
+		return false;
+	}
+
+	$multiple = count( $slides ) > 1;
+	?>
+	<section class="li-carrusel" aria-roledescription="carrusel" aria-label="Promociones" <?php echo $multiple ? 'data-li-banners' : ''; ?>>
+		<h1 class="visually-hidden"><?php echo esc_html( get_bloginfo( 'name' ) . ' · ' . get_bloginfo( 'description' ) ); ?></h1>
+		<div class="li-wrap">
+			<div class="li-carrusel__marco">
+				<div class="li-carrusel__pista" aria-live="polite">
+					<?php foreach ( $slides as $i => $s ) : ?>
+						<?php
+						$img = wp_get_attachment_image(
+							$s['img'],
+							'full',
+							false,
+							array(
+								'class'         => 'li-carrusel__img',
+								'alt'           => $s['alt'],
+								'sizes'         => '(min-width: 1280px) 1200px, calc(100vw - 32px)',
+								'loading'       => 0 === $i ? 'eager' : 'lazy',
+								'fetchpriority' => 0 === $i ? 'high' : 'auto',
+								'decoding'      => 'async',
+							)
+						);
+						$tag = $s['url'] ? 'a' : 'div';
+						?>
+						<<?php echo $tag; // phpcs:ignore WordPress.Security.EscapeOutput ?>
+							class="li-carrusel__slide"
+							<?php echo $s['url'] ? 'href="' . esc_url( $s['url'] ) . '"' : ''; ?>
+							data-li-slide="<?php echo esc_attr( (string) $i ); ?>"
+							role="group"
+							aria-roledescription="diapositiva"
+							aria-label="<?php echo esc_attr( sprintf( '%d de %d', $i + 1, count( $slides ) ) ); ?>"
+							<?php echo $i > 0 ? 'hidden' : ''; ?>
+						><?php echo $img; // phpcs:ignore WordPress.Security.EscapeOutput ?></<?php echo $tag; // phpcs:ignore WordPress.Security.EscapeOutput ?>>
+					<?php endforeach; ?>
+				</div>
+
+				<?php if ( $multiple ) : ?>
+					<button type="button" class="li-carrusel__flecha li-carrusel__flecha--prev" data-li-banner-prev aria-label="Banner anterior">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+					</button>
+					<button type="button" class="li-carrusel__flecha li-carrusel__flecha--next" data-li-banner-next aria-label="Banner siguiente">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+					</button>
+				<?php endif; ?>
+			</div>
+
+			<?php if ( $multiple ) : ?>
+				<div class="li-carrusel__puntos" role="tablist" aria-label="Elegir banner">
+					<?php foreach ( $slides as $i => $s ) : ?>
+						<button
+							type="button"
+							class="li-carrusel__punto<?php echo 0 === $i ? ' es-activo' : ''; ?>"
+							role="tab"
+							aria-selected="<?php echo 0 === $i ? 'true' : 'false'; ?>"
+							aria-label="<?php echo esc_attr( sprintf( 'Banner %d', $i + 1 ) ); ?>"
+							data-li-banner-ir="<?php echo esc_attr( (string) $i ); ?>"
+						></button>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+		</div>
+	</section>
+	<?php
+	return true;
+}
