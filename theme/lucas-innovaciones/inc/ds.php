@@ -12,8 +12,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const LI_WHATSAPP       = '5493574443092';
-const LI_WHATSAPP_TEXTO = '+54 3574 443092';
+const LI_WHATSAPP       = '5493574446664';
+const LI_WHATSAPP_TEXTO = '+54 3574 446664';
 const LI_INSTAGRAM      = 'lucas_innovaciones';
 const LI_DIRECCION      = 'Caseros 924';
 const LI_LOCALIDAD      = 'Villa Santa Rosa, Córdoba';

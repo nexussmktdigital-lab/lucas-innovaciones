@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lucas Innovaciones — Dólar
  * Description: Precios de la web. Muestra en pesos los productos cargados en dólares (meta _li_moneda = USD, dólar blue de Córdoba de InfoDolar cada 30 minutos), suma el recargo de la tienda online (comisión de Mercado Pago y envío gratis) y descuenta el pago por transferencia en el checkout. No escribe precios: el POS y el admin siguen viendo el precio del local.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Requires PHP: 8.1
  * Author: Lucas Innovaciones
  * Text Domain: li-dolar
@@ -33,7 +33,7 @@ defined( 'ABSPATH' ) || exit;
 
 final class Li_Dolar {
 
-	public const VERSION = '1.1.0';
+	public const VERSION = '1.1.1';
 
 	/** Recargo de la web sobre el precio del local, en puntos básicos (10% = 1000). */
 	private const OPT_RECARGO = 'li_web_recargo_bp';
@@ -77,7 +77,7 @@ final class Li_Dolar {
 
 	public const MULTIPLOS = array( 1000, 5000, 10000 );
 
-	public const WHATSAPP = '5493574443092';
+	public const WHATSAPP = '5493574446664';
 
 	private static ?bool $web = null;
 

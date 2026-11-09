@@ -24,6 +24,8 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 
 <main id="contenido" class="li-home">
 
+	<?php // Carrusel de banners (04/11): si hay diapositivas cargadas, reemplaza al hero.
+	if ( ! li_carrusel_home() ) : ?>
 	<section class="li-hero">
 		<div class="li-wrap li-hero__grid">
 			<div class="li-hero__text">
@@ -63,6 +65,7 @@ $li_shop  = wc_get_page_permalink( 'shop' );
 			</div>
 		</div>
 	</section>
+	<?php endif; ?>
 
 	<?php if ( $li_datos['marcas_top'] ) : ?>
 	<section class="li-brands" aria-label="Marcas">

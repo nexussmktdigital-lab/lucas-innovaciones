@@ -199,7 +199,7 @@
       if (quieto || reloj) return;
       reloj = window.setInterval(function () {
         mostrar(actual + 1);
-      }, 7000);
+      }, 6000);
     };
 
     var frenar = function () {
@@ -207,11 +207,26 @@
       reloj = null;
     };
 
-    // Tocar un control es una intención explícita: el giro automático para.
+    // Tocar un control lleva a ese banner y el giro automático sigue.
+    // Con el mouse encima (sólo en equipos con mouse) queda quieto hasta que sale.
+    var conMouse = window.matchMedia("(hover: hover)").matches;
     var manual = function (i) {
       frenar();
       mostrar(i);
+      if (!(conMouse && caja.matches(":hover"))) arrancar();
     };
+
+    // Deslizar con el dedo en el celular.
+    var x0 = null;
+    caja.addEventListener("touchstart", function (e) {
+      x0 = e.touches[0].clientX;
+    }, { passive: true });
+    caja.addEventListener("touchend", function (e) {
+      if (x0 === null) return;
+      var dx = e.changedTouches[0].clientX - x0;
+      x0 = null;
+      if (Math.abs(dx) > 40) manual(actual + (dx < 0 ? 1 : -1));
+    }, { passive: true });
 
     caja.querySelector("[data-li-banner-prev]").addEventListener("click", function () {
       manual(actual - 1);
