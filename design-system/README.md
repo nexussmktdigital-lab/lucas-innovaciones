@@ -11,7 +11,7 @@ Tienda local de tecnología y electrónica en **Villa Santa Rosa, Córdoba** (Ar
 - **Brief del cliente** (adjunto en el chat del proyecto): negocio, audiencia, diferenciales, objeciones, estructura de páginas y tono.
 - **Logo oficial** (`assets/logo.jpeg` / `assets/logo-full.png`): letra "L." blanca sobre círculo negro + botón de power verde + cursor pixelado retro presionándolo.
 - **Repo GitHub** `nexussmktdigital-lab/lucas-innovaciones` — revisado pero **vacío** al momento de crear este sistema. No hay código heredado; el design system se construyó desde el brief y el logo.
-- Redes: Instagram `@lucas_innovaciones` (2.3k), Facebook `Lucas-Innovaciones` (1.6k). WhatsApp **+54 3574 443092**.
+- Redes: Instagram `@lucas_innovaciones` (2.3k), Facebook `Lucas-Innovaciones` (1.6k). WhatsApp **+54 3574 446664**.
 
 ---
 
