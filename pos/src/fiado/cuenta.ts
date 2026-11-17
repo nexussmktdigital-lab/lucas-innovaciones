@@ -35,6 +35,7 @@ import {
   sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
+import { fechaLocalISO } from '@/lib/fecha';
 import { pesosAUsdExacto, usdAPesosExacto } from '@/lib/dinero';
 import { esMotivoDeRecargo, type MotivoDeRecargo } from '@/lib/recargo';
 import { imputarPago } from './plan';
@@ -817,6 +818,7 @@ export async function totalFiado(
  * el `tipo`, para que la pantalla no tenga que mirar signos.
  */
 export interface CargoDeCuenta {
+  id: string;
   fecha: Date;
   montoCentavos: number;
   descripcion: string;
@@ -824,6 +826,15 @@ export interface CargoDeCuenta {
   detalle: string | null;
   /** True si la fecha se dedujo porque el cuaderno no la tenia. */
   fechaEstimada: boolean;
+  /**
+   * Lo que quedaba debiendo despues de este cargo, congelado al registrarlo.
+   *
+   * Es el mismo numero que guarda el cobro y por el mismo motivo: un papel
+   * reimpreso tres meses despues tiene que decir lo que decia el dia que se
+   * entrego. Leer el saldo de hoy haria que dos copias del mismo comprobante
+   * dijeran cosas distintas.
+   */
+  saldoResultanteCentavos: number;
 }
 
 export type MovimientoDeCuenta =
@@ -905,11 +916,13 @@ export async function movimientosDe(
     ...cargos.map(
       (c): MovimientoDeCuenta => ({
         tipo: c.montoCentavos < 0 ? 'devolucion' : 'compra',
+        id: c.id,
         fecha: c.fecha,
         montoCentavos: Math.abs(c.montoCentavos),
         descripcion: c.descripcion,
         detalle: c.detalle,
         fechaEstimada: c.fechaEstimada,
+        saldoResultanteCentavos: c.saldoResultanteCentavos,
       }),
     ),
     ...cobros.map(
@@ -927,6 +940,76 @@ export async function movimientosDe(
   ];
 
   return movimientos.sort((a, b) => b.fecha.getTime() - a.fecha.getTime());
+}
+
+/**
+ * Los movimientos de un dia, para el papel que se lleva el cliente.
+ *
+ * Nace de una visita del mayorista: trajo mercaderia de vuelta, entrego plata
+ * y se fue sin nada en la mano. El recibo de pago contesta «cuanto entregue»,
+ * pero esa visita fueron dos hechos, y dos papeles sueltos no dicen cuanto
+ * quedo debiendo al final de la tarde, que es la unica pregunta que importa.
+ *
+ * **El comprobante se ancla en un movimiento, no en la cuenta.** El ancla es
+ * el ultimo movimiento del dia que guarda su saldo —un cobro o un cargo— y ese
+ * saldo congelado es el que se imprime. Calcular el saldo de ese dia restando
+ * hacia atras desde el de hoy daria mal en cuanto una venta vieja se anule: la
+ * anulacion baja la cuenta sin dejar movimiento, y el papel que se entrego esa
+ * tarde diria hoy otro numero.
+ *
+ * Por eso tampoco lista lo que paso despues del ancla: avisa que paso y no lo
+ * cuenta. Un renglon debajo de un saldo que no lo incluye es un papel que no
+ * cierra.
+ */
+export interface ComprobanteDelDia {
+  dia: string;
+  /** Del mas viejo al mas nuevo: el papel se lee en el orden de la tarde. */
+  renglones: MovimientoDeCuenta[];
+  /** El saldo congelado del ultimo renglon. */
+  saldoCentavos: number;
+  /** Hubo movimientos ese dia despues del ancla, que no entran en este papel. */
+  hayPosteriores: boolean;
+  /** Hubo cobros en dolares ese dia: son otra deuda y van aparte (D62). */
+  hayDolares: boolean;
+}
+
+export async function comprobanteDelDia(
+  db: BaseDatos,
+  customerId: string,
+  dia: string,
+): Promise<ComprobanteDelDia | null> {
+  const todos = await movimientosDe(db, customerId);
+  const delDia = todos
+    .filter((m) => fechaLocalISO(m.fecha) === dia)
+    .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+
+  // Los dolares no se suman a los pesos ni se restan de ellos (D62). El papel
+  // es el de la cuenta en pesos; si ese dia hubo un cobro en dolares, lo dice
+  // y lo deja afuera.
+  const hayDolares = delDia.some((m) => m.tipo === 'cobro' && m.moneda === 'USD');
+  const enPesos = delDia.filter((m) => !(m.tipo === 'cobro' && m.moneda === 'USD'));
+
+  let ancla = -1;
+  for (let i = enPesos.length - 1; i >= 0; i--) {
+    if (enPesos[i]!.tipo !== 'venta') {
+      ancla = i;
+      break;
+    }
+  }
+  // Sin un movimiento que haya congelado su saldo no hay saldo final que
+  // imprimir, y un comprobante sin saldo no es un comprobante.
+  if (ancla === -1) return null;
+
+  const renglones = enPesos.slice(0, ancla + 1);
+  const ultimo = enPesos[ancla]!;
+
+  return {
+    dia,
+    renglones,
+    saldoCentavos: ultimo.tipo === 'venta' ? 0 : ultimo.saldoResultanteCentavos,
+    hayPosteriores: ancla < enPesos.length - 1,
+    hayDolares,
+  };
 }
 
 async function cuentaPorTipo(

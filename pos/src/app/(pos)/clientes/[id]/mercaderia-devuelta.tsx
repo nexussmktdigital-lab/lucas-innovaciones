@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { registrarDevolucionAccion, type EstadoFiado } from '@/app/acciones-fiado';
 import { formatearARS } from '@/lib/dinero';
+import { fechaLocalISO } from '@/lib/fecha';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 
 const ESPERA_MS = 250;
@@ -125,9 +126,22 @@ export default function MercaderiaDevuelta({
         >
           Devolvió mercadería
         </button>
+        {/*
+          Recién registrada, el papel es lo que sigue: el cliente está
+          enfrente esperando algo en la mano. Va acá y no en la lista de
+          movimientos para no hacerlo buscar el renglón que acaba de crear.
+        */}
         {estado.ok ? (
           <p role="status" className="mt-1 text-sm font-semibold text-(--color-ok)">
-            {estado.ok}
+            {estado.ok}{' '}
+            <a
+              href={`/comprobante/${clienteId}/${fechaLocalISO()}`}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Imprimir comprobante
+            </a>
           </p>
         ) : null}
       </div>

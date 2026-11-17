@@ -350,7 +350,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                 ) : null}
 
                 {m.tipo === 'cobro' ? (
-                  <span className="flex w-full items-baseline justify-end gap-3 text-xs">
+                  <span className="flex w-full flex-wrap items-baseline justify-end gap-x-3 text-xs">
                     <span className="tabular text-(--color-tinta-suave)">
                       en ese momento quedaba debiendo{' '}
                       {m.moneda === 'USD'
@@ -371,6 +371,39 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                       className="shrink-0 font-semibold underline underline-offset-2"
                     >
                       Imprimir recibo
+                    </a>
+                    <a
+                      href={`/comprobante/${cliente.id}/${fechaLocalISO(m.fecha)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 underline underline-offset-2"
+                    >
+                      Comprobante del día
+                    </a>
+                  </span>
+                ) : null}
+
+                {/*
+                  La devolución también se lleva un papel.
+
+                  El recibo de pago no le sirve: no entró plata y el papel
+                  diría que sí. El comprobante del día, en cambio, es el que
+                  hace falta —dice lo que devolvió, lo que entregó y con
+                  cuánto se va—, porque la visita del mayorista nunca es un
+                  solo hecho.
+                */}
+                {m.tipo === 'devolucion' ? (
+                  <span className="flex w-full flex-wrap items-baseline justify-end gap-x-3 text-xs">
+                    <span className="tabular text-(--color-tinta-suave)">
+                      en ese momento quedaba debiendo {formatearARS(m.saldoResultanteCentavos)}
+                    </span>
+                    <a
+                      href={`/comprobante/${cliente.id}/${fechaLocalISO(m.fecha)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 font-semibold underline underline-offset-2"
+                    >
+                      Imprimir comprobante
                     </a>
                   </span>
                 ) : null}
