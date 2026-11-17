@@ -15,6 +15,8 @@ import { db } from '@/db';
 import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { leerLibreta } from '@/fiado/libreta';
+import { registrarMercaderiaDevuelta } from '@/fiado/mercaderia-devuelta';
+import { ErrorStock } from '@/catalogo/stock';
 import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
 import { cotizacionVigente } from '@/cotizacion/cotizacion';
@@ -395,6 +397,66 @@ export async function migrarFichaAccion(
     if (error instanceof ErrorFiado) return { error: error.message };
     console.error('[fiado] Falló la migración:', error);
     return { error: 'No se pudo cargar la ficha.' };
+  }
+}
+
+/**
+ * El cliente trajo mercadería de vuelta.
+ *
+ * Vuelve al stock y se le descuenta de la deuda, en una sola transacción. No
+ * es un pago: no entró plata, entraron cosas, así que no toca ninguna caja.
+ */
+export async function registrarDevolucionAccion(
+  _previo: EstadoFiado,
+  datos: FormData,
+): Promise<EstadoFiado> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'venta.anular')) {
+    return { error: 'Registrar una devolución lo hace el dueño.' };
+  }
+
+  const customerId = String(datos.get('clienteId') ?? '');
+  if (!z.string().uuid().safeParse(customerId).success) {
+    return { error: 'No se reconoce ese cliente.' };
+  }
+
+  const esquema = z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        cantidad: z.number().int().positive(),
+        montoCentavos: z.number().int().positive(),
+      }),
+    )
+    .min(1);
+
+  let renglones: z.infer<typeof esquema>;
+  try {
+    renglones = esquema.parse(JSON.parse(String(datos.get('renglones') ?? '[]')));
+  } catch {
+    return { error: 'No se entiende qué se devolvió. Revisá las unidades y los importes.' };
+  }
+
+  try {
+    const r = await registrarMercaderiaDevuelta(db, {
+      customerId,
+      renglones,
+      usuarioId: sesion.user.id,
+      nota: String(datos.get('nota') ?? '').trim() || null,
+    });
+
+    refrescar();
+    return {
+      ok:
+        `Devolución registrada por ${formatearARS(r.totalCentavos)}. ` +
+        `Volvió al stock y queda debiendo ${formatearARS(r.saldoCentavos)}.`,
+    };
+  } catch (error) {
+    if (error instanceof ErrorFiado) return { error: error.message };
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[fiado] Falló la devolución:', error);
+    return { error: 'No se pudo registrar la devolución.' };
   }
 }
 

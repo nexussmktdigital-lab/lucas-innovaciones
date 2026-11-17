@@ -17,6 +17,7 @@ import Devoluciones from './devoluciones';
 import FormularioCliente from '../formulario-cliente';
 import FormularioLimite from './formulario-limite';
 import FormularioFicha from './formulario-ficha';
+import MercaderiaDevuelta from './mercaderia-devuelta';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const sesion = await auth();
   const puedeFiar = sesion?.user ? puede(sesion.user.rol, 'fiado.crear') : false;
+  const puedeDevolver = sesion?.user ? puede(sesion.user.rol, 'venta.anular') : false;
 
   const cliente = await clientePorId(db, id);
   if (!cliente) notFound();
@@ -189,6 +191,18 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
           </p>
         ) : null}
 
+        {/* Lo que el cliente trajo de vuelta: vuelve al stock y baja la deuda.
+            Aparece solo si debe algo, que es contra lo que se descuenta. */}
+        {puedeDevolver && cliente.saldoCentavos > 0 ? (
+          <div className="mt-3">
+            <MercaderiaDevuelta
+              clienteId={cliente.id}
+              nombre={cliente.nombre}
+              saldoCentavos={cliente.saldoCentavos}
+            />
+          </div>
+        ) : null}
+
         {puedeFiar ? (
           <div className="mt-4 space-y-3 border-t border-(--color-borde) pt-3">
             <FormularioLimite clienteId={cliente.id} limiteCentavos={cliente.limiteCentavos} />
@@ -294,12 +308,16 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   </span>
                 ) : null}
 
+                {/* La devolución resta igual que un cobro: la mercadería
+                    volvió y la deuda baja. Mostrarla sumando, como las
+                    compras, haría leer al revés el único renglón que alivia
+                    la cuenta. */}
                 <span
                   className={`tabular ml-auto font-semibold ${
-                    m.tipo === 'cobro' ? 'text-(--color-ok)' : ''
+                    m.tipo === 'cobro' || m.tipo === 'devolucion' ? 'text-(--color-ok)' : ''
                   }`}
                 >
-                  {m.tipo === 'cobro' ? '−' : '+'}
+                  {m.tipo === 'cobro' || m.tipo === 'devolucion' ? '−' : '+'}
                   {/* La moneda del cobro, no siempre pesos: una cuota del
                       iPhone se debe y se cobra en dólares (D62), y escribir
                       «$ 200» donde dice US$ 200 es un número 1.500 veces más
@@ -320,10 +338,10 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   desplegable porque una compra son cuarenta renglones y la
                   lista tiene que seguir leyéndose de un vistazo.
                 */}
-                {m.tipo === 'compra' && m.detalle ? (
+                {(m.tipo === 'compra' || m.tipo === 'devolucion') && m.detalle ? (
                   <details className="w-full">
                     <summary className="cursor-pointer text-xs text-(--color-tinta-suave)">
-                      Ver qué se llevó
+                      {m.tipo === 'devolucion' ? 'Ver qué devolvió' : 'Ver qué se llevó'}
                     </summary>
                     <pre className="mt-1 font-ui text-xs whitespace-pre-wrap text-(--color-tinta-media)">
                       {m.detalle}
