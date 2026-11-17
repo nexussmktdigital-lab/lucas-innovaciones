@@ -97,7 +97,7 @@ export async function cuentaDe(db: BaseDatos, customerId: string): Promise<Cuent
  * Devuelve la cuenta del cliente, creandola si es la primera vez, con la fila
  * ya bloqueada para que el saldo no se pise entre operaciones simultaneas.
  */
-async function cuentaBloqueada(
+export async function cuentaBloqueada(
   tx: BaseDatos,
   customerId: string,
   origen: 'sistema' | 'migrado_papel' = 'sistema',
@@ -807,6 +807,25 @@ export async function totalFiado(
   };
 }
 
+/**
+ * Un cargo a la cuenta que no viene de una venta.
+ *
+ * Son dos con la misma forma y signos opuestos: `compra` es mercaderia de la
+ * libreta, de antes de entrar al sistema, y `devolucion` es lo que el cliente
+ * trajo de vuelta. En la base viven en la misma tabla, la devolucion con el
+ * monto negativo; aca `montoCentavos` viene siempre positivo y cual es lo dice
+ * el `tipo`, para que la pantalla no tenga que mirar signos.
+ */
+export interface CargoDeCuenta {
+  fecha: Date;
+  montoCentavos: number;
+  descripcion: string;
+  /** Los renglones, uno por linea: del cuaderno o de lo devuelto. */
+  detalle: string | null;
+  /** True si la fecha se dedujo porque el cuaderno no la tenia. */
+  fechaEstimada: boolean;
+}
+
 export type MovimientoDeCuenta =
   | {
       tipo: 'venta';
@@ -816,17 +835,8 @@ export type MovimientoDeCuenta =
       ventaId: string;
       anulada: boolean;
     }
-  | {
-      /** Una compra de la libreta: mercaderia de antes de entrar al sistema. */
-      tipo: 'compra';
-      fecha: Date;
-      montoCentavos: number;
-      descripcion: string;
-      /** Los renglones del cuaderno, uno por linea. */
-      detalle: string | null;
-      /** True si la fecha se dedujo porque el cuaderno no la tenia. */
-      fechaEstimada: boolean;
-    }
+  | ({ tipo: 'compra' } & CargoDeCuenta)
+  | ({ tipo: 'devolucion' } & CargoDeCuenta)
   | {
       tipo: 'cobro';
       fecha: Date;
@@ -894,9 +904,9 @@ export async function movimientosDe(
     ),
     ...cargos.map(
       (c): MovimientoDeCuenta => ({
-        tipo: 'compra',
+        tipo: c.montoCentavos < 0 ? 'devolucion' : 'compra',
         fecha: c.fecha,
-        montoCentavos: c.montoCentavos,
+        montoCentavos: Math.abs(c.montoCentavos),
         descripcion: c.descripcion,
         detalle: c.detalle,
         fechaEstimada: c.fechaEstimada,

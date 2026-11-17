@@ -169,6 +169,13 @@
       "when": 1793200000000,
       "tag": "0023_compras_de_la_libreta",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0024_mercaderia_devuelta",
+      "breakpoints": true
     }
   ]
 }

@@ -417,6 +417,97 @@ test('la libreta entra aunque el cliente ya tenga ventas, y se suma', async ({ p
   await expect(page.getByText('$ 105.000,00')).toBeVisible();
 });
 
+/**
+ * El cliente trae mercadería de vuelta.
+ *
+ * El caso del mayorista: lleva cosas todas las semanas y cada tanto devuelve
+ * lo que no vendió. La pantalla de Devoluciones no sirve —trabaja contra una
+ * venta, y lo suyo vino de la libreta—, así que esto entra por su ficha.
+ *
+ * Lo que importa es que pasen las dos cosas a la vez: la mercadería vuelve al
+ * stock y la deuda baja. Y una que no pasa: no entra plata a la caja.
+ */
+test('la mercadería devuelta vuelve al stock y baja la deuda, sin tocar la caja', async ({
+  page,
+}) => {
+  const CLIENTE = `Mayorista que devuelve ${SUFIJO}`;
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(CLIENTE);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/quedó cargado/)).toBeVisible();
+
+  await page.getByRole('link', { name: CLIENTE }).click();
+  await page.waitForURL(/\/clientes\//);
+  await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
+  await page.getByLabel(/Saldo anterior/).fill('200000');
+  await page.getByRole('button', { name: 'Cargar la ficha' }).click();
+  await expect(page.getByText('$ 200.000,00').first()).toBeVisible({ timeout: 15_000 });
+
+  // Cuánto hay en el catálogo antes de que vuelva nada.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill('vidrio templado');
+  const ficha = page.getByRole('listitem').filter({ hasText: /Vidrio templado/ }).first();
+  await expect(ficha).toBeVisible();
+  const antes = Number((await ficha.innerText()).match(/Quedan (\d+)/)?.[1]);
+  expect(antes).toBeGreaterThan(0);
+
+  // Devuelve dos, y se le reconocen $9.000 —no el precio de lista—.
+  await page.goBack();
+  await page.getByRole('button', { name: 'Devolvió mercadería' }).click();
+  await page.getByLabel('Buscar el producto que devolvió').fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().click();
+  await page.getByLabel('Unidades').fill('2');
+  await page.getByLabel('Se le descuenta').fill('9000');
+  await expect(page.getByText(/Va a quedar debiendo/)).toContainText('191.000');
+
+  await page.getByRole('button', { name: 'Registrar la devolución' }).click();
+  await expect(page.getByText(/Devolución registrada/)).toBeVisible({ timeout: 15_000 });
+
+  // La deuda bajó y queda el movimiento con su detalle.
+  await expect(page.getByText('$ 191.000,00').first()).toBeVisible();
+  const movimiento = page.getByRole('listitem').filter({ hasText: 'Devolución de mercadería' });
+  await expect(movimiento).toHaveCount(1);
+  await movimiento.getByText('Ver qué devolvió').click();
+  await expect(movimiento).toContainText('2 x Vidrio templado');
+
+  // Y el stock subió dos.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill('vidrio templado');
+  const despues = page.getByRole('listitem').filter({ hasText: /Vidrio templado/ }).first();
+  await expect(despues).toContainText(`Quedan ${antes + 2}`);
+});
+
+test('no se puede descontar más de lo que el cliente debe', async ({ page }) => {
+  // El fiado no admite negativos a propósito: «te debo» y «me debes» son dos
+  // cosas. Recortar en cero haría desaparecer la plata que el local le queda
+  // debiendo, así que el botón no deja.
+  const CLIENTE = `Mayorista tope ${SUFIJO}`;
+  await entrarComoDuenio(page);
+
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(CLIENTE);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await page.getByRole('link', { name: CLIENTE }).click();
+  await page.waitForURL(/\/clientes\//);
+  await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
+  await page.getByLabel(/Saldo anterior/).fill('10000');
+  await page.getByRole('button', { name: 'Cargar la ficha' }).click();
+  await expect(page.getByText('$ 10.000,00').first()).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Devolvió mercadería' }).click();
+  await page.getByLabel('Buscar el producto que devolvió').fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().click();
+  await page.getByLabel('Se le descuenta').fill('50000');
+
+  await expect(page.getByText(/Es más de lo que debe/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Registrar la devolución' })).toBeDisabled();
+});
+
 /*
  * Hallazgo 21 de la auditoría.
  *
