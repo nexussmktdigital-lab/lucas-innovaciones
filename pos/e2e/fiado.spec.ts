@@ -481,6 +481,78 @@ test('la mercadería devuelta vuelve al stock y baja la deuda, sin tocar la caja
   await expect(despues).toContainText(`Quedan ${antes + 2}`);
 });
 
+/**
+ * El papel de la visita completa.
+ *
+ * La visita del mayorista no es un hecho sino tres: trae mercadería, entrega
+ * plata y a veces se lleva algo. El recibo de pago habla de uno solo, y el
+ * cliente se iba sin saber con cuánto quedaba. Este comprobante es el que se
+ * firma y se lleva: lo que devolvió, lo que entregó y el saldo del final.
+ */
+test('la visita completa se imprime en un papel: devolvió, entregó y con cuánto se va', async ({
+  page,
+  context,
+}) => {
+  const CLIENTE = `Mayorista visita ${SUFIJO}`;
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(CLIENTE);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/quedó cargado/)).toBeVisible();
+
+  await page.getByRole('link', { name: CLIENTE }).click();
+  await page.waitForURL(/\/clientes\//);
+  await page.getByRole('button', { name: 'Cargar una ficha de papel' }).click();
+  await page.getByLabel(/Saldo anterior/).fill('500000');
+  await page.getByRole('button', { name: 'Cargar la ficha' }).click();
+  await expect(page.getByText('$ 500.000,00').first()).toBeVisible({ timeout: 15_000 });
+
+  // Primero trae mercadería: se le reconocen $80.000.
+  await page.getByRole('button', { name: 'Devolvió mercadería' }).click();
+  await page.getByLabel('Buscar el producto que devolvió').fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().click();
+  await page.getByLabel('Unidades').fill('2');
+  await page.getByLabel('Se le descuenta').fill('80000');
+  await page.getByRole('button', { name: 'Registrar la devolución' }).click();
+  await expect(page.getByText(/Devolución registrada/)).toBeVisible({ timeout: 15_000 });
+
+  // Y después paga una parte: $70.000 por transferencia.
+  const url = page.url();
+  await page.goto('/fiado');
+  const tarjeta = page.getByRole('listitem').filter({ hasText: CLIENTE });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('70000');
+  await tarjeta.getByLabel('Con qué').selectOption('transferencia');
+  await tarjeta.getByLabel(/Imprimir el recibo/).uncheck();
+  await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+  await expect(tarjeta.getByText(/Cobrado/)).toBeVisible({ timeout: 15_000 });
+
+  // Un solo papel con las dos cosas, desde el renglón de la devolución.
+  await page.goto(url);
+  const movimiento = page.getByRole('listitem').filter({ hasText: 'Devolución de mercadería' });
+  const [comprobante] = await Promise.all([
+    context.waitForEvent('page'),
+    movimiento.getByRole('link', { name: 'Imprimir comprobante' }).click(),
+  ]);
+  await comprobante.waitForURL(/\/comprobante\//, { timeout: 15_000 });
+
+  const papel = (await comprobante.locator('.hoja').innerText()).replace(/\s/g, ' ');
+  expect(papel).toContain('COMPROBANTE DE CUENTA');
+  expect(papel).toContain(CLIENTE);
+  expect(papel).toContain('Devolvió mercadería');
+  expect(papel).toContain('2 x Vidrio templado');
+  expect(papel).toContain('$ 80.000,00');
+  expect(papel).toContain('Entregó');
+  expect(papel).toContain('Transferencia');
+  expect(papel).toContain('$ 70.000,00');
+  // 500.000 − 80.000 − 70.000
+  expect(papel).toContain('$ 350.000,00');
+  expect(papel).toContain('SALDO QUE QUEDA');
+});
+
 test('no se puede descontar más de lo que el cliente debe', async ({ page }) => {
   // El fiado no admite negativos a propósito: «te debo» y «me debes» son dos
   // cosas. Recortar en cero haría desaparecer la plata que el local le queda

@@ -697,7 +697,20 @@ function hojaDelComprobante(
  * Duplicar la hoja de estilos haría que un día el recibo y el comprobante se
  * impriman distinto sin que nadie lo haya decidido.
  */
-export function documento(titulo: string, hojas: readonly string[]): string {
+/**
+ * La hoja A4 que comparten el comprobante de venta, el recibo y el
+ * comprobante de cuenta: mismo membrete, mismos estilos, misma impresora.
+ *
+ * `estiloExtra` es para lo que un papel necesita y los otros no —el detalle
+ * de renglones del comprobante de cuenta, por ejemplo—. Va al final de la
+ * hoja de estilos, asi que pisa lo de arriba sin tener que pelear
+ * especificidad, y lo que no lo use no paga nada.
+ */
+export function documento(
+  titulo: string,
+  hojas: readonly string[],
+  estiloExtra = '',
+): string {
   return `<!doctype html>
 <html lang="es-AR">
 <head>
@@ -956,6 +969,7 @@ export function documento(titulo: string, hojas: readonly string[]): string {
     body { padding: 1rem 0; }
     .hoja { margin: 0 auto 1rem; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18); }
   }
+${estiloExtra}
 </style>
 </head>
 <body>
