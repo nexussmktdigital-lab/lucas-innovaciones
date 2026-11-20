@@ -23,7 +23,7 @@
  *  - **Los cobros son inmutables** (disparador de 0001) y llevan clave de
  *    idempotencia: reintentar no cobra dos veces.
  */
-import { and, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import {
   auditLog,
   cashMovements,
@@ -32,6 +32,7 @@ import {
   creditPayments,
   customers,
   monetaryAccounts,
+  saleItems,
   sales,
 } from '@/db/schema';
 import { filas as filasDe, type BaseDatos } from '@/db/tipos';
@@ -826,6 +827,8 @@ export interface CargoDeCuenta {
   detalle: string | null;
   /** True si la fecha se dedujo porque el cuaderno no la tenia. */
   fechaEstimada: boolean;
+  /** En que moneda esta el cargo. Las dos deudas no se suman (D62). */
+  moneda: 'ARS' | 'USD';
   /**
    * Lo que quedaba debiendo despues de este cargo, congelado al registrarlo.
    *
@@ -845,9 +848,27 @@ export type MovimientoDeCuenta =
       descripcion: string;
       ventaId: string;
       anulada: boolean;
+      /**
+       * Lo que se le cobro por financiar, y cuanto de eso ya se le perdono.
+       *
+       * Van en el movimiento para que la ficha pueda ofrecer la quita en el
+       * renglon de la venta, que es donde se mira cuando el cliente esta
+       * enfrente diciendo que viene a pagar todo junto.
+       */
+      recargoCentavos: number;
+      recargoQuitadoCentavos: number;
+      /**
+       * En que moneda quedo la deuda de esta venta.
+       *
+       * La fija la venta: lo que se vende en dolares se debe en dolares (D62),
+       * y su recargo por financiar tambien. Se reconstruye de los renglones,
+       * que es de donde salio al confirmarla.
+       */
+      monedaDeuda: 'ARS' | 'USD';
     }
   | ({ tipo: 'compra' } & CargoDeCuenta)
   | ({ tipo: 'devolucion' } & CargoDeCuenta)
+  | ({ tipo: 'quita_recargo' } & CargoDeCuenta)
   | {
       tipo: 'cobro';
       fecha: Date;
@@ -881,6 +902,8 @@ export async function movimientosDe(
       numero: sales.numero,
       totalCentavos: sales.totalCentavos,
       estado: sales.estado,
+      recargoCentavos: sales.recargoFinanciacionCentavos,
+      recargoQuitadoCentavos: sales.recargoQuitadoCentavos,
     })
     .from(sales)
     .where(and(eq(sales.clienteId, customerId), eq(sales.tipo, 'fiado')))
@@ -902,6 +925,34 @@ export async function movimientosDe(
         .orderBy(desc(creditCharges.fecha))
     : [];
 
+  /*
+   * Cuales de esas ventas quedaron debiendo en dolares.
+   *
+   * Es la misma regla que al confirmarlas —la venta es en dolares cuando TODO
+   * lo que se llevo estaba en dolares— y se recalcula en vez de guardarse: un
+   * segundo lugar donde anotar la moneda es un segundo lugar donde puede
+   * quedar distinta. Solo se pregunta por las que tienen recargo, que son las
+   * unicas donde la pantalla necesita saberlo.
+   */
+  const conRecargo = ventas.filter((v) => v.recargoCentavos > 0).map((v) => v.id);
+  const enDolares = new Set<string>();
+  if (conRecargo.length > 0) {
+    const renglones = await db
+      .select({ saleId: saleItems.saleId, moneda: saleItems.monedaOriginal })
+      .from(saleItems)
+      .where(inArray(saleItems.saleId, conRecargo));
+    const porVenta = new Map<string, { total: number; dolares: number }>();
+    for (const r of renglones) {
+      const acc = porVenta.get(r.saleId) ?? { total: 0, dolares: 0 };
+      acc.total += 1;
+      if (r.moneda === 'USD') acc.dolares += 1;
+      porVenta.set(r.saleId, acc);
+    }
+    for (const [id, acc] of porVenta) {
+      if (acc.total > 0 && acc.total === acc.dolares) enDolares.add(id);
+    }
+  }
+
   const movimientos: MovimientoDeCuenta[] = [
     ...ventas.map(
       (v): MovimientoDeCuenta => ({
@@ -911,17 +962,23 @@ export async function movimientosDe(
         descripcion: `Venta ${v.numero}`,
         ventaId: v.id,
         anulada: v.estado === 'cancelled',
+        recargoCentavos: v.recargoCentavos,
+        recargoQuitadoCentavos: v.recargoQuitadoCentavos,
+        monedaDeuda: enDolares.has(v.id) ? 'USD' : 'ARS',
       }),
     ),
     ...cargos.map(
       (c): MovimientoDeCuenta => ({
-        tipo: c.montoCentavos < 0 ? 'devolucion' : 'compra',
+        // Lo dice la columna. Deducirlo del signo alcanzaba con dos clases de
+        // cargo; con tres, «negativo» dejo de significar una sola cosa.
+        tipo: c.tipo === 'quita_recargo' ? 'quita_recargo' : c.tipo === 'devolucion' ? 'devolucion' : 'compra',
         id: c.id,
         fecha: c.fecha,
         montoCentavos: Math.abs(c.montoCentavos),
         descripcion: c.descripcion,
         detalle: c.detalle,
         fechaEstimada: c.fechaEstimada,
+        moneda: c.moneda,
         saldoResultanteCentavos: c.saldoResultanteCentavos,
       }),
     ),
@@ -986,8 +1043,9 @@ export async function comprobanteDelDia(
   // Los dolares no se suman a los pesos ni se restan de ellos (D62). El papel
   // es el de la cuenta en pesos; si ese dia hubo un cobro en dolares, lo dice
   // y lo deja afuera.
-  const hayDolares = delDia.some((m) => m.tipo === 'cobro' && m.moneda === 'USD');
-  const enPesos = delDia.filter((m) => !(m.tipo === 'cobro' && m.moneda === 'USD'));
+  const enDolares = (m: MovimientoDeCuenta) => m.tipo !== 'venta' && m.moneda === 'USD';
+  const hayDolares = delDia.some(enDolares);
+  const enPesos = delDia.filter((m) => !enDolares(m));
 
   let ancla = -1;
   for (let i = enPesos.length - 1; i >= 0; i--) {

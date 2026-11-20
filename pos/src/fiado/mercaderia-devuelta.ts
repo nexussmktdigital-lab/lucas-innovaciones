@@ -114,6 +114,7 @@ export async function registrarMercaderiaDevuelta(
 
     await tx.insert(creditCharges).values({
       creditAccountId: cuenta.id,
+      tipo: 'devolucion',
       descripcion: 'Devolución de mercadería',
       detalle: renglones
         .map((r) => `${r.cantidad} x ${r.nombre} $${(r.montoCentavos / 100).toLocaleString('es-AR')}`)

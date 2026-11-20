@@ -18,6 +18,7 @@ import FormularioCliente from '../formulario-cliente';
 import FormularioLimite from './formulario-limite';
 import FormularioFicha from './formulario-ficha';
 import MercaderiaDevuelta from './mercaderia-devuelta';
+import QuitarRecargo from './quitar-recargo';
 
 export const dynamic = 'force-dynamic';
 
@@ -314,10 +315,10 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                     la cuenta. */}
                 <span
                   className={`tabular ml-auto font-semibold ${
-                    m.tipo === 'cobro' || m.tipo === 'devolucion' ? 'text-(--color-ok)' : ''
+                    m.tipo === 'venta' || m.tipo === 'compra' ? '' : 'text-(--color-ok)'
                   }`}
                 >
-                  {m.tipo === 'cobro' || m.tipo === 'devolucion' ? '−' : '+'}
+                  {m.tipo === 'venta' || m.tipo === 'compra' ? '+' : '−'}
                   {/* La moneda del cobro, no siempre pesos: una cuota del
                       iPhone se debe y se cobra en dólares (D62), y escribir
                       «$ 200» donde dice US$ 200 es un número 1.500 veces más
@@ -338,15 +339,40 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   desplegable porque una compra son cuarenta renglones y la
                   lista tiene que seguir leyéndose de un vistazo.
                 */}
-                {(m.tipo === 'compra' || m.tipo === 'devolucion') && m.detalle ? (
+                {m.tipo !== 'venta' && m.tipo !== 'cobro' && m.detalle ? (
                   <details className="w-full">
                     <summary className="cursor-pointer text-xs text-(--color-tinta-suave)">
-                      {m.tipo === 'devolucion' ? 'Ver qué devolvió' : 'Ver qué se llevó'}
+                      {m.tipo === 'devolucion'
+                        ? 'Ver qué devolvió'
+                        : m.tipo === 'quita_recargo'
+                          ? 'Ver de qué venta'
+                          : 'Ver qué se llevó'}
                     </summary>
                     <pre className="mt-1 font-ui text-xs whitespace-pre-wrap text-(--color-tinta-media)">
                       {m.detalle}
                     </pre>
                   </details>
+                ) : null}
+
+                {/*
+                  El recargo por financiar de una venta fiada.
+
+                  Va en el renglón de la venta porque es donde se mira cuando
+                  el cliente está enfrente diciendo que viene a pagar todo
+                  junto, que es justo el momento en que el recargo deja de
+                  corresponder.
+                */}
+                {m.tipo === 'venta' &&
+                !m.anulada &&
+                puedeDevolver &&
+                m.recargoCentavos > 0 ? (
+                  <QuitarRecargo
+                    saleId={m.ventaId}
+                    venta={m.descripcion}
+                    quedaCentavos={m.recargoCentavos - m.recargoQuitadoCentavos}
+                    quitadoCentavos={m.recargoQuitadoCentavos}
+                    moneda={m.monedaDeuda}
+                  />
                 ) : null}
 
                 {m.tipo === 'cobro' ? (
@@ -392,7 +418,7 @@ export default async function PaginaCliente({ params }: { params: Promise<{ id: 
                   cuánto se va—, porque la visita del mayorista nunca es un
                   solo hecho.
                 */}
-                {m.tipo === 'devolucion' ? (
+                {m.tipo === 'devolucion' || m.tipo === 'quita_recargo' ? (
                   <span className="flex w-full flex-wrap items-baseline justify-end gap-x-3 text-xs">
                     <span className="tabular text-(--color-tinta-suave)">
                       en ese momento quedaba debiendo {formatearARS(m.saldoResultanteCentavos)}

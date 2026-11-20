@@ -74,6 +74,12 @@ function comoSeLee(m: MovimientoDeCuenta): {
         aclaracion: 'Se le descuenta de la deuda',
         baja: true,
       };
+    case 'quita_recargo':
+      return {
+        concepto: 'Se le sacó el recargo por financiar',
+        aclaracion: 'Pagó antes de tiempo',
+        baja: true,
+      };
     case 'cobro':
       return { concepto: 'Entregó', aclaracion: nombreDelMedio(m.medio), baja: true };
     case 'venta':

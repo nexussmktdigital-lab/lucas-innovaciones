@@ -176,6 +176,13 @@
       "when": 1795000000000,
       "tag": "0024_mercaderia_devuelta",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0025_quita_del_recargo",
+      "breakpoints": true
     }
   ]
 }
