@@ -16,6 +16,7 @@ import { puede } from '@/auth/permisos';
 import { config } from '@/lib/config';
 import { leerLibreta } from '@/fiado/libreta';
 import { registrarMercaderiaDevuelta } from '@/fiado/mercaderia-devuelta';
+import { quitarRecargoDeFinanciacion } from '@/fiado/quita-recargo';
 import { ErrorStock } from '@/catalogo/stock';
 import { aCentavos, ErrorDinero, formatearARS, formatearUSD } from '@/lib/dinero';
 import { sesionAbierta } from '@/caja/sesion';
@@ -457,6 +458,60 @@ export async function registrarDevolucionAccion(
     if (error instanceof ErrorStock) return { error: error.message };
     console.error('[fiado] Falló la devolución:', error);
     return { error: 'No se pudo registrar la devolución.' };
+  }
+}
+
+/**
+ * Pagó antes de tiempo: se le saca el recargo por financiar.
+ *
+ * El teléfono valió lo que valió —la venta no se toca—; lo que se saca es el
+ * precio de haberlo pagado en el tiempo, que ya no corresponde. No es un pago:
+ * no entró plata, se dejó de cobrar algo, así que no toca ninguna caja.
+ */
+export async function quitarRecargoAccion(
+  _previo: EstadoFiado,
+  datos: FormData,
+): Promise<EstadoFiado> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'venta.anular')) {
+    return { error: 'Sacarle el recargo a una venta lo hace el dueño.' };
+  }
+
+  const saleId = String(datos.get('saleId') ?? '');
+  if (!z.string().uuid().safeParse(saleId).success) {
+    return { error: 'No se reconoce esa venta.' };
+  }
+
+  let montoCentavos: number;
+  try {
+    montoCentavos = aCentavos(String(datos.get('monto') ?? ''));
+  } catch (error) {
+    if (error instanceof ErrorDinero) return { error: error.message };
+    throw error;
+  }
+
+  try {
+    const r = await quitarRecargoDeFinanciacion(db, {
+      saleId,
+      montoCentavos,
+      usuarioId: sesion.user.id,
+      nota: String(datos.get('nota') ?? '').trim() || null,
+    });
+
+    const cifra = r.moneda === 'USD' ? formatearUSD : formatearARS;
+    refrescar();
+    return {
+      ok:
+        `Se le sacaron ${cifra(r.montoCentavos)} de recargo de la venta ${r.venta}. ` +
+        (r.saldoCentavos === 0
+          ? 'No queda debiendo nada.'
+          : `Queda debiendo ${cifra(r.saldoCentavos)}.`),
+    };
+  } catch (error) {
+    if (error instanceof ErrorFiado) return { error: error.message };
+    console.error('[fiado] Falló la quita del recargo:', error);
+    return { error: 'No se pudo sacar el recargo.' };
   }
 }
 

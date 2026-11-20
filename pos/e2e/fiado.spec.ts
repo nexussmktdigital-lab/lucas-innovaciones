@@ -1063,6 +1063,92 @@ test('se puede cobrar sin imprimir nada', async ({ page }) => {
 });
 
 /**
+ * Pagó antes de tiempo: se le saca el recargo por financiar.
+ *
+ * Pasó tal cual en el local: un cliente se llevó un teléfono en cuotas con su
+ * recargo, y a los dos días volvió y pagó todo junto. El recargo ya no
+ * corresponde, pero la deuda lo seguía incluyendo: después de entregar el
+ * precio de contado le quedaba debiendo exactamente el recargo.
+ */
+test('pagó antes de tiempo: se le saca el recargo y la cuenta cierra en cero', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await asegurarCajaAbierta(page);
+
+  const cliente = `El del teléfono ${SUFIJO}`;
+  await page.goto('/clientes');
+  await page.getByRole('button', { name: '+ Cliente nuevo' }).click();
+  await page.getByLabel('Nombre y apellido').fill(cliente);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByRole('link', { name: cliente })).toBeVisible({ timeout: 15_000 });
+
+  // Se lo lleva fiado, con $500 de recargo por financiar.
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill('vidrio templado');
+  await page.getByRole('button', { name: /Vidrio templado/ }).first().waitFor();
+  await buscador.press('Enter');
+  await elegirCliente(page, cliente);
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Cuenta corriente' }).click();
+  // El campo está en %, y un 10% de $5.000 son los $500 de recargo.
+  await cobro.getByLabel('Recargo por financiar').fill('10');
+  await expect(cobro).toContainText('Debe $ 5.500,00 en vez de $ 5.000,00');
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  // A los dos días vuelve a pagar todo junto.
+  await page.goto('/clientes');
+  await page.getByRole('link', { name: cliente }).click();
+  await page.waitForURL(/\/clientes\//);
+  // El bloque de la deuda, no el primer «$ 5.500,00» que haya en la pantalla:
+  // el importe de la venta también es un número suelto que podría coincidir.
+  await expect(page.getByText('Deuda').locator('..')).toContainText('$ 5.500,00');
+
+  const renglon = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: /^Venta T1-/ }) });
+  await expect(renglon).toContainText('incluye $ 500,00 de recargo por financiar');
+  await renglon.getByRole('button', { name: 'Pagó antes: sacárselo' }).click();
+  await expect(page.getByText(/no entra plata a la caja/)).toBeVisible();
+  await page.getByRole('button', { name: 'Sacarle el recargo' }).click();
+
+  // La deuda bajó al precio de contado y el renglón lo deja dicho.
+  await expect(page.getByText('$ 5.000,00').first()).toBeVisible({ timeout: 15_000 });
+  await expect(renglon).toContainText('se le sacaron $ 500,00 de recargo');
+
+  // Y la quita es lo que es: no se muestra como una devolución de mercadería.
+  const quita = page.getByRole('listitem').filter({ hasText: 'Quita del recargo' });
+  await expect(quita).toHaveCount(1);
+  await expect(quita).toContainText('−$ 500,00');
+  await expect(quita).toContainText('Ver de qué venta');
+  await expect(quita).not.toContainText('Ver qué devolvió');
+
+  // Paga el contado y la cuenta cierra en cero, sin el resto de antes.
+  await page.goto('/fiado');
+  const tarjeta = page.getByRole('listitem').filter({ hasText: cliente });
+  await tarjeta.getByRole('button', { name: 'Recibir un pago' }).click();
+  await tarjeta.getByLabel('¿Cuánto paga?').fill('5000');
+  await tarjeta.getByLabel(/Imprimir el recibo/).uncheck();
+  await tarjeta.getByRole('button', { name: 'Registrar el pago' }).click();
+
+  // No se espera el «Cobrado» de la tarjeta: al quedar en cero el cliente sale
+  // de la lista de deudores y la tarjeta se desmonta. Que se vaya ES el aviso.
+  await expect(tarjeta).toHaveCount(0, { timeout: 15_000 });
+
+  await page.goto('/clientes');
+  await page.getByRole('link', { name: cliente }).click();
+  await page.waitForURL(/\/clientes\//);
+  const deuda = page.getByText('Deuda').locator('..');
+  await expect(deuda).toContainText('$ 0,00');
+  // Y lo que entró a la caja son los $5.000 del contado, ni uno más.
+  await expect(page.getByRole('listitem').filter({ hasText: 'Cobro' })).toContainText(
+    '−$ 5.000,00',
+  );
+});
+
+/**
  * El recargo por fiar «cuando pueda».
  *
  * El fiado sin fechas es el más común del local y es el que más se recarga,
