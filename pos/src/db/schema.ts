@@ -458,6 +458,15 @@ export const sales = pgTable(
      * desglose que el cliente firmo.
      */
     recargoFinanciacionCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Lo que de ese recargo se le terminó perdonando.
+     *
+     * El que paga antes de tiempo no financió nada, así que el recargo deja
+     * de corresponder. Vive acá y no en una tabla aparte porque es un dato de
+     * esta venta, y es lo que permite ofrecer la quita por lo que de verdad
+     * queda y no dos veces.
+     */
+    recargoQuitadoCentavos: bigint({ mode: 'number' }).notNull().default(0),
     totalCentavos: bigint({ mode: 'number' }).notNull(),
     /** TC congelado al confirmar. Una venta vieja nunca se recalcula. */
     tcAplicadoCentavos: bigint({ mode: 'number' }),
@@ -493,6 +502,10 @@ export const sales = pgTable(
     check('sales_total_ck', sql`${t.totalCentavos} >= 0`),
     check('sales_recargo_ck', sql`${t.recargoCentavos} >= 0`),
     check('sales_recargo_financiacion_ck', sql`${t.recargoFinanciacionCentavos} >= 0`),
+    check(
+      'sales_recargo_quitado_ck',
+      sql`${t.recargoQuitadoCentavos} >= 0 AND ${t.recargoQuitadoCentavos} <= ${t.recargoFinanciacionCentavos}`,
+    ),
     check(
       'sales_offline_ck',
       sql`(${t.offline} AND ${t.offlineCapturadaEn} IS NOT NULL)
@@ -768,6 +781,21 @@ export const creditCharges = pgTable(
     /** Los renglones del cuaderno, tal como estaban escritos, uno por linea. */
     detalle: text(),
     montoCentavos: bigint({ mode: 'number' }).notNull(),
+    /**
+     * Qué es este cargo: `compra`, `devolucion` o `quita_recargo`.
+     *
+     * Dicho y no deducido del signo. Mientras hubo dos clases de cargo el
+     * signo alcanzaba; con tres, «negativo» dejó de significar una sola cosa.
+     */
+    tipo: text().notNull().default('compra'),
+    /**
+     * En qué moneda está este cargo.
+     *
+     * Lo que se vende en dólares se debe en dólares (D62). La libreta de
+     * papel y la mercadería devuelta son siempre pesos; la quita del recargo
+     * de un teléfono financiado en dólares, no.
+     */
+    moneda: monedaEnum().notNull().default('ARS'),
     /** El saldo que quedaba ese dia. Congelado, igual que en los pagos. */
     saldoResultanteCentavos: bigint({ mode: 'number' }).notNull(),
     /**
@@ -786,7 +814,16 @@ export const creditCharges = pgTable(
   },
   (t) => [
     index('credit_charges_cuenta_idx').on(t.creditAccountId),
-    check('credit_charges_monto_ck', sql`${t.montoCentavos} > 0`),
+    // Negativo es una devolución o una quita: el mismo hecho con el signo al
+    // revés. El cero sigue prohibido —no es un movimiento, es un importe que
+    // no se cargó—. Lo relajó la migración 0024.
+    check('credit_charges_monto_ck', sql`${t.montoCentavos} <> 0`),
+    // El tipo y el signo no pueden contradecirse: una compra suma, lo demás resta.
+    check(
+      'credit_charges_tipo_ck',
+      sql`(${t.tipo} = 'compra' AND ${t.montoCentavos} > 0)
+      OR (${t.tipo} IN ('devolucion', 'quita_recargo') AND ${t.montoCentavos} < 0)`,
+    ),
   ],
 );
 
