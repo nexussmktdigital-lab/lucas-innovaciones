@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { formatearARS, formatearUSD } from '@/lib/dinero';
 import { MINIMO_PARA_PARECIDOS, type ProductoParecido } from '@/catalogo/crear';
 import SumarStock from './nuevo/sumar-stock';
 import CambiarPrecio from './nuevo/cambiar-precio';
 import DarDeBaja from './dar-de-baja';
+import EditarFicha from './editar-ficha';
 
 const ESPERA_MS = 250;
 
@@ -34,17 +35,19 @@ export default function BuscadorCatalogo({
   puedeCargar,
   puedeCambiarPrecio,
   puedeDarDeBaja,
+  puedeBorrar,
 }: {
   puedeSumarStock: boolean;
   puedeReactivar: boolean;
   puedeCargar: boolean;
   puedeCambiarPrecio: boolean;
   puedeDarDeBaja: boolean;
+  /** Borrar del todo es del dueño: no se deshace. */
+  puedeBorrar: boolean;
 }) {
   const [texto, setTexto] = useState('');
   const [consulta, setConsulta] = useState('');
   const campo = useRef<HTMLInputElement>(null);
-  const clienteDeConsultas = useQueryClient();
   /*
    * Lo que acabó de pasar con una ficha, para avisarlo donde se ve.
    *
@@ -53,6 +56,21 @@ export default function BuscadorCatalogo({
    * junto con el control que lo produjo.
    */
   const [aviso, setAviso] = useState<{ id: string; texto: string } | null>(null);
+  /*
+   * Cuántas veces se tocó una ficha desde acá.
+   *
+   * Va en la clave de la consulta, y no alcanzaba con invalidarla: después de
+   * guardar, la lista seguía mostrando el nombre y el stock viejos. Con la
+   * vuelta en la clave, lo que se pide es una consulta que nunca se pidió, así
+   * que no hay nada guardado que servir.
+   */
+  const [vuelta, setVuelta] = useState(0);
+
+  /** Lo que acaba de pasar con una ficha: se avisa y se vuelve a buscar. */
+  function avisar(id: string, texto: string) {
+    setAviso({ id, texto });
+    setVuelta((v) => v + 1);
+  }
 
   useEffect(() => {
     const reloj = setTimeout(() => setConsulta(texto.trim()), ESPERA_MS);
@@ -60,7 +78,7 @@ export default function BuscadorCatalogo({
   }, [texto]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ['catalogo-buscar', consulta],
+    queryKey: ['catalogo-buscar', consulta, vuelta],
     enabled: consulta.length >= MINIMO_PARA_PARECIDOS,
     queryFn: async ({ signal }) => {
       const r = await fetch(`/api/catalogo/parecidos?q=${encodeURIComponent(consulta)}`, {
@@ -154,6 +172,20 @@ export default function BuscadorCatalogo({
                 </p>
               ) : null}
 
+              {/* El lápiz primero: es la puerta a la ficha entera. Los dos
+                  botones de abajo quedan porque son lo de todos los días —llegó
+                  una entrega, cambió el precio— y meterlos dos toques adentro
+                  sería cobrarle al caso común el precio del caso raro. */}
+              {puedeCambiarPrecio ? (
+                <div className="pt-2">
+                  <EditarFicha
+                    producto={p}
+                    puedeBorrar={puedeBorrar}
+                    onListo={(texto) => avisar(p.id, texto)}
+                  />
+                </div>
+              ) : null}
+
               {puedeSumarStock && p.gestionaStock ? (
                 <div className="pt-2">
                   <SumarStock
@@ -185,18 +217,25 @@ export default function BuscadorCatalogo({
                   <DarDeBaja
                     productId={p.id}
                     nombre={p.nombre}
-                    onListo={(texto) => {
-                      setAviso({ id: p.id, texto });
-                      void clienteDeConsultas.invalidateQueries({
-                        queryKey: ['catalogo-buscar'],
-                      });
-                    }}
+                    onListo={(texto) => avisar(p.id, texto)}
                   />
                 </div>
               ) : null}
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {/*
+        El aviso de una ficha que ya no está en la lista.
+        Borrar una ficha hace desaparecer su renglón, y con él el aviso que
+        vivía adentro: quien apretó «Sí, borrarlo» se quedaba mirando una lista
+        sin nada que le dijera que salió bien.
+      */}
+      {aviso && !resultados.some((p) => p.id === aviso.id) ? (
+        <p role="status" className="mt-3 text-sm font-semibold text-(--color-ok)">
+          {aviso.texto}
+        </p>
       ) : null}
     </section>
   );

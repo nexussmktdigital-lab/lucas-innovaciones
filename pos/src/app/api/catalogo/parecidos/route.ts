@@ -43,7 +43,18 @@ export async function GET(request: Request) {
       cotizacionVigente(db),
     ]);
 
-    return NextResponse.json({ parecidos, tcCentavos: cotizacion?.valorCentavos ?? null });
+    /*
+     * Sin caché del navegador.
+     *
+     * `force-dynamic` evita la caché del servidor, pero no la del navegador: la
+     * respuesta volvía del disco y la lista seguía mostrando el nombre viejo
+     * después de guardar la ficha, o «activo» después de darlo de baja. Quien
+     * acaba de cambiar algo vuelve a pedir esto justamente porque cambió.
+     */
+    return NextResponse.json(
+      { parecidos, tcCentavos: cotizacion?.valorCentavos ?? null },
+      { headers: { 'cache-control': 'no-store' } },
+    );
   } catch (error) {
     console.error('[parecidos] Falló la búsqueda:', error);
     return NextResponse.json({ error: 'No se pudo buscar' }, { status: 500 });
