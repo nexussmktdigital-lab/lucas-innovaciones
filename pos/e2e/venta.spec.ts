@@ -515,16 +515,43 @@ test('regalar algo avisa, y hay que confirmarlo a sabiendas', async ({ page }) =
   await expect(cobro.getByRole('button', { name: /cobrar igual/ })).toBeVisible();
 });
 
+/**
+ * Deja el recargo de la tienda online en este porcentaje.
+ *
+ * No alcanza con apretar «Guardar». Cuando hay precios de la web para
+ * reajustar, la pantalla muestra primero una vista previa —cuántos precios
+ * cambian y cómo— y **no guarda nada** hasta que alguien confirma. Es a
+ * propósito: es la lección del 21/10, cuando un recargo aplicado sin mirar
+ * movió el catálogo entero.
+ *
+ * Acá el recargo es preparación y no lo que se prueba —de los dos pasos se
+ * ocupa `precios.spec.ts`— así que esto pasa por el camino que toque: hay
+ * vista previa cuando hay algo que reajustar, y no la hay cuando no.
+ */
+async function ponerRecargo(page: Page, porcentaje: string, esperado: RegExp) {
+  await page.goto('/precios');
+  await page.getByLabel('Recargo de la tienda online').fill(porcentaje);
+  await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+
+  const aplicar = page.getByRole('button', { name: /Aplicar los .* cambios/ });
+  // Lo que aparece es una de las dos: la vista previa, o ya el mensaje.
+  await expect(aplicar.or(page.getByText(esperado))).toBeVisible({ timeout: 15_000 });
+
+  if ((await aplicar.count()) > 0) {
+    await expect(page.getByText('Todavía no se guardó nada')).toBeVisible();
+    await aplicar.click();
+  }
+
+  await expect(page.getByText(esperado)).toBeVisible({ timeout: 15_000 });
+}
+
 test('el mostrador cobra menos que la tienda, con el recargo puesto', async ({ page }) => {
   // En la web cobra Mercado Pago y esa comisión no la paga el local: WooCommerce
   // guarda el precio de la tienda y el POS le descuenta el recargo (D31).
   await entrarComoDuenio(page);
   await asegurarCajaAbierta(page);
 
-  await page.goto('/precios');
-  await page.getByLabel('Recargo de la tienda online').fill('12');
-  await page.getByRole('button', { name: 'Guardar' }).click();
-  await expect(page.getByText(/Recargo guardado en 12%/)).toBeVisible();
+  await ponerRecargo(page, '12', /Recargo guardado en 12%/);
 
   try {
     await page.goto('/precios?q=airpods');
@@ -556,10 +583,7 @@ test('el mostrador cobra menos que la tienda, con el recargo puesto', async ({ p
     expect(carrito).toBeTruthy();
   } finally {
     // El recargo es estado global: se deja como estaba para los demás tests.
-    await page.goto('/precios');
-    await page.getByLabel('Recargo de la tienda online').fill('0');
-    await page.getByRole('button', { name: 'Guardar' }).click();
-    await expect(page.getByText(/Sin recargo/)).toBeVisible();
+    await ponerRecargo(page, '0', /Sin recargo/);
   }
 });
 
