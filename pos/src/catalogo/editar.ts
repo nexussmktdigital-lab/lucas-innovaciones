@@ -9,12 +9,12 @@
  * Tres cosas viven acá; el precio sigue en `cambiarPrecio`, que ya sabe de
  * dólares, cotización y del recargo de la tienda, y no tiene sentido tener dos.
  *
- * **El nombre solo se puede cambiar en lo que nació en el mostrador.** El
- * espejo de WooCommerce pisa `nombre` en cada sincronización
- * (`espejo.ts`), así que renombrar acá un producto que también vive en la
- * tienda duraría hasta el próximo `woo:sync` y volvería solo, sin que nadie
- * entienda por qué. El costo no corre ese riesgo —Woo no lo tiene— y el stock
- * tampoco, porque ahí manda el POS.
+ * **Renombrar lo que vive en la tienda también le avisa a la tienda.** El
+ * espejo de WooCommerce pisa `nombre` en cada sincronización (`espejo.ts`),
+ * así que un cambio solo local duraría hasta el próximo `woo:sync` y volvería
+ * solo. Por eso va a la misma cola que el precio y el stock: se escribe acá y
+ * se empuja allá, y entonces dura. El costo no necesita nada de esto —Woo no
+ * lo tiene— y el stock tampoco, porque ahí manda el POS.
  */
 import { eq, sql } from 'drizzle-orm';
 import {
@@ -168,6 +168,8 @@ export async function restarStock(
 export interface FichaEditada {
   nombre: string;
   cambios: ('nombre' | 'costo')[];
+  /** True si el nombre nuevo quedó encolado para la tienda online. */
+  avisaALaTienda: boolean;
 }
 
 /**
@@ -225,25 +227,12 @@ export async function editarFicha(
 
     const cambiaNombre = nombre !== null && nombre !== p.nombre;
 
-    /*
-     * Renombrar lo que vive en la tienda no se puede, y es mejor decirlo que
-     * dejarlo pasar: el espejo trae el nombre de Woo en cada sincronización, y
-     * el cambio volvería solo dentro de un rato sin que nadie entienda por qué.
-     */
-    if (cambiaNombre && p.wooId !== null) {
-      throw new ErrorStock(
-        `«${p.nombre}» también está en la tienda online, y de ahí viene su nombre: ` +
-          `si se cambia acá, la próxima sincronización lo vuelve atrás. Cambialo en la tienda.`,
-        'sin_control',
-      );
-    }
-
     const cambiaCosto = tocaCosto && costo !== p.costoCentavos;
     const cambios: FichaEditada['cambios'] = [];
     if (cambiaNombre) cambios.push('nombre');
     if (cambiaCosto) cambios.push('costo');
 
-    if (cambios.length === 0) return { nombre: p.nombre, cambios };
+    if (cambios.length === 0) return { nombre: p.nombre, cambios, avisaALaTienda: false };
 
     await tx
       .update(products)
@@ -253,6 +242,22 @@ export async function editarFicha(
         updatedAt: new Date(),
       })
       .where(eq(products.id, datos.productId));
+
+    /*
+     * El nombre nuevo, a la tienda.
+     *
+     * Sin esto el cambio duraría hasta el próximo `woo:sync`: el espejo copia
+     * el nombre de Woo y lo volvería atrás. La clave de idempotencia lleva el
+     * momento, así que dos cambios seguidos encolan dos operaciones y drenan
+     * en orden; reintentar una escribe el mismo nombre.
+     */
+    if (cambiaNombre && p.wooId !== null) {
+      await tx.insert(syncQueue).values({
+        operacion: 'producto.renombrar',
+        idempotencyKey: `nombre:${datos.productId}:${Date.now()}`,
+        payload: { productId: datos.productId, wooId: p.wooId, nombre: nombre! },
+      });
+    }
 
     await tx.insert(auditLog).values({
       usuarioId: datos.usuarioId,
@@ -266,7 +271,11 @@ export async function editarFicha(
       },
     });
 
-    return { nombre: cambiaNombre ? nombre! : p.nombre, cambios };
+    return {
+      nombre: cambiaNombre ? nombre! : p.nombre,
+      cambios,
+      avisaALaTienda: cambiaNombre && p.wooId !== null,
+    };
   });
 }
 

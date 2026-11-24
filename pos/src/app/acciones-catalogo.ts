@@ -556,7 +556,13 @@ export async function editarProductoAccion(
       costoCentavos,
       usuarioId: sesion.user.id,
     });
-    if (r.cambios.includes('nombre')) hechos.push(`quedó como «${r.nombre}»`);
+    if (r.cambios.includes('nombre')) {
+      hechos.push(
+        r.avisaALaTienda
+          ? `quedó como «${r.nombre}», y se le avisa a la tienda online`
+          : `quedó como «${r.nombre}»`,
+      );
+    }
     if (r.cambios.includes('costo')) {
       hechos.push(
         costoCentavos === null ? 'se borró el costo' : `el costo quedó en ${formatearARS(costoCentavos!)}`,

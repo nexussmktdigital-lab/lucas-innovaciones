@@ -169,19 +169,40 @@ describe('editar la ficha', () => {
   });
 
   /*
-   * El espejo de WooCommerce pisa `nombre` en cada sincronización. Renombrar
-   * acá duraría hasta el próximo `woo:sync` y volvería solo: mejor decirlo que
-   * dejarlo pasar.
+   * El espejo de WooCommerce pisa `nombre` en cada sincronización, así que un
+   * cambio solo local duraría hasta el próximo `woo:sync` y volvería solo. Por
+   * eso renombrar lo que está publicado le avisa a la tienda.
    */
-  it('no renombra lo que también vive en la tienda', async () => {
+  it('renombrar lo que vive en la tienda le avisa a la tienda', async () => {
     const p = await producto({ wooId: 7001, nombre: 'Cable USB' });
 
-    await expect(
-      editarFicha(db, { productId: p.id, nombre: 'Cable USB tipo C', usuarioId: duenio }),
-    ).rejects.toThrow(/Cambialo en la tienda/i);
+    const r = await editarFicha(db, {
+      productId: p.id,
+      nombre: 'Cable USB tipo C',
+      usuarioId: duenio,
+    });
+    expect(r.avisaALaTienda).toBe(true);
 
     const [enBase] = await db.select().from(products).where(eq(products.id, p.id));
-    expect(enBase!.nombre).toBe('Cable USB');
+    expect(enBase!.nombre).toBe('Cable USB tipo C');
+
+    const [pedido] = await db.select().from(syncQueue);
+    expect(pedido!.operacion).toBe('producto.renombrar');
+    expect(pedido!.payload).toMatchObject({ wooId: 7001, nombre: 'Cable USB tipo C' });
+  });
+
+  it('lo que nunca salió a la tienda se renombra y no encola nada', async () => {
+    const p = await producto({ wooId: null, nombre: 'Cargadr' });
+
+    const r = await editarFicha(db, { productId: p.id, nombre: 'Cargador', usuarioId: duenio });
+    expect(r.avisaALaTienda).toBe(false);
+    expect(await db.select().from(syncQueue)).toHaveLength(0);
+  });
+
+  it('cambiar solo el costo de algo publicado no molesta a la tienda', async () => {
+    const p = await producto({ wooId: 7001, costoCentavos: null });
+    await editarFicha(db, { productId: p.id, costoCentavos: 1_000_00, usuarioId: duenio });
+    expect(await db.select().from(syncQueue)).toHaveLength(0);
   });
 
   it('pero el costo sí, porque la tienda no lo tiene', async () => {

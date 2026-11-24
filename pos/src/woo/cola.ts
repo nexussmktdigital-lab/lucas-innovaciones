@@ -236,6 +236,8 @@ export async function drenarCola(
         informe.conflictos += await empujarStock(db, cliente, operacion.payload, operacion.id);
       } else if (operacion.operacion === 'precio.empujar') {
         await empujarPrecio(db, cliente, operacion.payload);
+      } else if (operacion.operacion === 'producto.renombrar') {
+        await empujarNombre(cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.baja') {
         await empujarBaja(cliente, operacion.payload);
       } else if (operacion.operacion === 'producto.publicar') {
@@ -403,6 +405,8 @@ const payloadDeProducto = z.object({
   wooId: z.number(),
   /** Solo en `stock.empujar`: cuánto se sumó. Sin esto, camino viejo (absoluto). */
   delta: z.number().optional(),
+  /** Solo en `producto.renombrar`: el nombre que se le puso. */
+  nombre: z.string().optional(),
 });
 /** Lo único que se le pide a la respuesta: que sea el producto que se tocó. */
 const respuestaDeProducto = z.object({ id: z.number() }).loose();
@@ -504,6 +508,40 @@ async function empujarPrecio(
     'PUT',
     `products/${payload.wooId}`,
     cuerpoDePrecioParaWoo(local),
+    respuestaDeProducto,
+  );
+}
+
+/**
+ * Lleva a la tienda el nombre que se le puso en el mostrador.
+ *
+ * Sin esto, renombrar una ficha publicada no servía de nada: el espejo copia
+ * el nombre de Woo en cada sincronización, así que el cambio duraba hasta el
+ * próximo `woo:sync` y volvía solo. Por eso el catálogo antes directamente no
+ * dejaba renombrarlas.
+ *
+ * **El nombre viaja en el payload, y no se lee de la base al drenar.** Es al
+ * revés que el precio y el stock, a propósito. Esos se leen de la base porque
+ * ahí manda el POS y lo que vale es el último valor. El nombre es justo el
+ * dato donde manda Woo: si entre el cambio y el drenaje corre una
+ * sincronización, la base ya tiene otra vez el nombre viejo, y leerla de ahí
+ * escribiría en la tienda exactamente lo que se estaba tratando de corregir.
+ * Lo que se empuja es lo que la persona escribió.
+ *
+ * Es idempotente: reintentar escribe el mismo nombre. Y dos cambios seguidos
+ * encolan dos operaciones, que drenan en orden: gana el último, que es el que
+ * la persona dejó.
+ */
+async function empujarNombre(cliente: ClienteWoo, payloadCrudo: unknown): Promise<void> {
+  const payload = payloadDeProducto.parse(payloadCrudo);
+  // Sin nombre no hay nada que escribir, y mandar `name: undefined` a Woo es
+  // una llamada que no hace nada y puede confundir al que lea el registro.
+  if (!payload.nombre) return;
+
+  await cliente.enviar(
+    'PUT',
+    `products/${payload.wooId}`,
+    { name: payload.nombre },
     respuestaDeProducto,
   );
 }

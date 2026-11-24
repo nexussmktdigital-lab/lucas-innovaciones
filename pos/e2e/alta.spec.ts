@@ -577,6 +577,40 @@ test('el lápiz edita la ficha entera: nombre, costo y stock', async ({ page }) 
   await expect(arreglada.getByLabel('Costo')).toHaveValue('5500');
 });
 
+/**
+ * Renombrar un producto que también vive en la tienda online.
+ *
+ * Antes no se podía: el espejo copia el nombre de Woo en cada sincronización,
+ * así que el cambio duraba hasta el próximo `woo:sync` y volvía solo. Ahora el
+ * nombre nuevo se le manda a la tienda, y por eso dura.
+ */
+test('renombrar lo que está publicado le avisa a la tienda', async ({ page }) => {
+  await entrarComoDuenio(page);
+
+  // Los productos sembrados vienen del espejo: tienen id de WooCommerce.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill('vidrio templado');
+  const ficha = buscador(page).getByRole('listitem').first();
+  const nombreViejo = (await ficha.locator('span').first().innerText()).trim();
+
+  await ficha.getByRole('button', { name: `Editar ${nombreViejo}` }).click();
+  await expect(ficha.getByText(/el nombre nuevo se le manda/)).toBeVisible();
+
+  const nombreNuevo = `${nombreViejo} ${SUF}`;
+  await ficha.getByLabel('Nombre').fill(nombreNuevo);
+  await ficha.getByRole('button', { name: 'Guardar' }).click();
+
+  await expect(buscador(page).getByText(/se le avisa a la tienda online/)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // Y quedó con el nombre nuevo.
+  await page.getByLabel('Buscar un producto').fill(nombreNuevo);
+  await expect(
+    buscador(page).getByRole('listitem').filter({ hasText: nombreNuevo }),
+  ).toHaveCount(1);
+});
+
 test('restar más de lo que hay no se puede', async ({ page }) => {
   // Un ajuste a mano no es un hecho que pasó, es un número que alguien
   // escribe: un «saqué 50» sobre un stock de 3 es un dedo.
