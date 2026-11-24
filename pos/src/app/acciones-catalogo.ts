@@ -25,6 +25,12 @@ import {
   marcasDelCatalogo,
 } from '@/catalogo/crear';
 import { encolarPublicacion, ErrorPublicar } from '@/catalogo/publicar';
+import {
+  editarFicha,
+  eliminarProducto,
+  motivosParaNoEliminar,
+  restarStock,
+} from '@/catalogo/editar';
 import { ErrorImportar, importarPlanilla, revisarPlanilla } from '@/catalogo/importar';
 import {
   aplicarEntrega,
@@ -498,6 +504,149 @@ export async function darDeBajaAccion(
     console.error('[stock] Falló la baja:', error);
     return { error: 'No se pudo dar de baja. Probá de nuevo.' };
   }
+}
+
+/**
+ * Guardar los cambios de la ficha: nombre, costo y un ajuste de stock.
+ *
+ * Los tres van en una sola acción porque el mostrador los toca juntos —abre la
+ * ficha mal cargada y corrige lo que ve— pero cada uno es su propia
+ * transacción: si el ajuste de stock falla por quedar en negativo, el nombre
+ * ya corregido no tiene por qué perderse. Lo que pasó y lo que no se cuenta
+ * entero en el mensaje.
+ */
+export async function editarProductoAccion(
+  _previo: EstadoStock,
+  datos: FormData,
+): Promise<EstadoStock> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  if (!puede(sesion.user.rol, 'producto.editar')) {
+    return { error: 'No tenés permiso para editar un producto.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  const nombreCrudo = datos.get('nombre');
+  const costoCrudo = String(datos.get('costo') ?? '').trim();
+  const ajusteCrudo = String(datos.get('ajuste') ?? '').trim();
+  const sentido = String(datos.get('sentido') ?? 'sumar');
+
+  let costoCentavos: number | null | undefined;
+  if (datos.has('costo')) {
+    if (costoCrudo === '') {
+      costoCentavos = null;
+    } else {
+      try {
+        costoCentavos = aCentavos(costoCrudo);
+      } catch (error) {
+        if (error instanceof ErrorDinero) return { error: `Costo: ${error.message}` };
+        throw error;
+      }
+    }
+  }
+
+  const hechos: string[] = [];
+
+  try {
+    const r = await editarFicha(db, {
+      productId: id.data,
+      nombre: typeof nombreCrudo === 'string' ? nombreCrudo : undefined,
+      costoCentavos,
+      usuarioId: sesion.user.id,
+    });
+    if (r.cambios.includes('nombre')) hechos.push(`quedó como «${r.nombre}»`);
+    if (r.cambios.includes('costo')) {
+      hechos.push(
+        costoCentavos === null ? 'se borró el costo' : `el costo quedó en ${formatearARS(costoCentavos!)}`,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[catalogo] Falló la edición:', error);
+    return { error: 'No se pudo guardar la ficha. Probá de nuevo.' };
+  }
+
+  if (ajusteCrudo !== '') {
+    const cantidad = Number(ajusteCrudo);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      return {
+        error: 'Las unidades del ajuste tienen que ser un número entero mayor a cero.',
+        ...(hechos.length > 0 ? { ok: `Se guardó la ficha: ${hechos.join(' y ')}.` } : {}),
+      };
+    }
+
+    try {
+      const motivo = String(datos.get('motivoAjuste') ?? '').trim() || null;
+      const r =
+        sentido === 'restar'
+          ? await restarStock(db, { productId: id.data, cantidad, usuarioId: sesion.user.id, motivo })
+          : await sumarStock(db, { productId: id.data, cantidad, usuarioId: sesion.user.id, motivo });
+      hechos.push(`el stock quedó en ${r.stockResultante}`);
+    } catch (error) {
+      const mensaje = error instanceof ErrorStock ? error.message : 'No se pudo ajustar el stock.';
+      if (!(error instanceof ErrorStock)) console.error('[catalogo] Falló el ajuste:', error);
+      return {
+        error: mensaje,
+        ...(hechos.length > 0 ? { ok: `Igual se guardó la ficha: ${hechos.join(' y ')}.` } : {}),
+      };
+    }
+  }
+
+  revalidatePath('/catalogo');
+  revalidatePath('/vender');
+
+  return {
+    ok: hechos.length === 0 ? 'No había nada para cambiar.' : `Listo: ${hechos.join(', ')}.`,
+  };
+}
+
+/**
+ * Borrar una ficha del todo.
+ *
+ * Es lo contrario de la baja y las dos hacen falta: esto es para la ficha que
+ * nunca debió existir —la repetida de la importación, el alta a medio
+ * escribir—. Si tiene cualquier historial detrás, no se puede, y el mensaje
+ * dice por qué.
+ */
+export async function eliminarProductoAccion(
+  _previo: EstadoStock,
+  datos: FormData,
+): Promise<EstadoStock> {
+  const sesion = await auth();
+  if (!sesion?.user) return { error: 'Se cerró la sesión. Volvé a entrar.' };
+  // El borrado es del dueño: la baja la puede hacer quien edita el catálogo,
+  // pero esto no se deshace.
+  if (!puede(sesion.user.rol, 'venta.anular')) {
+    return { error: 'Borrar un producto del todo lo hace el dueño.' };
+  }
+
+  const id = z.string().uuid().safeParse(datos.get('productId'));
+  if (!id.success) return { error: 'No se entiende de qué producto se habla.' };
+
+  try {
+    const r = await eliminarProducto(db, { productId: id.data, usuarioId: sesion.user.id });
+    revalidatePath('/catalogo');
+    revalidatePath('/vender');
+    return { ok: `«${r.nombre}» se borró del catálogo. No queda ficha.` };
+  } catch (error) {
+    if (error instanceof ErrorStock) return { error: error.message };
+    console.error('[catalogo] Falló el borrado:', error);
+    return { error: 'No se pudo borrar. Probá de nuevo.' };
+  }
+}
+
+/** Por qué una ficha no se puede borrar. Vacío quiere decir que sí se puede. */
+export async function motivosParaNoEliminarAccion(productId: string): Promise<string[]> {
+  const sesion = await auth();
+  if (!sesion?.user) return ['Se cerró la sesión. Volvé a entrar.'];
+  if (!puede(sesion.user.rol, 'venta.anular')) {
+    return ['Borrar un producto del todo lo hace el dueño.'];
+  }
+  const id = z.string().uuid().safeParse(productId);
+  if (!id.success) return ['No se entiende de qué producto se habla.'];
+  return motivosParaNoEliminar(db, id.data);
 }
 
 export async function reactivarProductoAccion(

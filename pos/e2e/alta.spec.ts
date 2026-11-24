@@ -516,3 +516,157 @@ test('arrepentirse no saca nada del catálogo', async ({ page }) => {
   await page.getByPlaceholder('Buscar por nombre').fill(CABLE);
   await expect(page.getByRole('button', { name: new RegExp(CABLE) })).toBeVisible();
 });
+
+/**
+ * La sección del buscador del catálogo.
+ *
+ * Hace falta acotar: la pantalla también lista las fichas pendientes de
+ * completar, y un producto recién creado aparece en las dos listas.
+ */
+function buscador(page: Page) {
+  return page.getByRole('region', { name: 'Buscar en el catálogo' });
+}
+
+/**
+ * La ficha completa, detrás del lápiz.
+ *
+ * Lo que el mostrador pidió: encontrar el producto y corregir todo lo que esté
+ * mal sin ir a cuatro pantallas. Nombre, costo y stock de una vez, y el
+ * borrado del todo para la ficha que nunca debió existir.
+ */
+test('el lápiz edita la ficha entera: nombre, costo y stock', async ({ page }) => {
+  await entrarComoDuenio(page);
+
+  const MAL = `Cargadr 20w ${SUF}`;
+  const BIEN = `Cargador 20W Samsung ${SUF}`;
+
+  await page.goto('/catalogo/nuevo');
+  const form = formularioAlta(page);
+  await form.getByLabel('Qué es').fill(MAL);
+  await form.getByLabel('Cuánto sale en el local').fill('9000');
+  await form.getByLabel('Cuántos hay').fill('10');
+  await form.getByRole('button', { name: /Cargar y poder venderlo/ }).click();
+  await expect(page.getByText(/quedó cargado y se puede vender/)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(MAL);
+  const ficha = buscador(page).getByRole('listitem').filter({ hasText: MAL });
+  await expect(ficha).toContainText('Quedan 10');
+
+  await ficha.getByRole('button', { name: `Editar ${MAL}` }).click();
+  await ficha.getByLabel('Nombre').fill(BIEN);
+  await ficha.getByLabel('Costo').fill('5500');
+  await ficha.getByRole('button', { name: '− Restar' }).click();
+  await ficha.getByLabel('Unidades del ajuste').fill('3');
+  await ficha.getByLabel('Motivo del ajuste').fill('Se rompieron');
+  await expect(ficha.getByText('Van a quedar 7')).toBeVisible();
+  await ficha.getByRole('button', { name: 'Guardar' }).click();
+
+  // La lista se refresca sola, y buscando el nombre viejo ya no aparece:
+  // justamente porque se renombró.
+  await expect(buscador(page).getByText(/No hay nada que coincida/)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.getByLabel('Buscar un producto').fill(BIEN);
+  const arreglada = buscador(page).getByRole('listitem').filter({ hasText: BIEN });
+  await expect(arreglada).toContainText('Quedan 7');
+
+  // El costo quedó guardado: al reabrir el lápiz está puesto.
+  await arreglada.getByRole('button', { name: `Editar ${BIEN}` }).click();
+  await expect(arreglada.getByLabel('Costo')).toHaveValue('5500');
+});
+
+test('restar más de lo que hay no se puede', async ({ page }) => {
+  // Un ajuste a mano no es un hecho que pasó, es un número que alguien
+  // escribe: un «saqué 50» sobre un stock de 3 es un dedo.
+  await entrarComoDuenio(page);
+
+  const POCO = `Funda contada de más ${SUF}`;
+  await page.goto('/catalogo/nuevo');
+  const form = formularioAlta(page);
+  await form.getByLabel('Qué es').fill(POCO);
+  await form.getByLabel('Cuánto sale en el local').fill('3000');
+  await form.getByLabel('Cuántos hay').fill('2');
+  await form.getByRole('button', { name: /Cargar y poder venderlo/ }).click();
+  await expect(page.getByText(/quedó cargado y se puede vender/)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(POCO);
+  const ficha = buscador(page).getByRole('listitem').filter({ hasText: POCO });
+  await ficha.getByRole('button', { name: `Editar ${POCO}` }).click();
+  await ficha.getByRole('button', { name: '− Restar' }).click();
+  await ficha.getByLabel('Unidades del ajuste').fill('50');
+
+  await expect(ficha.getByText(/no puede dejar el stock en negativo/)).toBeVisible();
+  await ficha.getByRole('button', { name: 'Guardar' }).click();
+  await expect(ficha.getByRole('alert')).toContainText(/en negativo/);
+
+  // Y el stock no se movió.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(POCO);
+  await expect(buscador(page).getByRole('listitem').filter({ hasText: POCO })).toContainText('Quedan 2');
+});
+
+/**
+ * Borrar del todo, que es lo contrario de la baja.
+ *
+ * Para la ficha que nunca debió existir: la repetida de la importación, el
+ * alta a medio escribir. Si tiene cualquier historial detrás no se puede, y la
+ * pantalla lo dice en vez de ofrecer un botón que falla.
+ */
+test('una ficha recién creada se borra del todo; una con movimientos, no', async ({ page }) => {
+  await entrarComoDuenio(page);
+
+  const ERROR = `Prueba que quedó ${SUF}`;
+  await page.goto('/catalogo/nuevo');
+  const form = formularioAlta(page);
+  await form.getByLabel('Qué es').fill(ERROR);
+  await form.getByLabel('Cuánto sale en el local').fill('1000');
+  await form.getByRole('button', { name: /Cargar y poder venderlo/ }).click();
+  await expect(page.getByText(/quedó cargado y se puede vender/)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(ERROR);
+  const ficha = buscador(page).getByRole('listitem').filter({ hasText: ERROR });
+  await ficha.getByRole('button', { name: `Editar ${ERROR}` }).click();
+
+  await ficha.getByRole('button', { name: 'Borrar del todo' }).click();
+  await expect(ficha.getByText(/No queda ficha y no se puede deshacer/)).toBeVisible();
+  await ficha.getByRole('button', { name: 'Sí, borrarlo' }).click();
+
+  await expect(page.getByText(/se borró del catálogo/)).toBeVisible({ timeout: 15_000 });
+
+  // No está más: ni en el catálogo ni para vender.
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(ERROR);
+  await expect(buscador(page).getByRole('listitem').filter({ hasText: ERROR })).toHaveCount(0);
+
+  // En cambio, una que ya movió stock no se puede borrar y la pantalla explica
+  // por qué: el libro de stock no se borra.
+  const CONMOVIMIENTOS = `Con entrega ${SUF}`;
+  await page.goto('/catalogo/nuevo');
+  const form2 = formularioAlta(page);
+  await form2.getByLabel('Qué es').fill(CONMOVIMIENTOS);
+  await form2.getByLabel('Cuánto sale en el local').fill('1000');
+  await form2.getByLabel('Cuántos hay').fill('1');
+  await form2.getByRole('button', { name: /Cargar y poder venderlo/ }).click();
+  await expect(page.getByText(/quedó cargado y se puede vender/)).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/catalogo');
+  await page.getByLabel('Buscar un producto').fill(CONMOVIMIENTOS);
+  const conMov = buscador(page).getByRole('listitem').filter({ hasText: CONMOVIMIENTOS });
+  await conMov.getByRole('button', { name: `Editar ${CONMOVIMIENTOS}` }).click();
+  await conMov.getByRole('button', { name: '+ Sumar' }).click();
+  await conMov.getByLabel('Unidades del ajuste').fill('5');
+  await conMov.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.getByText(/Listo:/)).toBeVisible({ timeout: 15_000 });
+
+  await buscador(page)
+    .getByRole('listitem')
+    .filter({ hasText: CONMOVIMIENTOS })
+    .getByRole('button', { name: `Editar ${CONMOVIMIENTOS}` })
+    .click();
+  await expect(page.getByText(/libro de stock no se borra/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Borrar del todo' })).toHaveCount(0);
+});

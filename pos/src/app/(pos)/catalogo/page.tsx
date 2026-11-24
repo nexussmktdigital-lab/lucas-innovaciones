@@ -117,6 +117,7 @@ export default async function PaginaCatalogo({
         puedeCargar={puede(sesion.user.rol, 'producto.alta_rapida')}
         puedeCambiarPrecio={puede(sesion.user.rol, 'producto.alta_rapida')}
         puedeDarDeBaja={puede(sesion.user.rol, 'producto.editar')}
+        puedeBorrar={puede(sesion.user.rol, 'venta.anular')}
       />
 
       <FichasPendientes fichas={pendientes} total={totalPendientes} wooUrl={urlWoo} />

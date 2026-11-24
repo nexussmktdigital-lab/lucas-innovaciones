@@ -467,6 +467,16 @@ export interface ProductoParecido {
   moneda: 'ARS' | 'USD';
   /** Su precio en dólares, si está en dólares. */
   precioUsdCentavos: number | null;
+  /** Lo que costó, si está cargado. La ficha lo deja editar. */
+  costoCentavos: number | null;
+  /**
+   * Si también vive en la tienda online.
+   *
+   * La ficha lo necesita para no ofrecer lo que no puede cumplir: el espejo de
+   * WooCommerce pisa el nombre en cada sincronización, así que renombrar acá
+   * un producto publicado duraría hasta el próximo `woo:sync`.
+   */
+  enLaTienda: boolean;
 }
 
 /** Menos de esto es ruido: con dos letras coincide medio catálogo. */
@@ -498,11 +508,13 @@ export async function buscarParecidos(
     activo: boolean;
     moneda: 'ARS' | 'USD';
     precio_usd_centavos: string | number | null;
+    costo_centavos: string | number | null;
+    woo_id: number | null;
   }>(
     await db.execute(sql`
       SELECT id, nombre, sku, precio_centavos, precio_local_centavos,
              solo_mostrador, stock, gestiona_stock, activo,
-             moneda, precio_usd_centavos
+             moneda, precio_usd_centavos, costo_centavos, woo_id
         FROM products
        WHERE ${sinAcentos(sql`nombre`)} LIKE ${patron}
           OR lower(COALESCE(sku, '')) LIKE ${patron}
@@ -535,5 +547,7 @@ export async function buscarParecidos(
     moneda: f.moneda,
     precioUsdCentavos:
       f.precio_usd_centavos === null ? null : Number(f.precio_usd_centavos),
+    costoCentavos: f.costo_centavos === null ? null : Number(f.costo_centavos),
+    enLaTienda: f.woo_id !== null,
   }));
 }
