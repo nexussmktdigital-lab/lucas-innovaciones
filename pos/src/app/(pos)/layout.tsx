@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { db } from '@/db';
 import { config } from '@/lib/config';
 import { sesionAbierta } from '@/caja/sesion';
+import { avisoDeEsquema, estadoDelEsquema } from '@/db/pendientes';
 import { salir } from '../acciones-auth';
 import { Proveedores } from '../proveedores';
 import Navegacion from './navegacion';
@@ -22,6 +23,20 @@ export default async function LayoutPos({ children }: { children: React.ReactNod
    * que se mira cien veces por día.
    */
   const caja = await sesionAbierta(db, config().POS_TERMINAL);
+
+  /*
+   * Si la base quedó atrás del código, se dice acá y en todas las pantallas.
+   *
+   * Es la defensa contra el incidente que ya pasó tres veces: se despliega
+   * código que escribe una columna nueva, la migración no llega a la base, y
+   * el mostrador se entera recién al cobrar, con un «No se pudo confirmar la
+   * venta» que no dice nada y manda a probar de nuevo. Un día entero se perdió
+   * así.
+   *
+   * No frena nada: avisa. Frenar el POS por una migración pendiente sería
+   * dejar al local sin vender por nuestra cuenta.
+   */
+  const aviso = avisoDeEsquema(await estadoDelEsquema(db));
 
   return (
     <Proveedores>
@@ -51,6 +66,15 @@ export default async function LayoutPos({ children }: { children: React.ReactNod
             <BotonSalir salir={salir} />
           </div>
         </header>
+        {aviso ? (
+          <p
+            role="alert"
+            className="sin-imprimir bg-(--color-error-fondo) px-4 py-2 text-sm font-medium text-(--color-error)"
+          >
+            {aviso} Avisale a quien lo mantiene.
+          </p>
+        ) : null}
+
         <main className="flex-1 p-4">{children}</main>
       </div>
     </Proveedores>
