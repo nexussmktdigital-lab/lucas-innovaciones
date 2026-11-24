@@ -6,6 +6,7 @@ import { devolverAccion, type EstadoDevolucion } from '@/app/acciones-devolucion
 import { formatearARS } from '@/lib/dinero';
 import { formatearFechaHora } from '@/lib/fecha';
 import type { VentaDevolvible } from '@/ventas/devolver';
+import SeLleva, { type Elegido } from './se-lleva';
 
 const INICIAL: EstadoDevolucion = {};
 
@@ -35,6 +36,7 @@ export default function FormularioDevolucion({
     Object.fromEntries(venta.lineas.map((l) => [l.saleItemId, true])),
   );
   const [aDeuda, setADeuda] = useState<string>('');
+  const [seLleva, setSeLleva] = useState<Elegido[]>([]);
 
   const total = useMemo(
     () =>
@@ -46,11 +48,73 @@ export default function FormularioDevolucion({
     [cantidades, venta.lineas],
   );
 
+  const esCambio = seLleva.length > 0;
+  const llevado = seLleva.reduce((n, e) => n + e.precioCentavos * Math.max(0, e.cantidad), 0);
+  const diferencia = llevado - total;
+
   // Lo que se propone descontar: todo lo que la deuda permita. Devolverle
   // efectivo a quien todavía debe por esa misma venta es equivocarse dos veces.
   const tope = Math.min(venta.deudaDelClienteCentavos, total);
   const descontar = aDeuda === '' ? tope : Math.min(Math.round(Number(aDeuda) * 100) || 0, tope);
-  const enPlata = Math.max(0, total - descontar);
+
+  /*
+   * Cuánta plata se mueve. En un cambio es solo la diferencia —y en uno parejo
+   * no se mueve nada—, que es el motivo de que el cambio exista como una
+   * operación y no como dos.
+   */
+  const enPlata = esCambio ? Math.abs(diferencia) : Math.max(0, total - descontar);
+
+  if (estado.ok && estado.cambio) {
+    const c = estado.cambio;
+    return (
+      <div className="space-y-4">
+        <div className="rounded-(--radius-caja) bg-(--color-ok-fondo) p-4">
+          <p role="status" className="font-semibold text-(--color-ok)">
+            {estado.ok}
+          </p>
+          <dl className="mt-2 flex flex-col gap-1 text-sm">
+            <div className="flex justify-between">
+              <dt>Lo que trajo valía</dt>
+              <dd className="tabular">{formatearARS(c.vueltoCentavos)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Lo que se llevó vale</dt>
+              <dd className="tabular">{formatearARS(c.llevadoCentavos)}</dd>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <dt>
+                {c.diferenciaCentavos === 0
+                  ? 'Cambio parejo: no se movió plata'
+                  : c.diferenciaCentavos > 0
+                    ? 'Pagó la diferencia'
+                    : 'Se le devolvió la diferencia'}
+              </dt>
+              <dd className="tabular">
+                {c.diferenciaCentavos === 0
+                  ? '—'
+                  : formatearARS(Math.abs(c.diferenciaCentavos))}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/devoluciones"
+            className="min-h-12 flex-1 rounded-(--radius-caja) border border-(--color-borde) px-4 text-center leading-[3rem] font-medium"
+          >
+            Volver
+          </Link>
+          <Link
+            href="/ventas"
+            className="min-h-12 flex-1 rounded-(--radius-caja) border border-(--color-borde) px-4 text-center leading-[3rem] font-medium"
+          >
+            Ver las ventas
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (estado.ok && estado.hecha) {
     const h = estado.hecha;
@@ -206,8 +270,41 @@ export default function FormularioDevolucion({
         <span className="tabular text-xl font-bold">{formatearARS(total)}</span>
       </div>
 
-      {/* Si el cliente todavía debe de esta venta, lo primero es bajarle la deuda. */}
-      {venta.deudaDelClienteCentavos > 0 && total > 0 ? (
+      <SeLleva elegidos={seLleva} onCambiar={setSeLleva} />
+      <input type="hidden" name="seLleva" value={JSON.stringify(
+        seLleva.map((e) => ({ productId: e.productId, cantidad: e.cantidad })),
+      )} />
+
+      {esCambio ? (
+        <div
+          className={`rounded-(--radius-caja) p-3 text-sm ${
+            diferencia === 0 ? 'bg-(--color-ok-fondo)' : 'bg-(--color-papel)'
+          }`}
+        >
+          {diferencia === 0 ? (
+            <p>
+              <strong>Cambio parejo.</strong> Lo que trae y lo que se lleva valen lo mismo, así
+              que no se mueve plata: no entra ni sale nada del cajón.
+            </p>
+          ) : diferencia > 0 ? (
+            <p>
+              Se lleva <strong className="tabular">{formatearARS(llevado)}</strong> y trae{' '}
+              <strong className="tabular">{formatearARS(total)}</strong>:{' '}
+              <strong>paga {formatearARS(diferencia)}</strong>.
+            </p>
+          ) : (
+            <p>
+              Se lleva <strong className="tabular">{formatearARS(llevado)}</strong> y trae{' '}
+              <strong className="tabular">{formatearARS(total)}</strong>:{' '}
+              <strong>se le devuelven {formatearARS(-diferencia)}</strong>.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {/* Si el cliente todavía debe de esta venta, lo primero es bajarle la deuda.
+          En un cambio no aplica: vino a cambiar algo, no a cancelar una cuenta. */}
+      {!esCambio && venta.deudaDelClienteCentavos > 0 && total > 0 ? (
         <div className="rounded-(--radius-caja) bg-(--color-alerta-fondo) p-3 text-sm">
           <p>
             {venta.cliente ?? 'El cliente'} debe{' '}
@@ -237,7 +334,9 @@ export default function FormularioDevolucion({
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="medio" className="mb-1 block text-sm font-medium">
-              Se le devuelven {formatearARS(enPlata)} por
+              {esCambio && diferencia > 0
+                ? `Paga ${formatearARS(enPlata)} con`
+                : `Se le devuelven ${formatearARS(enPlata)} por`}
             </label>
             <select
               id="medio"
@@ -252,7 +351,7 @@ export default function FormularioDevolucion({
           </div>
           <div>
             <label htmlFor="monetaryAccountId" className="mb-1 block text-sm font-medium">
-              De qué cuenta sale
+              {esCambio && diferencia > 0 ? 'A qué cuenta entra' : 'De qué cuenta sale'}
             </label>
             <select
               id="monetaryAccountId"
@@ -272,7 +371,7 @@ export default function FormularioDevolucion({
 
       <div>
         <label htmlFor="motivo" className="mb-1 block text-sm font-medium">
-          Por qué se devuelve
+          {esCambio ? 'Por qué lo cambia' : 'Por qué se devuelve'}
         </label>
         <input
           id="motivo"
@@ -297,12 +396,18 @@ export default function FormularioDevolucion({
         disabled={pendiente || total === 0}
         className="min-h-12 w-full rounded-(--radius-caja) bg-(--color-marca) font-semibold text-(--color-marca-texto) disabled:opacity-60"
       >
-        {pendiente ? 'Registrando…' : 'Registrar la devolución'}
+        {pendiente
+          ? 'Registrando…'
+          : esCambio
+            ? 'Registrar el cambio'
+            : 'Registrar la devolución'}
       </button>
 
       <p className="text-xs text-(--color-tinta-suave)">
-        La venta original no se toca: queda como está y el arqueo de aquel turno no cambia. Esto
-        sale del cajón de hoy, que es cuando la plata se mueve de verdad.
+        La venta original no se toca: queda como está y el arqueo de aquel turno no cambia.{' '}
+        {esCambio
+          ? 'Quedan una devolución por lo que trajo y una venta por lo que se lleva, atadas entre sí, y en el cajón se mueve solo la diferencia.'
+          : 'Esto sale del cajón de hoy, que es cuando la plata se mueve de verdad.'}
       </p>
     </form>
   );

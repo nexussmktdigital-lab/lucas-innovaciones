@@ -313,7 +313,18 @@ export type MedioPago =
   | 'cheque'
   | 'mercadopago'
   | 'cuenta_corriente'
-  | 'canje';
+  | 'canje'
+  /** Paga con lo que trajo de vuelta: lo respalda una devolución. */
+  | 'cambio';
+
+/**
+ * Los medios que el cajero puede elegir en el mostrador.
+ *
+ * `cambio` queda afuera a propósito: no es algo que se elija al cobrar sino
+ * algo que crea el cambio de producto, que lo respalda con la devolución de la
+ * que salió. Dejarlo en la pantalla sería dejar grabar un pago contra nada.
+ */
+export type MedioDeMostrador = Exclude<MedioPago, 'cambio'>;
 
 /**
  * El equipo que el cliente entrega como parte de pago.
@@ -374,6 +385,13 @@ export interface Pago {
   monetaryAccountId?: string | null;
   /** Solo `canje`: el equipo que entró. Sin esto el canje no se puede grabar. */
   equipoRecibido?: EquipoRecibido | null;
+  /**
+   * De qué devolución sale un pago «en cambio».
+   *
+   * Obligatorio para ese medio y prohibido para los demás: es lo que impide
+   * grabar un pago que no deja ni plata ni mercadería.
+   */
+  returnId?: string | null;
   /** Solo tarjeta: el Posnet es un aparato aparte, el POS solo registra. */
   marcaTarjeta?: string | null;
   cuotas?: number | null;

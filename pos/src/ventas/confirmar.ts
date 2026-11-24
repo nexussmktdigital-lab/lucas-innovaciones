@@ -220,6 +220,14 @@ export function tipoDeCuentaPara(
      */
     case 'canje':
       return null;
+    /*
+     * El cambio tampoco: lo que «entró» es el producto que el cliente trajo de
+     * vuelta, y ese ya volvió al stock por la devolución que respalda este
+     * pago. Si moviera una cuenta, la plata entraría dos veces: una por la
+     * devolución que no salió y otra por esta venta que nadie pagó.
+     */
+    case 'cambio':
+      return null;
   }
 }
 
@@ -685,6 +693,15 @@ export async function confirmarVenta(
      * puede grabar (`sale_payments_canje_ck`). En la misma transacción que la
      * venta: un alta sin venta sería stock que nadie entregó.
      */
+    for (const p of solicitud.pagos) {
+      if (p.medio === 'cambio' && !p.returnId) {
+        throw new ErrorVenta(
+          'Un pago en cambio tiene que decir de qué devolución sale.',
+          'datos_invalidos',
+        );
+      }
+    }
+
     const recibidoPorPago = new Map<number, string>();
     for (const [i, p] of solicitud.pagos.entries()) {
       if (p.medio !== 'canje') continue;
@@ -728,6 +745,12 @@ export async function confirmarVenta(
         cotizacionCentavos:
           p.medio === 'dolares' || p.medio === 'canje' ? (p.cotizacionCentavos ?? null) : null,
         productoRecibidoId: recibidoPorPago.get(i) ?? null,
+        /*
+         * De qué devolución sale un pago «en cambio». La base lo exige
+         * (`sale_payments_cambio_ck`) por lo mismo que el canje: sin eso es un
+         * descuento disfrazado que no deja ni plata ni mercadería.
+         */
+        returnId: p.medio === 'cambio' ? (p.returnId ?? null) : null,
         marcaTarjeta: p.marcaTarjeta ?? null,
         cuotas: p.cuotas ?? null,
         ultimos4: p.ultimos4 ?? null,

@@ -223,6 +223,16 @@ export interface DatosDevolucion {
    * todavía debe por esa misma venta es equivocarse dos veces.
    */
   descontarDeDeudaCentavos?: number | null;
+  /**
+   * Cuánto de lo devuelto se va en mercadería, porque el cliente se lleva otra
+   * cosa a cambio.
+   *
+   * Lo pone el cambio de producto, que registra las dos mitades juntas. Esa
+   * plata no sale del cajón ni baja ninguna deuda: queda como el pago de la
+   * venta nueva. Se descuenta antes que nada, porque es lo que el cliente ya
+   * eligió llevarse.
+   */
+  aCambioCentavos?: number | null;
   ip?: string | null;
 }
 
@@ -232,6 +242,8 @@ export interface DevolucionRegistrada {
   totalCentavos: number;
   devueltoCentavos: number;
   descontadoDeDeudaCentavos: number;
+  /** Lo que se fue en mercadería porque el cliente cambió el producto. */
+  aCambioCentavos: number;
   unidades: number;
   unidadesAlStock: number;
 }
@@ -335,12 +347,20 @@ export async function registrarDevolucion(
      * efectivo a quien todavía debe por esa misma venta deja al negocio sin la
      * plata y con la deuda igual.
      */
-    const tope = Math.min(devolvible.deudaDelClienteCentavos, totalCentavos);
+    /*
+     * Primero lo que se va en mercadería: es lo que el cliente ya eligió
+     * llevarse, así que no es ni plata que sale ni deuda que baja. Lo que
+     * sobre de ahí es lo que se reparte entre la deuda y el cajón.
+     */
+    const aCambioCentavos = Math.max(0, Math.min(datos.aCambioCentavos ?? 0, totalCentavos));
+    const sobra = totalCentavos - aCambioCentavos;
+
+    const tope = Math.min(devolvible.deudaDelClienteCentavos, sobra);
     const descontadoDeDeudaCentavos =
       datos.descontarDeDeudaCentavos === null || datos.descontarDeDeudaCentavos === undefined
         ? tope
         : Math.max(0, Math.min(datos.descontarDeDeudaCentavos, tope));
-    const devueltoCentavos = totalCentavos - descontadoDeDeudaCentavos;
+    const devueltoCentavos = sobra - descontadoDeDeudaCentavos;
 
     if (devueltoCentavos > 0 && (!datos.medio || !datos.monetaryAccountId)) {
       throw new ErrorDevolucion(
@@ -372,6 +392,7 @@ export async function registrarDevolucion(
         totalCentavos,
         devueltoCentavos,
         descontadoDeDeudaCentavos,
+        aCambioCentavos,
         medio: devueltoCentavos > 0 ? (datos.medio ?? null) : null,
         monetaryAccountId: devueltoCentavos > 0 ? (datos.monetaryAccountId ?? null) : null,
       })
@@ -550,6 +571,7 @@ export async function registrarDevolucion(
       totalCentavos,
       devueltoCentavos,
       descontadoDeDeudaCentavos,
+      aCambioCentavos,
       unidades,
       unidadesAlStock,
     };

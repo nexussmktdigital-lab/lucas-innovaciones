@@ -21,6 +21,9 @@ import {
   registrarDevolucion,
   type RenglonADevolver,
 } from '@/ventas/devolver';
+import { ErrorCambio, registrarCambio, type SeLleva } from '@/ventas/cambiar';
+import { ErrorVenta } from '@/ventas/confirmar';
+import { randomUUID } from 'node:crypto';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 
 export interface EstadoDevolucion {
@@ -34,6 +37,14 @@ export interface EstadoDevolucion {
     descontadoDeDeudaCentavos: number;
     unidadesAlStock: number;
   };
+  /** El cambio recién hecho, cuando se llevó algo a cambio. */
+  cambio?: {
+    devolucionNumero: string;
+    ventaNumero: string;
+    vueltoCentavos: number;
+    llevadoCentavos: number;
+    diferenciaCentavos: number;
+  };
 }
 
 const esquema = z.object({
@@ -42,7 +53,17 @@ const esquema = z.object({
   medio: z.string().max(30).optional(),
   monetaryAccountId: z.string().max(64).optional(),
   descontarDeDeuda: z.string().max(20).optional(),
+  /** Lo que se lleva a cambio, como JSON. Vacío es una devolución común. */
+  seLleva: z.string().max(4000).optional(),
 });
+
+const esquemaSeLleva = z.array(
+  z.object({
+    productId: z.string().uuid(),
+    cantidad: z.number().int().positive().max(1000),
+    variantId: z.string().uuid().nullable().optional(),
+  }),
+);
 
 export async function devolverAccion(
   _previo: EstadoDevolucion,
@@ -96,6 +117,58 @@ export async function devolverAccion(
       descontarDeDeudaCentavos = aCentavos(crudo);
     } catch (e) {
       return { error: e instanceof ErrorDinero ? e.message : 'Ese monto no es válido.' };
+    }
+  }
+
+  /*
+   * Si se lleva algo a cambio, esto es un cambio y no una devolución.
+   *
+   * Es la misma pantalla y el mismo botón a propósito: quien atiende ya está
+   * eligiendo lo que vuelve, y «y se lleva esto» es el renglón siguiente de la
+   * misma conversación con el cliente. Lo que cambia es que las dos mitades se
+   * graban juntas y la plata se mueve una sola vez, por la diferencia.
+   */
+  let seLleva: SeLleva[] = [];
+  const crudoSeLleva = (d.seLleva ?? '').trim();
+  if (crudoSeLleva !== '' && crudoSeLleva !== '[]') {
+    const leidoSeLleva = esquemaSeLleva.safeParse(JSON.parse(crudoSeLleva));
+    if (!leidoSeLleva.success) {
+      return { error: 'No se entiende qué se lleva a cambio.' };
+    }
+    seLleva = leidoSeLleva.data;
+  }
+
+  if (seLleva.length > 0) {
+    try {
+      const hecho = await registrarCambio(db, {
+        ventaId: d.ventaId,
+        devuelve: renglones,
+        seLleva,
+        motivo: d.motivo,
+        usuarioId: sesion.user.id,
+        terminal,
+        cashSessionId: caja.id,
+        medio: (d.medio || null) as never,
+        monetaryAccountId: d.monetaryAccountId || null,
+        idempotencyKey: randomUUID(),
+      });
+
+      after(() => drenarEnSegundoPlano(db));
+      revalidatePath('/devoluciones');
+      revalidatePath('/ventas');
+      revalidatePath('/caja');
+      revalidatePath('/catalogo');
+
+      return {
+        ok: `Cambio registrado: devolución ${hecho.devolucionNumero} y venta ${hecho.ventaNumero}.`,
+        cambio: hecho,
+      };
+    } catch (error) {
+      if (error instanceof ErrorCambio) return { error: error.message };
+      if (error instanceof ErrorDevolucion) return { error: error.message };
+      if (error instanceof ErrorVenta) return { error: error.message };
+      console.error('[devoluciones] Falló el cambio:', error);
+      return { error: 'No se pudo registrar el cambio.' };
     }
   }
 
