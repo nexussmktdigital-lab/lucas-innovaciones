@@ -651,3 +651,81 @@ describe('producto.baja', () => {
     expect(enviadas).toEqual([{ status: 'draft' }]);
   });
 });
+
+describe('producto.renombrar', () => {
+  /** Un Woo de mentira que anota los cuerpos que le mandan por PUT. */
+  function wooQueAnota() {
+    const enviadas: Record<string, unknown>[] = [];
+    const fetchImpl = (async (_entrada: string | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') enviadas.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ id: 6485 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    return {
+      enviadas,
+      cliente: new ClienteWoo({
+        url: 'https://ejemplo.test/staging',
+        consumerKey: 'ck',
+        consumerSecret: 'cs',
+        fetchImpl,
+        reintentos: 1,
+        timeoutMs: 1000,
+      }),
+    };
+  }
+
+  it('le escribe a la tienda el nombre nuevo', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'producto.renombrar',
+      idempotencyKey: 'nombre:1',
+      payload: { productId: vidrioId, wooId: 6485, nombre: 'Vidrio templado 9D' },
+    });
+
+    const woo = wooQueAnota();
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(woo.enviadas).toEqual([{ name: 'Vidrio templado 9D' }]);
+  });
+
+  /*
+   * Al revés que el precio y el stock, que se leen de la base al drenar. El
+   * nombre es el dato donde manda Woo: si entre el cambio y el drenaje corre
+   * una sincronización, la base ya tiene otra vez el nombre viejo, y leerla de
+   * ahí escribiría en la tienda justo lo que se estaba corrigiendo.
+   */
+  it('manda lo que la persona escribió, aunque el espejo ya lo haya pisado', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'producto.renombrar',
+      idempotencyKey: 'nombre:2',
+      payload: { productId: vidrioId, wooId: 6485, nombre: 'Vidrio templado 9D' },
+    });
+    // Como si un woo:sync hubiese devuelto el nombre viejo antes de drenar.
+    await db
+      .update(products)
+      .set({ nombre: 'vidrio templao' })
+      .where(eq(products.id, vidrioId));
+
+    const woo = wooQueAnota();
+    await drenarCola(db, woo.cliente);
+
+    expect(woo.enviadas).toEqual([{ name: 'Vidrio templado 9D' }]);
+  });
+
+  it('sin nombre en el pedido no le escribe nada a la tienda', async () => {
+    await db.insert(syncQueue).values({
+      operacion: 'producto.renombrar',
+      idempotencyKey: 'nombre:3',
+      payload: { productId: vidrioId, wooId: 6485 },
+    });
+
+    const woo = wooQueAnota();
+    const informe = await drenarCola(db, woo.cliente);
+
+    expect(informe.exitosas).toBe(1);
+    expect(woo.enviadas).toEqual([]);
+  });
+});

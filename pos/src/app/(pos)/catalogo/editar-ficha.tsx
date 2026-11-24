@@ -131,14 +131,13 @@ export default function EditarFicha({
           type="text"
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
-          disabled={producto.enLaTienda}
           maxLength={200}
-          className="min-h-11 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2 disabled:opacity-60"
+          className="min-h-11 w-full rounded-(--radius-caja) border border-(--color-borde) bg-(--color-panel) px-2"
         />
         {producto.enLaTienda ? (
           <p className="mt-1 text-xs text-(--color-tinta-suave)">
-            El nombre viene de la tienda online y de ahí se cambia: si se tocara acá, la próxima
-            sincronización lo volvería atrás.
+            Este producto también está en la tienda online: el nombre nuevo se le manda, así la
+            próxima sincronización no lo vuelve atrás.
           </p>
         ) : null}
       </div>
