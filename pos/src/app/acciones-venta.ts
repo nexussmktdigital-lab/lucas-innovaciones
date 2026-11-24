@@ -24,6 +24,13 @@ import { anularVenta, ErrorAnulacion } from '@/ventas/anular';
 import { ErrorFiado } from '@/fiado/cuenta';
 import { drenarEnSegundoPlano } from '@/woo/cola';
 
+/*
+ * Los medios que el cajero puede elegir al cobrar.
+ *
+ * `cambio` no está y no es un olvido: ese medio lo crea el cambio de producto,
+ * que lo respalda con la devolución de la que salió. Ofrecerlo acá dejaría
+ * grabar un pago contra nada, que es un descuento disfrazado.
+ */
 const medioPago = z.enum([
   'efectivo',
   'transferencia',

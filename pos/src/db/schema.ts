@@ -55,6 +55,14 @@ export const medioPagoEnum = pgEnum('medio_pago', [
   'mercadopago',
   'cuenta_corriente',
   /**
+   * Cambio: el cliente paga con lo que trajo de vuelta.
+   *
+   * No mueve ninguna cuenta, igual que el canje y la cuenta corriente. Lo que
+   * lo respalda es una devolucion, y el check lo exige: sin eso seria un
+   * descuento disfrazado que no deja ni plata ni mercaderia.
+   */
+  'cambio',
+  /**
    * Plan canje: el cliente paga parte de la compra con su telefono usado.
    *
    * Suma al total de la venta y **no mueve ninguna cuenta**, igual que la
@@ -581,6 +589,13 @@ export const salePayments = pgTable(
      * la venta, en la misma transaccion.
      */
     productoRecibidoId: uuid().references(() => products.id),
+    /**
+     * De qué devolución sale un pago «en cambio».
+     *
+     * Sin tipo: la tabla de devoluciones se define más abajo y TypeScript no
+     * deja referenciarla antes. La clave foránea la pone la migración.
+     */
+    returnId: uuid(),
     /** Solo tarjeta: el Posnet es un aparato aparte, el POS unicamente registra. */
     marcaTarjeta: text(),
     cuotas: integer(),
@@ -623,6 +638,15 @@ export const salePayments = pgTable(
       'sale_payments_canje_ck',
       sql`(${t.medio}::text = 'canje') = (${t.productoRecibidoId} IS NOT NULL)`,
     ),
+    /*
+     * Lo mismo para el cambio: un pago «en cambio» sin devolución detrás es un
+     * descuento disfrazado que no deja ni plata ni mercadería.
+     */
+    check(
+      'sale_payments_cambio_ck',
+      sql`(${t.medio}::text = 'cambio') = (${t.returnId} IS NOT NULL)`,
+    ),
+    index('sale_payments_return_idx').on(t.returnId),
     index('sale_payments_recibido_idx').on(t.productoRecibidoId),
     check(
       'sale_payments_usd_positivo_ck',
@@ -1289,6 +1313,13 @@ export const returns = pgTable(
     devueltoCentavos: bigint({ mode: 'number' }).notNull().default(0),
     /** Lo que se le descuento de lo que todavia debia de esa venta. */
     descontadoDeDeudaCentavos: bigint({ mode: 'number' }).notNull().default(0),
+    /**
+     * Lo que no se devolvio en plata ni se descontó de la deuda porque se fue
+     * en mercadería: el cliente cambió el producto por otro.
+     *
+     * `totalCentavos` es la suma de los tres destinos.
+     */
+    aCambioCentavos: bigint({ mode: 'number' }).notNull().default(0),
     medio: medioPagoEnum(),
     monetaryAccountId: uuid().references(() => monetaryAccounts.id),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

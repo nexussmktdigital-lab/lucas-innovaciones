@@ -102,6 +102,35 @@ async function venderDosVidrios(page: Page): Promise<string> {
   return texto.match(/T1-\d{6}/)![0];
 }
 
+/** Vende una unidad de un producto al contado y devuelve el número de la venta. */
+async function venderUno(
+  page: Page,
+  busqueda: string,
+  nombre: RegExp,
+  monto: string,
+): Promise<string> {
+  await page.goto('/vender');
+  const buscador = page.getByPlaceholder('Buscar por nombre');
+  await buscador.fill(busqueda);
+  await page.getByRole('button', { name: nombre }).first().waitFor();
+  await buscador.press('Enter');
+
+  await page.getByRole('button', { name: /^Cobrar/ }).click();
+  const cobro = page.getByRole('dialog', { name: 'Cobrar' });
+  await cobro.getByRole('button', { name: '+ Efectivo' }).click();
+  await cobro.getByLabel('Monto en Efectivo').fill(monto);
+
+  await page.addInitScript(() => {
+    window.print = () => {};
+  });
+  await cobro.getByRole('button', { name: /Confirmar venta/ }).click();
+  await expect(page.getByText('Buscá un producto')).toBeVisible({ timeout: 15_000 });
+
+  await page.goto('/ventas');
+  const primera = page.locator('li').filter({ hasText: /T1-\d{6}/ }).first();
+  return (await primera.innerText()).match(/T1-\d{6}/)![0];
+}
+
 let numeroDeVenta = '';
 
 test('se vende, se cierra el turno y al otro día se devuelve', async ({ page }) => {
@@ -213,4 +242,94 @@ test('el vendedor devuelve', async ({ page }) => {
   await entrarComoVendedor(page);
   await page.goto('/devoluciones');
   await expect(page).not.toHaveURL(/\/$/);
+});
+
+/**
+ * El cliente cambia un producto por otro.
+ *
+ * El caso que lo pidió, tal cual llegó del mostrador: se llevó el derivador
+ * equivocado y vuelve a cambiarlo por el que iba. Lo que importa de la
+ * pantalla es una sola cosa: en un cambio parejo **no se mueve un peso del
+ * cajón**. Hacerlo con las dos operaciones sueltas saca lo que valía lo
+ * devuelto y mete lo que vale lo nuevo, y con tarjeta o Mercado Pago eso deja
+ * una devolución y un cobro que no existen en el resumen del banco.
+ */
+test('un cambio parejo no mueve plata, y deja la devolución y la venta', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await abrirCaja(page, '50000');
+
+  // Una funda de $8.000, que es lo que después cambia por un hidrogel del
+  // mismo precio: el caso de Fede, mismo valor y distinto modelo.
+  const numero = await venderUno(page, 'funda comun', /Funda común/, '8000');
+  await cerrarCaja(page);
+  await abrirCaja(page, '80000');
+
+  const antes = aCentavosDeTexto(
+    await page.getByText('Efectivo esperado').locator('..').innerText(),
+  );
+
+  await page.goto('/devoluciones');
+  await page.getByLabel('De qué venta').fill(numero);
+  await page.getByRole('button', { name: new RegExp(numero) }).click();
+
+  const form = page.getByRole('form', { name: 'Registrar una devolución' });
+  await form.getByLabel('Cuántos vuelven').fill('1');
+  await expect(form.getByText('Lo que se devuelve vale').locator('..')).toContainText('8.000,00');
+
+  // Y se lleva otra cosa del mismo precio.
+  await form.getByLabel('¿Se lleva algo a cambio?').fill('hidrogel clear');
+  await form.getByRole('button', { name: /Hidrogel Clear/ }).first().click();
+
+  await expect(form.getByText(/Cambio parejo/)).toBeVisible();
+  // Con el cambio parejo no hay nada que cobrar ni que devolver.
+  await expect(form.getByLabel(/Se le devuelven|Paga /)).toHaveCount(0);
+
+  await form.getByLabel('Por qué lo cambia').fill('Se llevó el modelo equivocado');
+  await form.getByRole('button', { name: /Registrar el cambio/ }).click();
+
+  await expect(page.getByText(/Cambio registrado/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Cambio parejo: no se movió plata/)).toBeVisible();
+
+  // Lo único que importa: el cajón quedó igual.
+  await page.goto('/caja');
+  const despues = aCentavosDeTexto(
+    await page.getByText('Efectivo esperado').locator('..').innerText(),
+  );
+  expect(despues).toBe(antes);
+});
+
+test('si se lleva algo más caro, la pantalla cobra solo la diferencia', async ({ page }) => {
+  await entrarComoDuenio(page);
+  await abrirCaja(page, '50000');
+
+  const numero = await venderDosVidrios(page);
+  await cerrarCaja(page);
+  await abrirCaja(page, '80000');
+
+  const antes = aCentavosDeTexto(
+    await page.getByText('Efectivo esperado').locator('..').innerText(),
+  );
+
+  await page.goto('/devoluciones');
+  await page.getByLabel('De qué venta').fill(numero);
+  await page.getByRole('button', { name: new RegExp(numero) }).click();
+
+  const form = page.getByRole('form', { name: 'Registrar una devolución' });
+  await form.getByLabel('Cuántos vuelven').fill('1');
+  await form.getByLabel('¿Se lleva algo a cambio?').fill('motorola');
+  await form.getByRole('button', { name: /Motorola/ }).first().click();
+
+  // Trae un vidrio de $5.000 y se lleva un celular de $382.000: paga la
+  // diferencia, no el precio entero.
+  await expect(form.getByText('paga $ 377.000,00', { exact: true })).toBeVisible();
+  await form.getByLabel('Por qué lo cambia').fill('Se lo cambió por el celular');
+  await form.getByRole('button', { name: /Registrar el cambio/ }).click();
+  await expect(page.getByText(/Cambio registrado/)).toBeVisible({ timeout: 15_000 });
+
+  // Entra la diferencia, no el precio entero del celular.
+  await page.goto('/caja');
+  const despues = aCentavosDeTexto(
+    await page.getByText('Efectivo esperado').locator('..').innerText(),
+  );
+  expect(despues - antes).toBe(377_000_00);
 });

@@ -7,7 +7,7 @@ import {
   calcularCobro,
   problemasDelCobro,
   type Descuento,
-  type MedioPago,
+  type MedioDeMostrador,
   type Pago,
   type TotalesCarrito,
 } from '@/ventas/carrito';
@@ -22,7 +22,7 @@ import CampoRecargo from '../campo-recargo';
  * y de nada más. Es lo que el local cobra —el costo del cheque— y no el de la
  * operación entera.
  */
-function recargoDe(p: { medio: MedioPago; montoCentavos: number; recargoEscrito?: RecargoEscrito | null }): number {
+function recargoDe(p: { medio: MedioDeMostrador; montoCentavos: number; recargoEscrito?: RecargoEscrito | null }): number {
   if (p.medio !== 'cheque') return 0;
   try {
     return calcularRecargo(p.montoCentavos, p.recargoEscrito ?? null);
@@ -57,7 +57,7 @@ interface Props {
  * «Cuenta corriente» solo aparece para el dueño y con un cliente elegido: fiar
  * es dar crédito, y el sistema tiene que saber a quién se lo está dando.
  */
-const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
+const MEDIOS: { medio: MedioDeMostrador; tipoCuenta: Cuenta['tipo'] | null }[] = [
   { medio: 'efectivo', tipoCuenta: 'efectivo' },
   { medio: 'transferencia', tipoCuenta: 'banco' },
   { medio: 'debito', tipoCuenta: 'banco' },
@@ -75,7 +75,7 @@ const MEDIOS: { medio: MedioPago; tipoCuenta: Cuenta['tipo'] | null }[] = [
 ];
 
 const CUENTA_CORRIENTE = {
-  medio: 'cuenta_corriente' as MedioPago,
+  medio: 'cuenta_corriente' as MedioDeMostrador,
   tipoCuenta: null,
 };
 
@@ -87,7 +87,7 @@ const CUENTA_CORRIENTE = {
  * el renglón pide más que un monto.
  */
 const CANJE = {
-  medio: 'canje' as MedioPago,
+  medio: 'canje' as MedioDeMostrador,
   tipoCuenta: null,
 };
 
@@ -106,7 +106,9 @@ function nuevaClave(): string {
  * sistema contando otro. `texto` es lo que la persona escribió, tal cual, para
  * que pueda tipear «12.» sin que el campo se le corrija solo.
  */
-interface PagoEnPantalla extends Pago {
+interface PagoEnPantalla extends Omit<Pago, 'medio'> {
+  /** Sin `cambio`: ese medio no se elige al cobrar, lo crea el cambio de producto. */
+  medio: MedioDeMostrador;
   clave: string;
   texto: string;
   /**
@@ -249,7 +251,7 @@ export default function Cobro({
     return cuentas.find((c) => c.tipo === tipo)?.id ?? null;
   }
 
-  function agregarMedio(medio: MedioPago, tipoCuenta: Cuenta['tipo'] | null) {
+  function agregarMedio(medio: MedioDeMostrador, tipoCuenta: Cuenta['tipo'] | null) {
     const faltante = Math.max(0, cobro?.faltanteCentavos ?? totales.totalCentavos);
 
     /*
