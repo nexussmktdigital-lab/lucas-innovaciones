@@ -60,8 +60,18 @@ ALTER TABLE "credit_charges" DROP CONSTRAINT IF EXISTS "credit_charges_monto_ck"
 --> statement-breakpoint
 
 -- Un cargo en cero no es una compra, es un renglón que se leyó mal.
+--
+-- Decía `> 0`, que era cierto cuando el único cargo era una compra de la
+-- libreta. La 0024 lo relajó a `<> 0` al aparecer la mercadería devuelta, y
+-- la 0025 agregó la quita del recargo: hoy hay cargos negativos en la base.
+--
+-- Se escribe acá el estado final y no el histórico, a propósito: con `> 0`
+-- esta migración no se puede volver a correr sobre una base que ya tiene
+-- negativos —rebota contra sus propios datos— y una migración que no se puede
+-- replicar deja la base imposible de reconstruir desde cero. El esquema que
+-- queda al final de la cadena es exactamente el mismo.
 ALTER TABLE "credit_charges" ADD CONSTRAINT "credit_charges_monto_ck"
-  CHECK ("monto_centavos" > 0);
+  CHECK ("monto_centavos" <> 0);
 
 --> statement-breakpoint
 
